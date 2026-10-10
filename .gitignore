@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+cache/
+dist/
+user_files/
+*.log
+*.flag
+meta.json
+manifest.json
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.venv/
+dev_tools/.personal_terms

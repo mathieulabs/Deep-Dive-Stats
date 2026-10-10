@@ -1,0 +1,52 @@
+<svg viewBox="0 0 512 512" width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ankiGrad" x1="20%" y1="100%" x2="80%" y2="0%">
+      <stop offset="0%" stop-color="#9CECFB" /> 
+      <stop offset="50%" stop-color="#2DA0F9" /> 
+      <stop offset="100%" stop-color="#0055FF" /> 
+    </linearGradient>
+
+
+    <path id="starShape" d="M0,-38 L11,-14 L37,-12 L17,6 L23,32 L0,19 L-23,32 L-17,6 L-37,-12 L-11,-14 Z" />
+
+    <!-- Soft overall shadow -->
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+
+
+
+
+  <g transform="translate(0, 20)">
+    
+
+    <g>
+
+      <rect x="112" y="340" width="80" height="100" rx="12" fill="#454B59" />
+
+      <rect x="216" y="260" width="80" height="180" rx="12" fill="#5D6475" />
+
+      <rect x="320" y="180" width="80" height="260" rx="12" fill="#767F94" />
+
+    </g>
+
+    <g transform="translate(360, 130) scale(2.1)" filter="url(#shadow)">
+
+      <use href="#starShape" 
+           stroke="#FFFFFF" 
+           stroke-width="18" 
+           stroke-linejoin="round" 
+           fill="none" />
+      
+      <use href="#starShape" 
+           fill="url(#ankiGrad)" 
+           stroke="url(#ankiGrad)" 
+           stroke-width="4" 
+           stroke-linejoin="round" />
+           
+>
+    </g>
+  </g>
+</svg>

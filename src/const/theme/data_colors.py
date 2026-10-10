@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Deep Dive Stats contributors
+from .types import DataColorsDict
+
+
+STAT_KEY_TO_COLOR_KEY = {
+    'Dash_Show_Time': 'Color_Time',
+    'Dash_Show_Reviews': 'Color_Reviews',
+    'Dash_Show_Avg_Time': 'Color_Avg_Time',
+    'Dash_Show_Ret_All': 'Color_Retention',
+    'Dash_Show_Ret_Young': 'Color_Young',
+    'Dash_Show_Ret_Mature': 'Color_Mature',
+    'Dash_Show_Streak': 'Color_Streak',
+    'Dash_Show_Active_Days': 'Color_Active_Days',
+    'Dash_Show_Days_Learned': 'Color_Active_Days',
+    'Dash_Show_Longest_Streak': 'Color_Streak',
+    'Dash_Show_Reviews_Per_Day': 'Color_Reviews',
+    'Dash_Show_Time_Per_Day': 'Color_Time',
+    'Dash_Show_Ret_True': 'Color_Cram',
+    'Dash_Show_Rev_Young': 'Color_Young',
+    'Dash_Show_Rev_Mature': 'Color_Mature',
+    'Dash_Show_Again': 'Color_Relearn',
+    'Dash_Show_Best_Day': 'Color_Reviews',
+    'Dash_Show_Cards_Total': 'Color_Bar',
+    'Dash_Show_Cards_New': 'Color_New',
+    'Dash_Show_Cards_Learning': 'Color_Learn',
+    'Dash_Show_Cards_Young': 'Color_Young',
+    'Dash_Show_Cards_Mature': 'Color_Mature',
+    'Dash_Show_Cards_Suspended': 'Color_Suspended',
+    'Dash_Show_Cards_Buried': 'Color_Buried',
+    'Dash_Show_Cards_Deleted': 'Color_Deleted',
+    'Dash_Show_Due_Today': 'Color_Future_Due',
+    'Dash_Show_Backlog': 'Color_Backlog',
+    'Dash_Show_Avg_Retrievability': 'Color_Good',
+    'Dash_Show_Avg_Stability': 'Color_Easy',
+    'Dash_Show_Lapses': 'Color_Relearn',
+    'Deep_Dive_Show_Time': 'Color_Time',
+    'Deep_Dive_Show_Reviews': 'Color_Reviews',
+    'Deep_Dive_Show_Avg_Time': 'Color_Avg_Time',
+    'Deep_Dive_Show_Ret_All': 'Color_Retention',
+    'Deep_Dive_Show_Ret_Young': 'Color_Young',
+    'Deep_Dive_Show_Ret_Mature': 'Color_Mature',
+    'Deep_Dive_Show_Streak': 'Color_Streak',
+    'Deep_Dive_Show_Active_Days': 'Color_Active_Days',
+}
+
+RETENTION_SERIES_COLOR_KEY = {
+    "all": 'Color_Retention',
+    "young": 'Color_Young',
+    "mature": 'Color_Mature',
+    "true": 'Color_Cram',
+}
+
+COLOR_DEFAULTS: DataColorsDict = {
+    'Color_Time': '#8ab4f8',
+    'Color_Avg_Time': '#06b6d4',
+    'Color_Reviews': '#FF9800',
+    'Color_Retention': '#3b82f6',
+    'Color_Mature': '#4caf50',
+    'Color_Streak': '#F44336',
+    'Color_Active_Days': '#a78bfa',
+    'Color_Learn': '#ff9800',
+    'Color_Young': '#8bc34a',
+    'Color_Relearn': '#f44336',
+    'Color_Cram': '#9fa8da',
+    'Color_New': '#1976d2',
+    'Color_Suspended': '#fdd835',
+    'Color_Buried': '#9e9e9e',
+    'Color_Again': '#ff3b30',
+    'Color_Hard': '#ff9500',
+    'Color_Good': '#4cd964',
+    'Color_Easy': '#5ac8fa',
+    'Color_Bar': '#669ff7',
+    'Color_Future_Due': '#4ade80',
+    'Color_Backlog': '#f59e0b',
+    'Color_Deleted': '#616161',
+    # Difficulty / Retrievability gradient
+    'Color_Gradient_Low': '#ff3b30',
+    'Color_Gradient_High': '#4cd964',
+    'Heatmap_Color': '#3b82f6',
+}
+from .types import DataColorsDict
