@@ -37,11 +37,13 @@ def restore_initial_config_snapshot(dialog) -> None:
         log_swallowed()
 
     try:
-        val = bool(dialog.parent_dialog.addon_config.config.get(Config.DETAILS_SIDE_VIEW, False))
-        dialog.parent_dialog.side_view = val
-        from ...dialog.lifecycle import apply_split_orientation, effective_side_view
+        # Only the stats window has the split view (not the main window's settings host).
+        if hasattr(dialog.parent_dialog, "layout_splitter"):
+            val = bool(dialog.parent_dialog.addon_config.config.get(Config.DETAILS_SIDE_VIEW, False))
+            dialog.parent_dialog.side_view = val
+            from ...dialog.lifecycle import apply_split_orientation, effective_side_view
 
-        apply_split_orientation(dialog.parent_dialog, effective_side_view(dialog.parent_dialog))
+            apply_split_orientation(dialog.parent_dialog, effective_side_view(dialog.parent_dialog))
     except Exception:
         log_swallowed()
 

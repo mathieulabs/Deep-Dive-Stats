@@ -10,7 +10,6 @@ from .data_ops import (
     get_stats_text_impl,
     get_tooltip_text_impl,
     init_state_impl,
-    interpolate_relative_cumulative_line_impl,
     refresh_data_colors_impl,
     set_cumulative_mode_impl,
     set_view_filter_impl,
@@ -49,9 +48,6 @@ class StabilityChartWidget(FSRSBaseChart):
 
     def _current_values_snapshot(self):
         return current_values_snapshot_impl(self)
-
-    def _interpolate_relative_cumulative_line(self, t):
-        return interpolate_relative_cumulative_line_impl(self, t)
 
     def set_view_filter(self, filter_mode, transition_mode=None):
         return set_view_filter_impl(self, filter_mode, transition_mode=transition_mode)

@@ -177,9 +177,14 @@ def create_activity_chart_view(manager, activity_data, history_oldest_first):
             except Exception:
                 log_swallowed()
         manager.last_activity_breakdown = checked
-        if stack.currentIndex() != 2:
+        if stack.currentIndex() == 2 and dots_chart is not None:
+            # One dot per review is on screen: the type split only changes their colours,
+            # so recolour them in place and stay on the dots.
+            time_on = bool(manager._get_dd_widget_setting("activity", "show_time_axis", False))
+            dots_chart.set_mode("time" if time_on else "reviews", checked)
+        else:
             stack.setCurrentIndex(1 if checked and stacked_chart else 0)
-        refresh_review_dots(manager)
+            refresh_review_dots(manager)
         manager._update_dd_widget_setting("activity", "breakdown_enabled", checked, refresh=False)
 
     cb.toggled.connect(on_breakdown)
@@ -203,6 +208,17 @@ def create_activity_chart_view(manager, activity_data, history_oldest_first):
             value_key=("time_ms" if next_mode == "time" else "reviews"),
             scale=(1.0 / 60000.0 if next_mode == "time" else 1.0),
         )
+        hi_res = getattr(manager, "_hi_res_history", None) if getattr(manager, "_adaptive_zoom_active", False) else None
+        if hi_res:
+            # 10-minute view: switch it in place and keep the daily data, in the new mode,
+            # for the way back.
+            from ..controls_parts.adaptive_zoom import activity_payloads
+
+            if normal_chart is not None and hasattr(normal_chart, "_pre_adaptive_data"):
+                normal_chart._pre_adaptive_data = metric_activity
+            if stacked_chart is not None and hasattr(stacked_chart, "_pre_adaptive_data"):
+                stacked_chart._pre_adaptive_data = metric_rows
+            metric_activity, metric_rows = activity_payloads(manager, hi_res, next_mode)
         visible_chart = stacked_chart if (stacked_chart and stack.currentIndex() == 1) else normal_chart
         with local_chart_animation_batch(visible_chart):
             with preserve_zoom(normal_chart, stacked_chart):
@@ -221,6 +237,10 @@ def create_activity_chart_view(manager, activity_data, history_oldest_first):
                         transition_mode=None,
                     )
         manager._update_dd_widget_setting("activity", "show_time_axis", bool(checked), refresh=False)
+        dots = getattr(manager, "review_dots_chart", None)
+        if dots is not None and dots.isVisible():
+            # One dot per review is on screen: glide it to the new mode right away.
+            dots.set_mode(next_mode, manager.last_activity_breakdown)
         refresh_review_dots(manager)
 
     cb_time.toggled.connect(on_time_mode)

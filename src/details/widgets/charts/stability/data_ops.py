@@ -13,7 +13,6 @@ from ..common.discrete import (
     apply_discrete_transition_update,
     current_discrete_values_snapshot_impl,
     discrete_transition_target_unchanged,
-    interpolate_relative_cumulative_line_impl as interpolate_discrete_cumulative_line_impl,
     reset_discrete_transition_state,
     set_cumulative_mode_impl,
 )
@@ -85,10 +84,6 @@ def build_binned_values_impl(widget, dist, max_days):
 
 def current_values_snapshot_impl(widget):
     return current_discrete_values_snapshot_impl(widget)
-
-
-def interpolate_relative_cumulative_line_impl(widget, t):
-    return interpolate_discrete_cumulative_line_impl(widget, t, count_attr="bins_count")
 
 
 def set_view_filter_impl(widget, filter_mode, transition_mode=None):

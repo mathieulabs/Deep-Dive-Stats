@@ -18,7 +18,7 @@ def draw_cached_scaffold(widget, painter, *, width, height, margin_left, margin_
         int(margin_top),
         int(margin_right),
         int(margin_bottom),
-        int(round(float(left_axis_max or 0.0))),
+        float(left_axis_max or 0.0),  # exact: nearly equal maxima can still give other labels
         str(getattr(widget, "value_mode", "")),
         str(getattr(widget, "chart_type", "")),
         bool(getattr(widget, "cumulative_visible", False)),
@@ -159,3 +159,89 @@ def draw_cached_chrome(
 
     if pixmap is not None:
         draw_cache(painter, pixmap)
+
+
+def mode_switch_blend(widget, t):
+    """(old_formatter, new_formatter, blend) while a Reviews <-> Time switch glides, else None.
+
+    The axis numbers of the two modes are not comparable (327 reviews vs 24 minutes), so
+    during the switch each mode keeps its own labels and they cross-fade instead of the
+    number counting through the wrong unit."""
+    if not getattr(widget, "_data_transition_active", False):
+        return None
+    old_mode = str(getattr(widget, "_transition_old_value_mode", widget.value_mode) or "").lower()
+    new_mode = str(getattr(widget, "_transition_new_value_mode", widget.value_mode) or "").lower()
+    if old_mode == new_mode:
+        return None
+    from .ops import transition_margin_formatters
+
+    old_fmt, new_fmt = transition_margin_formatters(widget)
+    tt = max(0.0, min(1.0, float(t)))
+    return old_fmt, new_fmt, tt * tt * (3.0 - 2.0 * tt)
+
+
+def _blend_layers(blend, old_max, new_max):
+    """Old numbers fade out, then the new ones fade in, so two units never overlap."""
+    old_fmt, new_fmt, e = blend
+    old_alpha = max(0.0, min(1.0, 1.0 - e / 0.45))
+    new_alpha = max(0.0, min(1.0, (e - 0.55) / 0.45))
+    return ((old_fmt, old_max, old_alpha), (new_fmt, new_max, new_alpha))
+
+
+def draw_blended_scaffold(widget, painter, blend, *, width, height, margin_left, margin_top, margin_right, margin_bottom, old_max, new_max):
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    # The grid lines stay put; only the numbers swap.
+    draw_grid_and_axes(
+        painter,
+        width,
+        height,
+        margin_left,
+        margin_top,
+        margin_right,
+        margin_bottom,
+        new_max,
+        widget=widget,
+        draw_labels=False,
+    )
+    painter.restore()
+    for fmt, axis_max, alpha in _blend_layers(blend, old_max, new_max):
+        if alpha <= 0.004:
+            continue
+        painter.save()
+        painter.setOpacity(painter.opacity() * alpha)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        draw_grid_and_axes(
+            painter,
+            width,
+            height,
+            margin_left,
+            margin_top,
+            margin_right,
+            margin_bottom,
+            axis_max,
+            value_formatter=fmt,
+            widget=widget,
+            draw_lines=False,
+        )
+        painter.restore()
+
+
+def draw_blended_right_labels(widget, painter, blend, *, width, height, margin_right, margin_top, margin_bottom, old_max, new_max):
+    for fmt, axis_max, alpha in _blend_layers(blend, old_max, new_max):
+        if alpha <= 0.004:
+            continue
+        painter.save()
+        painter.setOpacity(painter.opacity() * alpha)
+        draw_right_axis_labels(
+            painter,
+            width,
+            height,
+            margin_right,
+            margin_top,
+            margin_bottom,
+            axis_max,
+            value_formatter=fmt,
+            widget=widget,
+        )
+        painter.restore()

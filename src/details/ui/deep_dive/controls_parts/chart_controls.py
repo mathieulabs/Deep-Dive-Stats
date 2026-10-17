@@ -6,10 +6,10 @@ from aqt.qt import QAction, QHBoxLayout, QLayout, QPushButton, QSize, Qt
 
 from ... import Config
 from ...theme.icons import get_svg_icon
-from ....animations.chart_policy import local_chart_animation_batch
 from .....qss import set_qss
 from ....logic.logger import log_swallowed
 from .review_dots import refresh_review_dots
+from ....widgets.chart_utils.zoom_camera import with_camera
 
 
 def add_chart_controls(self, activity_header, retention_header, added_header, activity_data, retention_data):
@@ -54,21 +54,14 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
             reset_chart(getattr(self, chart_attr, None))
         self._syncing_zoom = False
         if self.last_history_data:
-            stats_candidates = [
-                c for c in (
-                    getattr(self, "hourly_chart", None),
-                    getattr(self, "dist_chart", None),
-                ) if c is not None
-            ]
-            anchor = stats_candidates[0] if stats_candidates else None
-            if anchor:
-                with local_chart_animation_batch(anchor, candidates=stats_candidates):
-                    self._update_stats_from_history(self.last_history_data[::-1])
-                    self._refresh_bottom_stats()
-            else:
-                self._update_stats_from_history(self.last_history_data[::-1])
-                self._refresh_bottom_stats()
+            # In steps during the zoom animation, like a zoom from the charts.
+            from ..runtime.zoom_sync import schedule_stats
+
+            schedule_stats(self, self.last_history_data[::-1])
+            self._refresh_bottom_stats()
         update_all_reset_buttons()
+        refresh_review_dots(self, immediate=True)
+    reset_all_zoom = with_camera(reset_all_zoom)
     
     self.btn_reset_zoom.clicked.connect(reset_all_zoom)
 
@@ -81,16 +74,23 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
         reset_chart(getattr(self, "activity_chart", None))
         reset_chart(getattr(self, "stacked_chart", None))
         if self.last_history_data:
-            self._update_stats_from_history(self.last_history_data[::-1])
+            from ..runtime.zoom_sync import schedule_stats
+
+            schedule_stats(self, self.last_history_data[::-1])
             self._refresh_bottom_stats()
         update_all_reset_buttons()
+        refresh_review_dots(self, immediate=True)
+    reset_activity_local_zoom = with_camera(reset_activity_local_zoom)
 
     def reset_retention_local_zoom():
         reset_chart(getattr(self, "retention_chart", None))
         if self.last_history_data:
-            self._update_stats_from_history(self.last_history_data[::-1])
+            from ..runtime.zoom_sync import schedule_stats
+
+            schedule_stats(self, self.last_history_data[::-1])
             self._refresh_bottom_stats()
         update_all_reset_buttons()
+    reset_retention_local_zoom = with_camera(reset_retention_local_zoom)
 
     def reset_added_local_zoom():
         if getattr(self, '_adaptive_zoom_active_added_only', False):
@@ -98,9 +98,12 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
             self._restore_original_chart_data(only_added=True)
         reset_chart(getattr(self, "added_chart", None))
         if self.last_history_data:
-            self._update_stats_from_history(self.last_history_data[::-1])
+            from ..runtime.zoom_sync import schedule_stats
+
+            schedule_stats(self, self.last_history_data[::-1])
             self._refresh_bottom_stats()
         update_all_reset_buttons()
+    reset_added_local_zoom = with_camera(reset_added_local_zoom)
     
     self.activity_reset_btn = create_local_reset("Reset Activity Zoom", reset_activity_local_zoom)
     self.retention_reset_btn = create_local_reset("Reset Retention Zoom", reset_retention_local_zoom)
@@ -168,26 +171,31 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
             # Same rationale as above for added-only adaptive mode.
             return
 
-        # But we still need to handle adaptive zoom trigger if sync is ON
-        if getattr(self, 'last_sync_zoom', False):
-            if is_zoomed and self.last_history_data:
-                history_oldest_first = self.last_history_data[::-1]
-                is_added_chart = source_chart and source_chart == getattr(self, "added_chart", None)
-                if is_added_chart and hasattr(source_chart, "_full_data") and isinstance(source_chart._full_data, list):
-                    zoomed_slice = source_chart._full_data[start:end]
-                else:
-                    total_len = len(history_oldest_first)
-                    source_len = getattr(source_chart, "_full_length", total_len) if source_chart else total_len
-                    offset = total_len - source_len
-                    
-                    s_idx = max(0, start + offset)
-                    e_idx = max(0, min(total_len, end + offset))
-                    
-                    zoomed_slice = history_oldest_first[s_idx:e_idx]
-                    
-                self._try_adaptive_zoom(zoomed_slice, source_chart, start, end)
-             
-        elif self.last_history_data:
+        sync_on = bool(getattr(self, 'last_sync_zoom', False))
+        # 10-minute view when the zoom gets down to 2 days. With the sync off only the
+        # charts of the zoomed section switch.
+        if is_zoomed and self.last_history_data:
+            history_oldest_first = self.last_history_data[::-1]
+            is_added_chart = source_chart and source_chart == getattr(self, "added_chart", None)
+            if is_added_chart and hasattr(source_chart, "_full_data") and isinstance(source_chart._full_data, list):
+                zoomed_slice = source_chart._full_data[start:end]
+            else:
+                total_len = len(history_oldest_first)
+                source_len = getattr(source_chart, "_full_length", total_len) if source_chart else total_len
+                offset = total_len - source_len
+
+                s_idx = max(0, start + offset)
+                e_idx = max(0, min(total_len, end + offset))
+
+                zoomed_slice = history_oldest_first[s_idx:e_idx]
+
+            charts = None
+            if not sync_on and source_chart is not None:
+                activity_group = [c for c in (self.activity_chart, self.stacked_chart) if c is not None]
+                charts = activity_group if source_chart in activity_group else [source_chart]
+            self._try_adaptive_zoom(zoomed_slice, source_chart, start, end, charts=charts)
+
+        if not sync_on and self.last_history_data:
             # If sync is OFF, make sure dashboard shows FULL range even if individual charts are zoomed
             self._update_stats_from_history(self.last_history_data[::-1])
             self._refresh_bottom_stats()
@@ -214,16 +222,18 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
         self._pre_adaptive_zoom = None
         if getattr(self, "_adaptive_zoom_active", False):
             self._adaptive_zoom_active = False
+            restored = [
+                c for c in (self.activity_chart, self.stacked_chart, getattr(self, "retention_chart", None), getattr(self, "added_chart", None))
+                if c is not None and hasattr(c, "_pre_adaptive_data")
+            ]
             self._restore_original_chart_data()
             rows = list(reversed(self.last_history_data or []))
-            target = next(
-                (c for c in (self.activity_chart, self.stacked_chart, getattr(self, "retention_chart", None)) if c),
-                None,
-            )
-            if target is not None and rows and pre and pre[0] == "history":
+            if restored and rows and pre and pre[0] == "history":
                 s, e = widen_zoom_window(rows, pre[1], pre[2])
-                offset = len(rows) - int(getattr(target, "_full_length", len(rows)) or len(rows))
-                target.set_zoom_range(max(0, s - offset), max(0, e - offset))
+                # With the sync on, zooming one chart zooms the others.
+                for target in (restored[:1] if getattr(self, "last_sync_zoom", False) else restored):
+                    offset = len(rows) - int(getattr(target, "_full_length", len(rows)) or len(rows))
+                    target.set_zoom_range(max(0, s - offset), max(0, e - offset))
             elif self.last_history_data:
                 self._update_stats_from_history(self.last_history_data[::-1])
                 self._refresh_bottom_stats()
@@ -236,6 +246,7 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
                 s, e = widen_zoom_window(rows, pre[1], pre[2])
                 added.set_zoom_range(s, e)
         update_all_reset_buttons()
+    leave_adaptive_zoom = with_camera(leave_adaptive_zoom)
 
     def _connect_zoom_out_limit(chart):
         sig = getattr(chart, "zoom_out_limit", None) if chart else None

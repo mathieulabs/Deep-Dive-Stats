@@ -469,6 +469,13 @@ class StatCardWidget(QFrame):
             
         self.main_layout.setContentsMargins(int(h_margin), 6, int(h_margin), 6)
 
+    def shown_value(self):
+        """The value the card shows, or the one it is rolling to (the label holds an
+        in-between number during the roll)."""
+        if self._roll_active and self._roll_target_text:
+            return self._roll_target_text
+        return self.value_lbl.text()
+
     def update_val(self, value, color=None, title=None, subtitle=None, deck_id=None, refresh=True):
         update_val_impl(
             self,

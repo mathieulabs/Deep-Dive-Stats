@@ -95,10 +95,6 @@ def _draw_legend_overlay(widget, painter, keys, counts, total, text_col):
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     bg = QColor(colors.get("bg", QColor("#222222")))
     if not hot:
-        bg.setAlpha(170)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(bg)
-        painter.drawRoundedRect(icon, 4, 4)
         pen = QPen(QColor(colors.get("text_secondary", QColor("#a1a1aa"))), 1.6)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)

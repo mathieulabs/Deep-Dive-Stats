@@ -396,6 +396,16 @@ class _ThemeManager:
         return native_dark
 
     def get_palette(self, widget_or_context=None):
+        memo = _PALETTE_MEMO[0]
+        if memo is None:
+            return self._get_palette(widget_or_context)
+        key = id(widget_or_context)
+        hit = memo.get(key)
+        if hit is None:
+            hit = memo[key] = self._get_palette(widget_or_context)
+        return {name: (QColor(c) if isinstance(c, QColor) else c) for name, c in hit.items()}
+
+    def _get_palette(self, widget_or_context=None):
         context, widget = self._resolve(widget_or_context)
         native_dark = self._native_dark()
         details_mode = self._details_mode
@@ -584,6 +594,23 @@ class _ThemeManager:
 
 _THEME_MANAGER = _ThemeManager()
 
+# While an animation redraws a chart every frame, the palette of a widget is looked up once
+# (the theme cannot change within 300 ms); see palette_memo().
+_PALETTE_MEMO = [None]
+_PALETTE_USERS = [0]
+
+
+def palette_memo(on):
+    """Turn the per-widget palette memo on (nested calls are counted) or off."""
+    if on:
+        _PALETTE_USERS[0] += 1
+        if _PALETTE_MEMO[0] is None:
+            _PALETTE_MEMO[0] = {}
+    else:
+        _PALETTE_USERS[0] = max(0, _PALETTE_USERS[0] - 1)
+        if _PALETTE_USERS[0] == 0:
+            _PALETTE_MEMO[0] = None
+
 
 def get_theme_manager():
     return _THEME_MANAGER
@@ -723,10 +750,6 @@ def sync_theme_manager_and_notify(conf, source=None):
     if _theme_runtime_state() != before:
         _THEME_MANAGER.emit_theme_changed(source=source or "theme_sync_changed")
     return _THEME_MANAGER
-
-
-def get_text_col(widget_or_context=None):
-    return QColor(get_theme_colors(widget_or_context)["text"])
 
 
 def get_context_theme_config(widget_or_context=None, conf=None, default=ThemeContext.DETAILS):

@@ -14,10 +14,38 @@ from ....widgets.charts.common.zoom import (
     resolve_adaptive_zoom_window,
 )
 from ....logic.logger import log_swallowed
+from ....widgets.chart_utils.zoom_camera import with_camera
 
 
-def try_adaptive_zoom(manager, zoomed_slice, source_chart=None, start_idx=None, end_idx=None):
-    """Attempt adaptive re-binning when zoom range is very small."""
+def activity_payloads(manager, rows_oldest_first, mode=None):
+    """(Activity series, Breakdown rows) for rows, built like the daily charts:
+    hidden review types left out, in the current Reviews / Time mode."""
+    from ....logic.data.transforms.activity_series import (
+        build_activity_series,
+        convert_breakdown_metric_rows,
+        filter_activity_types,
+    )
+
+    if mode is None:
+        mode = "time" if manager._get_dd_widget_setting("activity", "show_time_axis", False) else "reviews"
+    rows = filter_activity_types(rows_oldest_first, manager._get_dd_widget_setting("activity", "hidden_review_types", None))
+    metric_rows = convert_breakdown_metric_rows(rows, mode, count_key_style="count", preserve_source_fields=True)
+    series = build_activity_series(
+        metric_rows,
+        value_key=("time_ms" if mode == "time" else "reviews"),
+        scale=(1.0 / 60000.0 if mode == "time" else 1.0),
+    )
+    return series, metric_rows
+
+
+def try_adaptive_zoom(manager, zoomed_slice, source_chart=None, start_idx=None, end_idx=None, charts=None):
+    """Attempt adaptive re-binning when zoom range is very small.
+
+    charts: the charts that switch to 10-minute data (all of them when None, i.e. with
+    the zoom sync on)."""
+    def wanted(chart):
+        return chart is not None and (charts is None or chart in charts)
+
     try:
         if not zoomed_slice or len(zoomed_slice) < 2:
             if getattr(manager, "_adaptive_zoom_active_added_only", False):
@@ -68,7 +96,7 @@ def try_adaptive_zoom(manager, zoomed_slice, source_chart=None, start_idx=None, 
             )
 
             hi_res_added = None
-            if hasattr(manager, "added_chart") and manager.added_chart:
+            if wanted(getattr(manager, "added_chart", None)):
                 hi_res_added = fetch_section_data(
                     manager.addon_config,
                     "added",
@@ -116,12 +144,7 @@ def try_adaptive_zoom(manager, zoomed_slice, source_chart=None, start_idx=None, 
             offset = total_len - (source_len or total_len)
             manager._pre_adaptive_zoom = ("history", int(start_idx or 0) + offset, int(end_idx or 0) + offset)
             manager._hi_res_history = hi_res_history
-            from ....logic.data.transforms.activity_series import filter_activity_types
-
-            hi_res_activity_rows = filter_activity_types(
-                hi_res_history, manager._get_dd_widget_setting("activity", "hidden_review_types", None)
-            )
-            hi_res_activity = [(item["pretty_date"], item["reviews"]) for item in hi_res_activity_rows]
+            hi_res_activity, hi_res_activity_rows = activity_payloads(manager, hi_res_history)
             adaptive_candidates = [
                 manager.activity_chart,
                 manager.stacked_chart,
@@ -131,10 +154,12 @@ def try_adaptive_zoom(manager, zoomed_slice, source_chart=None, start_idx=None, 
             with local_chart_animation_batch(source_chart or manager.activity_chart, candidates=adaptive_candidates):
                 manager._adaptive_transitioning = True
                 try:
-                    manager._adaptive_replace(manager.activity_chart, "_full_data", hi_res_activity)
-                    manager._adaptive_replace(manager.stacked_chart, "_full_data", hi_res_activity_rows)
+                    if wanted(manager.activity_chart):
+                        manager._adaptive_replace(manager.activity_chart, "_full_data", hi_res_activity)
+                    if wanted(manager.stacked_chart):
+                        manager._adaptive_replace(manager.stacked_chart, "_full_data", hi_res_activity_rows)
 
-                    if manager.retention_chart:
+                    if wanted(manager.retention_chart):
                         hi_res_retention = build_retention_series(
                             hi_res_history,
                             strict_series=RETENTION_SERIES_KEYS,
@@ -150,7 +175,10 @@ def try_adaptive_zoom(manager, zoomed_slice, source_chart=None, start_idx=None, 
                 finally:
                     manager._adaptive_transitioning = False
 
-            manager._update_stats_from_history(hi_res_history)
+            if charts is None:
+                from ..runtime.zoom_sync import schedule_stats
+
+                schedule_stats(manager, hi_res_history)
             manager._adaptive_zoom_active = True
             manager.update_all_reset_buttons()
         else:
@@ -164,4 +192,5 @@ def try_adaptive_zoom(manager, zoomed_slice, source_chart=None, start_idx=None, 
                 manager.update_all_reset_buttons()
     except Exception:
         log_swallowed()
+try_adaptive_zoom = with_camera(try_adaptive_zoom)
 

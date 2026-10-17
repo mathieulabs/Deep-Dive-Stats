@@ -26,6 +26,7 @@ from .....logic.data.transforms.retention_series import (
     build_retention_series,
 )
 from .....logic.logger import log_swallowed
+from ....chart_utils.zoom_camera import with_camera
 
 
 def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
@@ -193,6 +194,7 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
             btn_reset.setVisible(True)
         except Exception:
             log_swallowed()
+    _on_adaptive_zoom_ret = with_camera(_on_adaptive_zoom_ret)
 
     def _ret_reset_clicked():
         if _adaptive_ret["active"]:
@@ -202,6 +204,7 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
             chart.reset_zoom()
         from ...zoom_link import propagate_reset
         propagate_reset(chart)
+    _ret_reset_clicked = with_camera(_ret_reset_clicked)
 
     btn_reset.clicked.connect(_ret_reset_clicked)
 
@@ -217,6 +220,7 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
             s, e = widen_zoom_window(rows, pre_zoom[0], pre_zoom[1], date_keys=("date", "logical_date"))
             chart.set_zoom_range(s, e)
         btn_reset.setVisible(bool(chart._is_zoomed))
+    _leave_adaptive_ret = with_camera(_leave_adaptive_ret)
 
     _adaptive_ret["leave"] = _leave_adaptive_ret
 

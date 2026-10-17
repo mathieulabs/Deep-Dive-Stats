@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 """One dot per review, shown when the Activity chart is zoomed to a few hours."""
+import math
 from datetime import datetime
 
-from aqt.qt import QColor, QEasingCurve, QFont, QPainter, QPen, QPointF, QSizePolicy, Qt, QVariantAnimation, QWidget
+from aqt.qt import QColor, QEasingCurve, QFont, QPainter, QPen, QPointF, QRectF, QSizePolicy, Qt, QVariantAnimation, QWidget
 
 from ....animations.motion import animations_enabled
 
@@ -16,15 +17,16 @@ _EASE_NAMES = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}
 _MARGIN_L, _MARGIN_R, _MARGIN_T, _MARGIN_B = 45, 20, 10, 30
 
 
-# One dot per review only once the 10-minute view is zoomed down to a few hours;
+# One dot per review only once the 10-minute view is zoomed down to 3 hours or less;
 # above that the 10-minute bars stay.
-DOTS_MAX_SPAN_MS = 6 * 3600 * 1000
+DOTS_MAX_SPAN_MS = 3 * 3600 * 1000
 
 
 class ReviewDotsChart(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._events = []
+        self._events_shown = False
         self._t0 = 0
         self._t1 = 1
         self._v0 = 0
@@ -36,7 +38,12 @@ class ReviewDotsChart(QWidget):
         self._points = []
         self._intro = 1.0
         self._intro_anim = None
+        self._mode_anim = None
+        self._mode_from = None
+        self._mode_e = 1.0
         self.wheel_target = None
+        self.zoom_out_handler = None
+        self._view_target = None
         self.tooltip_window = TooltipWindow(self)
         self.setMouseTracking(True)
         self.setMinimumHeight(120)
@@ -79,28 +86,103 @@ class ReviewDotsChart(QWidget):
         self._intro = 1.0
         self.update()
 
+    def zoom_window_seconds(self):
+        """Time window shown, in seconds (for the zoom animation)."""
+        return (self._v0 / 1000.0, self._v1 / 1000.0) if self._v1 > self._v0 else None
+
+    def _get_margins(self):
+        return _MARGIN_L, _MARGIN_R
+
     def set_style(self, bar_color, kind_colors):
         self._bar_color = QColor(bar_color)
         self._kind_colors = [QColor(c) for c in kind_colors]
         self.update()
 
     def set_mode(self, mode, breakdown):
-        self._mode = mode
+        """Reviews <-> Time. The dots sit by rank in Reviews and by duration in Time, so
+        on a switch they glide to their new height instead of jumping."""
+        mode = "time" if mode == "time" else "reviews"
         self._breakdown = bool(breakdown)
+        if mode == self._mode:
+            self.update()
+            return
+        running = self._mode_anim is not None and self._mode_anim.state() == QVariantAnimation.State.Running
+        if running and mode == self._mode_from:
+            # Switched back mid-glide: reverse from where the dots are now.
+            e = self._mode_e
+            self._mode_from = self._mode
+            self._mode = mode
+            self._run_mode_morph(1.0 - e)
+            return
+        can_glide = bool(self._events) and self._events_shown and self.isVisible() and animations_enabled("all")
+        previous = self._mode
+        self._mode = mode
+        if can_glide:
+            self._mode_from = previous
+            self._run_mode_morph(0.0)
+        else:
+            self._stop_mode_morph()
+            self.update()
+
+    def _run_mode_morph(self, start):
+        anim = self._mode_anim
+        if anim is None:
+            anim = QVariantAnimation(self)
+            anim.setEndValue(1.0)
+            anim.setDuration(320)
+            anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+            anim.valueChanged.connect(self._on_mode_morph)
+            anim.finished.connect(self._on_mode_morph_done)
+            self._mode_anim = anim
+        anim.stop()
+        anim.setStartValue(float(start))
+        self._mode_e = float(start)
+        anim.start()
+        self.update()
+
+    def _stop_mode_morph(self):
+        if self._mode_anim is not None:
+            self._mode_anim.stop()
+        self._mode_from = None
+        self._mode_e = 1.0
+
+    def _on_mode_morph(self, value):
+        self._mode_e = float(value)
+        self.update()
+
+    def _on_mode_morph_done(self):
+        self._mode_from = None
+        self._mode_e = 1.0
         self.update()
 
     def set_events(self, events, t0_ms, t1_ms):
         self._events = list(events or [])
         t0, t1 = int(t0_ms), max(int(t1_ms), int(t0_ms) + 1)
         if (t0, t1) != (self._t0, self._t1):
+            widened = (
+                bool(self._events_shown) and self.isVisible() and animations_enabled("all")
+                and t0 <= self._v0 and t1 >= self._v1 and t1 - t0 > self._v1 - self._v0
+            )
+            if widened:
+                # Zooming out: keep what is on screen and glide to the wider window.
+                self._t0, self._t1 = t0, t1
+                self._animate_view(t0, t1 - t0)
+                self._events_shown = bool(events)
+                self.update()
+                return
+            self._stop_view_anim()
             self._v0, self._v1 = t0, t1
         self._t0, self._t1 = t0, t1
+        self._events_shown = True
         self.update()
 
-    def _y_values(self):
-        if self._mode == "time":
+    def _y_values_for(self, mode):
+        if mode == "time":
             return [e[1] / 1000.0 for e in self._events]
         return list(range(1, len(self._events) + 1))
+
+    def _y_values(self):
+        return self._y_values_for(self._mode)
 
     def _dot_color(self, event):
         c = self._kind_colors[event[3]] if self._breakdown else self._bar_color
@@ -126,19 +208,33 @@ class ReviewDotsChart(QWidget):
         ys = self._y_values()
         ymax = max(ys) if ys else 1
         ymax = max(ymax, 1)
+        morph = self._mode_from if (self._mode_from is not None and self._mode_from != self._mode) else None
+        me = max(0.0, min(1.0, self._mode_e)) if morph else 1.0
+        if morph:
+            ys_from = self._y_values_for(morph)
+            ymax_from = max(max(ys_from) if ys_from else 1, 1)
         grid_pen = QPen(grid)
         grid_pen.setWidthF(0.5)
+        # Axes fade in at the start of the intro (the bars they replace fade out meanwhile).
+        axes_opacity = min(1.0, self._intro * 2.5)
+        p.setOpacity(axes_opacity)
         for i in range(5):
             frac = i / 4
             y = py + ph - frac * ph
             p.setPen(grid_pen)
             p.drawLine(int(px), int(y), int(px + pw), int(y))
             p.setPen(text)
-            val = ymax * frac
-            label = f"{val:.0f}" if (self._mode == "reviews" or ymax >= 10) else f"{val:.1f}"
-            if self._mode == "time":
-                label += "s"
-            p.drawText(0, int(y) - 8, px - 6, 16, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, label)
+            labels = [(self._mode, ymax, me)]
+            if morph:
+                labels.append((morph, ymax_from, 1.0 - me))
+            for lab_mode, lab_max, lab_alpha in labels:
+                val = lab_max * frac
+                label = f"{val:.0f}" if (lab_mode == "reviews" or lab_max >= 10) else f"{val:.1f}"
+                if lab_mode == "time":
+                    label += "s"
+                p.setOpacity(axes_opacity * lab_alpha)
+                p.drawText(0, int(y) - 8, px - 6, 16, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, label)
+            p.setOpacity(axes_opacity)
 
         v0, v1 = self._v0, self._v1
         span = v1 - v0
@@ -155,16 +251,21 @@ class ReviewDotsChart(QWidget):
             p.drawText(int(x) - 30, int(py + ph + 4), 60, 18, Qt.AlignmentFlag.AlignCenter, label)
             t += step_ms
 
+        p.setOpacity(1.0)
         self._points = []
         n = len(self._events)
         radius = 3.5 if n <= 300 else 2.5 if n <= 700 else 2.0
         p.setPen(Qt.PenStyle.NoPen)
         intro = self._intro
-        for ev, yv in zip(self._events, ys):
+        for k, (ev, yv) in enumerate(zip(self._events, ys)):
             x = px + (ev[0] - v0) / span * pw
             if x < px - 1 or x > px + pw + 1:
                 continue
-            y = py + ph - (yv / ymax) * ph
+            yn = yv / ymax
+            if morph and k < len(ys_from):
+                yn_from = ys_from[k] / ymax_from
+                yn = yn_from + (yn - yn_from) * me
+            y = py + ph - yn * ph
             color = self._dot_color(ev)
             r = radius
             if intro < 1.0:
@@ -179,6 +280,21 @@ class ReviewDotsChart(QWidget):
         if not self._events:
             p.setPen(text)
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No reviews in this window")
+        press = getattr(self, "_press_pos", None)
+        drag_x = getattr(self, "_drag_x", None)
+        if press is not None and drag_x is not None:
+            x1 = max(px, min(press.x(), drag_x))
+            x2 = min(px + pw, max(press.x(), drag_x))
+            if x2 > x1:
+                acc = QColor(colors.get("accent", QColor(59, 130, 246)))
+                fill = QColor(acc)
+                fill.setAlpha(20)
+                rect = QRectF(x1, py, x2 - x1, ph)
+                p.fillRect(rect, fill)
+                acc.setAlpha(200)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(acc, 1.5))
+                p.drawRect(rect)
         p.end()
 
     def _nearest(self, pos):
@@ -191,14 +307,33 @@ class ReviewDotsChart(QWidget):
 
     def mousePressEvent(self, event):
         self._press_pos = event.position()
+        self._drag_x = None
         super().mousePressEvent(event)
+
+    def _plot_span_x(self):
+        return _MARGIN_L, max(1, self.width() - _MARGIN_L - _MARGIN_R)
+
+    def _x_to_time(self, x):
+        px, pw = self._plot_span_x()
+        frac = min(1.0, max(0.0, (x - px) / pw))
+        return self._v0 + frac * (self._v1 - self._v0)
 
     def mouseReleaseEvent(self, event):
         p = getattr(self, "_press_pos", None)
         self._press_pos = None
+        drag_x = getattr(self, "_drag_x", None)
+        self._drag_x = None
         if p is not None and event.button() == Qt.MouseButton.LeftButton:
             pos = event.position()
-            if abs(pos.x() - p.x()) + abs(pos.y() - p.y()) <= 5:
+            if drag_x is not None and abs(pos.x() - p.x()) > 5:
+                # Zone selection: zoom the view on it (at least one minute).
+                a, b = sorted((self._x_to_time(p.x()), self._x_to_time(pos.x())))
+                if b - a < 60000:
+                    mid = (a + b) / 2.0
+                    a, b = mid - 30000, mid + 30000
+                self._animate_view(a, b - a)
+                self.update()
+            elif abs(pos.x() - p.x()) + abs(pos.y() - p.y()) <= 5:
                 ev = self._nearest(pos)
                 if ev is not None and len(ev) > 4:
                     try:
@@ -210,6 +345,12 @@ class ReviewDotsChart(QWidget):
 
     def mouseMoveEvent(self, event):
         pos = event.position()
+        press = getattr(self, "_press_pos", None)
+        if press is not None and (event.buttons() & Qt.MouseButton.LeftButton) and abs(pos.x() - press.x()) > 5:
+            self._drag_x = pos.x()
+            self.tooltip_window.hide()
+            self.update()
+            return
         best = self._nearest(pos)
         self.setCursor(Qt.CursorShape.PointingHandCursor if best is not None else Qt.CursorShape.ArrowCursor)
         if best is None:
@@ -238,7 +379,15 @@ class ReviewDotsChart(QWidget):
         pw = max(1, self.width() - _MARGIN_L - _MARGIN_R)
         if mods & Qt.KeyboardModifier.ControlModifier and delta:
             zoom_in = delta > 0
-            if not zoom_in and span >= full:
+            target_span = self._view_target[1] if (self._view_target and self._view_anim_running()) else span
+            if not zoom_in and max(span, target_span) >= full * 0.999:
+                frac = min(1.0, max(0.0, (event.position().x() - _MARGIN_L) / pw))
+                handler = self.zoom_out_handler
+                try:
+                    if handler is not None and handler(frac):
+                        return
+                except Exception:
+                    log_swallowed()
                 self._forward_wheel(event)
                 return
             frac = min(1.0, max(0.0, (event.position().x() - _MARGIN_L) / pw))
@@ -253,9 +402,60 @@ class ReviewDotsChart(QWidget):
         self._forward_wheel(event)
 
     def _set_view(self, v0, span):
+        self._stop_view_anim()
+        self._apply_view(v0, span)
+
+    def _apply_view(self, v0, span):
+        span = min(max(span, 1), self._t1 - self._t0)
         v0 = min(max(v0, self._t0), self._t1 - span)
         self._v0, self._v1 = int(v0), int(v0 + span)
         self.update()
+
+    def _view_anim_running(self):
+        anim = getattr(self, "_view_anim", None)
+        return anim is not None and anim.state() == QVariantAnimation.State.Running
+
+    def _stop_view_anim(self):
+        anim = getattr(self, "_view_anim", None)
+        if anim is not None:
+            anim.stop()
+
+    def _animate_view(self, v0, span):
+        """Move the view to (v0, v0 + span) with a short zoom animation."""
+        self._stop_view_anim()
+        span = min(max(span, 1), self._t1 - self._t0)
+        v0 = min(max(v0, self._t0), self._t1 - span)
+        if not animations_enabled("all") or not self.isVisible():
+            self._apply_view(v0, span)
+            return
+        a0, aw = float(self._v0), float(max(1, self._v1 - self._v0))
+        b0, bw = float(v0), float(span)
+        self._view_target = (b0, bw)
+        anim = getattr(self, "_view_anim", None)
+        if anim is None:
+            anim = QVariantAnimation(self)
+            anim.setStartValue(0.0)
+            anim.setEndValue(1.0)
+            anim.setDuration(320)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self._view_anim = anim
+        try:
+            anim.valueChanged.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+
+        def step(e, a0=a0, aw=aw, b0=b0, bw=bw):
+            e = float(e)
+            w = math.exp(math.log(aw) + (math.log(bw) - math.log(aw)) * e)
+            if abs(bw - aw) < 1e-6 * max(aw, bw):
+                start = a0 + (b0 - a0) * e
+            else:
+                p = (a0 * bw - b0 * aw) / (bw - aw)
+                start = p - (p - a0) * w / aw
+            self._apply_view(start, w)
+
+        anim.valueChanged.connect(step)
+        anim.start()
 
     def _forward_wheel(self, event):
         target = self.wheel_target

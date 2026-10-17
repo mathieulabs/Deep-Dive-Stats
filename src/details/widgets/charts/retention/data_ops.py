@@ -28,6 +28,57 @@ def _range_for_display_data(display_data, visible_series):
     return lo, hi
 
 
+CURVE_DIV = 4
+
+
+def _curve_values(filled, mask, div=CURVE_DIV):
+    """The values of the rounded line, `div` steps per segment.
+
+    Same monotone curve as the one drawn at rest: it goes through the real points
+    (mask) only, so the line keeps its curvature while it morphs.
+    """
+    n = len(filled)
+    out = []
+    for i in range(n - 1):
+        out.extend([filled[i]] * div)
+    out.append(filled[-1])
+    for i in range(n - 1):
+        for s in range(1, div):
+            t = s / div
+            out[i * div + s] = filled[i] + (filled[i + 1] - filled[i]) * t
+    i = 0
+    while i < n:
+        if mask[i] <= 0.5:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and mask[j + 1] > 0.5:
+            j += 1
+        if j > i:
+            vals = filled[i:j + 1]
+            m_ = len(vals)
+            d_ = [vals[k + 1] - vals[k] for k in range(m_ - 1)]
+            m = [0.0] * m_
+            m[0], m[-1] = d_[0], d_[-1]
+            for k in range(1, m_ - 1):
+                if d_[k - 1] * d_[k] <= 0:
+                    m[k] = 0.0
+                else:
+                    m[k] = 2.0 / (1.0 / d_[k - 1] + 1.0 / d_[k])
+            for k in range(m_ - 1):
+                y0, y1, m0, m1 = vals[k], vals[k + 1], m[k], m[k + 1]
+                for s in range(1, div):
+                    t = s / div
+                    t2, t3 = t * t, t * t * t
+                    out[(i + k) * div + s] = (
+                        (2 * t3 - 3 * t2 + 1) * y0 + (t3 - 2 * t2 + t) * m0
+                        + (-2 * t3 + 3 * t2) * y1 + (t3 - t2) * m1
+                    )
+        i = j + 1
+    return out
+
+
+
 def clear_data_transition_state_impl(widget):
     widget._data_transition_active = False
     widget._data_transition_old_series = {}
@@ -296,6 +347,8 @@ def prepare_data_transition_impl(widget, new_ret_data):
             "new_filled": new_filled,
             "old_mask": old_mask,
             "new_mask": new_mask,
+            "old_curve": _curve_values(old_filled, old_mask),
+            "new_curve": _curve_values(new_filled, new_mask),
             "old_avg": widget._avg_from_display_series(old_display_data.get(key, [])),
             "new_avg": widget._avg_from_display_series(new_display_data.get(key, [])),
             "segment_meta": segment_meta,
@@ -641,6 +694,22 @@ def set_fit_to_data_impl(widget, enabled):
     widget._chrome_cache_key = None
     widget._chrome_cache_pixmap = None
     widget.update()
+
+
+def current_value_range(widget):
+    """(min, max) of the value axis as it is drawn right now.
+
+    Fixed 0..100 normally; with "Within data limit" it is the data range, glided
+    between the old and new range while a data transition runs. Painting and the
+    hover code both read it so they place the lines identically."""
+    if not getattr(widget, "fit_to_data", False):
+        return 0.0, 100.0
+    if getattr(widget, "_data_transition_active", False):
+        p = max(0.0, min(1.0, float(getattr(widget, "_progress", 1.0))))
+        old_min, old_max = getattr(widget, "_data_transition_old_range", (0.0, 100.0))
+        new_min, new_max = getattr(widget, "_data_transition_new_range", (0.0, 100.0))
+        return old_min + (new_min - old_min) * p, old_max + (new_max - old_max) * p
+    return widget.get_data_range()
 
 
 def get_data_range_impl(widget):

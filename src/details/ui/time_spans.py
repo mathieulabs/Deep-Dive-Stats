@@ -115,6 +115,8 @@ class _TabFilter(QObject):
                 elif et == QEvent.Type.MouseButtonRelease and self._dragging:
                     self._dragging = False
                     QTimer.singleShot(0, lambda: _apply_tab_order(d))
+        except RuntimeError:
+            pass  # the window is being destroyed: its tab bar still sends a few events
         except Exception:
             log_swallowed()
         return False

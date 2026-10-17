@@ -4,7 +4,7 @@ from aqt.qt import QStackedWidget
 from . import pinned_title
 from .....animations.chart_policy import local_chart_animation_batch
 from ....chart_utils.zoom_mixin import preserve_zoom
-from ....chart_utils.stack_fade import set_stack_index_animated
+from ....chart_utils.zoom_camera import switch_stack
 from ..utils import _make_checkbox
 from ..wrapper import _wrap
 from . import ADAPTIVE_CHART_BINNING, Config, HistoryProvider, Period, get_color
@@ -38,6 +38,7 @@ from ....common import (
     refresh_parent_chart_header_stats,
 )
 from .....logic.logger import log_swallowed
+from ....chart_utils.zoom_camera import with_camera
 
 
 
@@ -219,8 +220,8 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
     _view = {"breakdown": bool(widget_def.get("show_breakdown", True))}
 
     def _dots_show_bars():
-        if stack.currentIndex() == 2:
-            set_stack_index_animated(stack, 1 if (breakdown_chart is not None and _view["breakdown"]) else 0, "pinned")
+        if stack.currentIndex() == 2 or getattr(stack, "_pending_switch", None) is not None:
+            switch_stack(stack, 1 if (breakdown_chart is not None and _view["breakdown"]) else 0, "pinned")
 
     def _dots_apply():
         try:
@@ -262,7 +263,7 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
             dots_chart.set_mode("time" if mode == "time" else "reviews", _view["breakdown"])
             dots_chart.set_events(events, t0, t1)
             dots_chart.wheel_target = chart
-            set_stack_index_animated(stack, 2, "pinned")
+            switch_stack(stack, 2, "pinned")
         except Exception:
             log_swallowed()
 
@@ -307,6 +308,18 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
         _adaptive["pre_breakdown"] = None
         _adaptive["align_right"] = True
         _adaptive["rows"] = None
+        pre_source = _adaptive.pop("pre_source", None)
+        if pre_source:
+            # Daily rows again, in the current Reviews / Time mode (it may have changed in
+            # the 10-minute view).
+            mode = getattr(normal_chart, "value_mode", metric_mode)
+            converted = convert_breakdown_metric_rows(pre_source, mode, count_key_style="plain")
+            pre_normal = build_activity_series_from_breakdown(converted, count_key_style="plain") if converted else []
+            if pre_breakdown is not None:
+                pre_breakdown = converted
+            for _c in (normal_chart, breakdown_chart):
+                if _c is not None:
+                    _c._metric_source_breakdown = pre_source
         restore_candidates = [c for c in (normal_chart, breakdown_chart) if c]
         with local_chart_animation_batch(normal_chart or breakdown_chart, candidates=restore_candidates):
             if pre_normal is not None:
@@ -375,6 +388,7 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
             hi_res = filter_activity_types(hi_res, getattr(normal_chart, "_hidden_review_types", ()))
             hi_res_breakdown = build_breakdown_rows(hi_res, count_key_style="plain")
             _adaptive["pre_normal"] = normal_chart._full_data
+            _adaptive["pre_source"] = getattr(normal_chart, "_metric_source_breakdown", None)
             _adaptive["pre_zoom"] = (int(start), int(end))
             _adaptive["align_right"] = compute_transition_align_right(
                 start_idx=start,
@@ -437,6 +451,7 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
             _schedule_dots()
         except Exception:
             log_swallowed()
+    _on_adaptive_zoom = with_camera(_on_adaptive_zoom)
 
     def reset_clicked():
         if _adaptive["active"]:
@@ -464,6 +479,8 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
             refresh_parent_chart_header_stats(charts_to_reset[0])
         from ...zoom_link import propagate_reset
         propagate_reset(normal_chart)
+        _dots_apply()
+    reset_clicked = with_camera(reset_clicked)
     btn_reset.clicked.connect(reset_clicked)
 
     def _leave_adaptive():
@@ -479,6 +496,7 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
             target = breakdown_chart if (breakdown_chart and stack.currentIndex() == 1) else normal_chart
             target.set_zoom_range(s, e)
         btn_reset.setVisible(bool(normal_chart._is_zoomed))
+    _leave_adaptive = with_camera(_leave_adaptive)
 
     _adaptive["leave"] = _leave_adaptive
 
@@ -537,8 +555,13 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
             freeze_chart_transition_state(normal_chart)
             freeze_chart_transition_state(breakdown_chart)
             _view["breakdown"] = bool(checked)
-            if stack.currentIndex() != 2:
-                stack.setCurrentIndex(1 if checked else 0)
+            if stack.currentIndex() == 2 and dots_chart is not None:
+                # One dot per review is on screen: only their colours change, so recolour
+                # them in place and stay on the dots.
+                mode = getattr(normal_chart, "value_mode", metric_mode)
+                dots_chart.set_mode("time" if mode == "time" else "reviews", bool(checked))
+                return
+            stack.setCurrentIndex(1 if checked else 0)
             _schedule_dots()
 
         cb.toggled.connect(_on_breakdown_toggled)
@@ -573,6 +596,9 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
                     breakdown_chart.set_value_mode(next_mode)
                     breakdown_chart.update_data(converted_breakdown)
         WidgetRegistry.update_setting(widget_def["id"], "show_time_axis", bool(checked))
+        if dots_chart is not None and dots_chart.isVisible():
+            # One dot per review is on screen: glide it to the new mode right away.
+            dots_chart.set_mode(next_mode, _view["breakdown"])
         _schedule_dots()
     cb_time.toggled.connect(_on_time_toggled)
     header_lay.addWidget(cb_time)
@@ -743,6 +769,8 @@ def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=
             adaptive["pre_breakdown"] = None
             adaptive["align_right"] = True
             adaptive["rows"] = None
+            adaptive.pop("pre_source", None)
+            adaptive.pop("pre_zoom", None)
             if stack.currentIndex() == 2:
                 stack.setCurrentIndex(1 if (widget_def.get("show_breakdown", True) and stack.widget(1) is not None) else 0)
 

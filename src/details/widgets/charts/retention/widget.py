@@ -190,6 +190,8 @@ class RetentionChart(ZoomableMixin, ChartAnimationMixin, QWidget):
     def set_review_axis(self, enabled):
         """Show the review count labels on the right of the bars."""
         self.review_axis = bool(enabled)
+        # The right margin changes, so the cached line paths have the wrong width.
+        self._path_cache = {}
         self._chrome_cache_key = None
         self._scaffold_cache_key = None
         self.update()
@@ -199,6 +201,8 @@ class RetentionChart(ZoomableMixin, ChartAnimationMixin, QWidget):
         from .bars import fade_to
 
         self.review_bars = bool(enabled)
+        # The axis only counts while bars are on, so the margin may change here too.
+        self._path_cache = {}
         self._chrome_cache_key = None
         self._scaffold_cache_key = None
         fade_to(self, self.review_bars)

@@ -24,7 +24,14 @@ from ..common.metric import (
     transition_margin_formatters,
     split_transition_labels,
 )
-from ..common.metric.chrome import draw_cached_chrome as _draw_cached_chrome, draw_cached_scaffold as _draw_cached_scaffold
+from ..common.metric.chrome import (
+    draw_blended_right_labels,
+    draw_blended_scaffold,
+    draw_cached_chrome as _draw_cached_chrome,
+    draw_cached_scaffold as _draw_cached_scaffold,
+    mode_switch_blend,
+)
+from ..common.zoom_view import dense_bar_ratio, zoom_view_bar, bar_slot, cumulative_points, get_zoom_view, zoom_view_margins
 
 
 def _decimate_points(points, plot_w, col_px=1):
@@ -137,6 +144,9 @@ def paint_event_impl(widget, event):
         old_max = max(old_values) if old_values else 1.0
         new_max = max(new_values) if new_values else 1.0
         max_val = max(1.0, old_max + ((new_max - old_max) * t))
+    zv = get_zoom_view(widget) if widget.chart_type == "bar" else None
+    if zv is not None:
+        max_val = max(1e-9, float(zv["max"]))
     presence = compute_transition_presence(widget, t)
     draw_presence = presence if widget.chart_type == "bar" else 1.0
     fm = widget.fontMetrics()
@@ -161,6 +171,15 @@ def paint_event_impl(widget, event):
             old_formatter=old_fmt,
             new_formatter=new_fmt,
         )
+    elif zv is not None:
+        _cum_src = widget._get_cumulative() if getattr(widget, "cumulative_visible", False) else []
+        margin_left, margin_right = zoom_view_margins(
+            zv,
+            fm,
+            _cum_src,
+            getattr(widget, "cumulative_visible", False),
+            value_formatter=widget._axis_value_formatter if widget._is_time_mode() else None,
+        )
     else:
         margin_left, margin_right = calculate_margin_pair(
             fm,
@@ -177,6 +196,7 @@ def paint_event_impl(widget, event):
     
     cumulative_values = []
     max_cumulative = 1
+    zv_cum_points = None
     if getattr(widget, "cumulative_visible", False):
         # Keep cumulative line stable during initial reveal; only morph/fade on
         # real data transitions (timespan / empty graph transitions).
@@ -196,12 +216,20 @@ def paint_event_impl(widget, event):
                 cumulative_values.append(run_sum)
         else:
             cumulative_values = widget._get_cumulative()
+        zv_cum_points = None
+        if zv is not None and cumulative_values:
+            zv_cum_points, _zv_top = cumulative_points(zv, cumulative_values, margin_left, plot_w)
+            cumulative_values = [v for _x, v in zv_cum_points]
         if cumulative_presence != 1.0:
             cumulative_values = [v * cumulative_presence for v in cumulative_values]
         max_cumulative = cumulative_values[-1] if cumulative_values else 1
+        if zv_cum_points is not None:
+            max_cumulative = _zv_top
         if max_cumulative == 0: max_cumulative = 1
     
     left_axis_max = max_val
+    _blend = None
+    _left_ends = None
     if widget._global_transition_mode is not None or widget._data_transition_active:
         old_vals_for_axis = [
             d[1] if isinstance(d, (list, tuple)) else d
@@ -212,18 +240,40 @@ def paint_event_impl(widget, event):
             for d in (widget._transition_new_data or [])
         ]
         left_axis_max = interpolate_axis_max(old_vals_for_axis, new_vals_for_axis, t)
+        if widget._global_transition_mode is None:
+            _blend = mode_switch_blend(widget, t)
+            if _blend is not None:
+                _left_ends = (
+                    interpolate_axis_max(old_vals_for_axis, new_vals_for_axis, 0.0),
+                    interpolate_axis_max(old_vals_for_axis, new_vals_for_axis, 1.0),
+                )
 
-    _draw_cached_scaffold(
-        widget,
-        painter,
-        width=w,
-        height=h,
-        margin_left=margin_left,
-        margin_top=margin_top,
-        margin_right=margin_right,
-        margin_bottom=margin_bottom,
-        left_axis_max=left_axis_max,
-    )
+    if _blend is not None:
+        draw_blended_scaffold(
+            widget,
+            painter,
+            _blend,
+            width=w,
+            height=h,
+            margin_left=margin_left,
+            margin_top=margin_top,
+            margin_right=margin_right,
+            margin_bottom=margin_bottom,
+            old_max=_left_ends[0],
+            new_max=_left_ends[1],
+        )
+    else:
+        _draw_cached_scaffold(
+            widget,
+            painter,
+            width=w,
+            height=h,
+            margin_left=margin_left,
+            margin_top=margin_top,
+            margin_right=margin_right,
+            margin_bottom=margin_bottom,
+            left_axis_max=left_axis_max,
+        )
 
     n = len(values)
     if n > 0:
@@ -289,7 +339,13 @@ def paint_event_impl(widget, event):
             
         elif widget.chart_type == "bar":
             step_x = plot_w / n
-            _wr = 0.9
+            bar_x0 = margin_left
+            if zv is not None:
+                widget._zoom_view_plot = (margin_left, margin_top, plot_w, plot_h)
+                bar_x0, step_x = bar_slot(zv, margin_left, plot_w)
+                painter.save()
+                painter.setClipRect(QRectF(margin_left, 0.0, plot_w, margin_top + plot_h))
+            _wr = dense_bar_ratio(step_x, 0.9)
             bar_w = step_x * _wr
             bar_slots = None
             if widget._data_transition_active and widget._transition_align_right:
@@ -311,34 +367,64 @@ def paint_event_impl(widget, event):
             _l_max = min(255, int(_base.lightness() * _light_mul))
             _l_min = max(0, int(_base.lightness() * _dark_mul))
             
+            _hue, _sat = _base.hslHue(), _base.hslSaturation()
+            _alpha = int(getattr(widget, 'chart_opacity_pct', 100) * 2.55)
+            _shade_max = float((zv.get("color_max") if zv is not None else None) or max_val)
+            _colors = {}  # lightness -> colour (hundreds of bars share a few shades)
+            painter.setPen(Qt.PenStyle.NoPen)
             for i, val in enumerate(values):
                 if bar_slots and i < len(bar_slots):
                     center_x, slot_w = bar_slots[i]
                     x = center_x - (slot_w * 0.5)
                     draw_bar_w = slot_w
                 else:
-                    x = margin_left + (i * step_x) + (step_x - bar_w) / 2
+                    x = bar_x0 + (i * step_x) + (step_x - bar_w) / 2
                     draw_bar_w = bar_w
+                    if zv is not None:
+                        x, draw_bar_w = zoom_view_bar(zv, i, x, draw_bar_w, bar_x0, step_x)
+                if zv is not None and (x > margin_left + plot_w or x + draw_bar_w < margin_left):
+                    continue
                 bar_h = (val / max_val) * plot_h * draw_presence
                 y = margin_top + plot_h - bar_h
                 
-                ratio = min(1.0, val / max_val) if max_val > 0 else 0
-                c = QColor(_base)
+                ratio = min(1.0, val / _shade_max) if _shade_max > 0 else 0
                 # ratio=1 => dark, ratio=0 => light
                 current_l = int(_l_max - ((_l_max - _l_min) * ratio))
-                c.setHsl(c.hslHue(), c.hslSaturation(), current_l)
-                c.setAlpha(int(getattr(widget, 'chart_opacity_pct', 100) * 2.55))
+                c = _colors.get(current_l)
+                if c is None:
+                    c = QColor(_base)
+                    c.setHsl(_hue, _sat, current_l)
+                    c.setAlpha(_alpha)
+                    _colors[current_l] = c
 
                 if i == widget.hover_index:
                     c = c.lighter(130) if _is_dark else c.darker(115)
                     c.setAlpha(255)
-                
-                painter.setPen(Qt.PenStyle.NoPen)
+
+                if draw_bar_w < 2.0:
+                    # Hair-thin bar: a plain rectangle (what draw_bar_rect would draw), faster.
+                    painter.fillRect(QRectF(x, y, draw_bar_w, bar_h), c)
+                    continue
                 painter.setBrush(c)
-                draw_bar_rect(painter, QRectF(x, y, draw_bar_w, bar_h), widget=widget)
+                draw_bar_rect(
+                    painter, QRectF(x, y, draw_bar_w, bar_h),
+                    radius=(zv.get("radius", 1.8) if zv is not None else 1.8), widget=widget,
+                )
         
         if getattr(widget, "cumulative_visible", False) and cumulative_values:
-            if widget._data_transition_active:
+            if zv_cum_points is not None:
+                points = [QPointF(zv_cum_points[i][0], margin_top + plot_h - (val / max_cumulative * plot_h))
+                          for i, val in enumerate(cumulative_values)]
+                if points:
+                    cum_path = QPainterPath()
+                    cum_path.moveTo(points[0])
+                    add_smooth_line(cum_path, points)
+                    fill_path = QPainterPath(cum_path)
+                    fill_path.lineTo(points[-1].x(), margin_top + plot_h)
+                    fill_path.lineTo(points[0].x(), margin_top + plot_h)
+                    fill_path.closeSubpath()
+                    draw_cumulative_line_and_area(painter, cum_path, fill_path, widget=widget)
+            elif widget._data_transition_active:
                 cum_path = QPainterPath()
                 points = []
                 n_cum = len(cumulative_values)
@@ -369,7 +455,7 @@ def paint_event_impl(widget, event):
                         fill_path.lineTo(points[0].x(), margin_top + plot_h)
                         fill_path.closeSubpath()
                         draw_cumulative_line_and_area(painter, cum_path, fill_path, widget=widget)
-            elif widget._cum_path_cache is None:
+            elif widget._cum_path_cache is None and zv_cum_points is None:
                 cum_path = QPainterPath()
                 points = []
                 n_cum = len(cumulative_values)
@@ -391,9 +477,11 @@ def paint_event_impl(widget, event):
                         fill_path.closeSubpath()
                         widget._cum_path_cache = (cum_path, fill_path)
             
-            if (not widget._data_transition_active) and widget._cum_path_cache:
+            if (not widget._data_transition_active) and zv_cum_points is None and widget._cum_path_cache:
                 p_line, p_fill = widget._cum_path_cache
                 draw_cumulative_line_and_area(painter, p_line, p_fill, widget=widget)
+        if zv is not None and widget.chart_type == "bar":
+            painter.restore()
         
         if needs_clip:
             painter.restore()
@@ -444,7 +532,7 @@ def paint_event_impl(widget, event):
             else:
                 alpha_factor = 1.0
         else:
-            avg_val = widget._get_averages()
+            avg_val = widget._get_averages() if zv is None else float(zv.get("avg") or 0.0)
             if avg_val <= 0:
                 y_avg = None
             else:
@@ -459,6 +547,7 @@ def paint_event_impl(widget, event):
 
     axis_labels = [l.split(" - ")[0] for l in labels]
 
+    _right_ends = None
     if getattr(widget, "cumulative_visible", False) and cumulative_values:
         right_axis_max = max_cumulative
         if widget._global_transition_mode is not None or widget._data_transition_active:
@@ -475,11 +564,37 @@ def paint_event_impl(widget, event):
                 [sum(new_vals_for_axis)] if new_vals_for_axis else [],
                 t,
             )
+            _right_ends = (
+                interpolate_axis_max([sum(old_vals_for_axis)] if old_vals_for_axis else [], [sum(new_vals_for_axis)] if new_vals_for_axis else [], 0.0),
+                interpolate_axis_max([sum(old_vals_for_axis)] if old_vals_for_axis else [], [sum(new_vals_for_axis)] if new_vals_for_axis else [], 1.0),
+            )
 
     use_cached_chrome = (
         (widget._global_transition_mode is None)
         and (not widget._data_transition_active)
+        and zv is None
     )
+    if zv is not None:
+        # Zoom animation: no x labels or stats (the animation fades them), no hover.
+        if avg_pen_target is not None:
+            _avg_base, _avg_hover, _avg_alpha, avg_y_val = avg_pen_target
+            stroke_average_line(
+                painter, margin_left, w - margin_right, int(avg_y_val), _avg_base,
+                widget=widget, hovered=False, alpha_factor=_avg_alpha,
+            )
+        if getattr(widget, "cumulative_visible", False) and cumulative_values:
+            draw_right_axis_labels(
+                painter,
+                w,
+                h,
+                margin_right,
+                margin_top,
+                margin_bottom,
+                right_axis_max,
+                value_formatter=widget._axis_value_formatter if widget._is_time_mode() else None,
+                widget=widget,
+            )
+        return
     if use_cached_chrome:
         _draw_cached_chrome(
             widget,
@@ -558,17 +673,31 @@ def paint_event_impl(widget, event):
             painter.drawEllipse(QPointF(x, y), 4, 4)
 
     if getattr(widget, "cumulative_visible", False) and cumulative_values and (not use_cached_chrome):
-        draw_right_axis_labels(
-            painter,
-            w,
-            h,
-            margin_right,
-            margin_top,
-            margin_bottom,
-            right_axis_max,
-            value_formatter=widget._axis_value_formatter if widget._is_time_mode() else None,
-            widget=widget,
-        )
+        if _blend is not None and _right_ends is not None:
+            draw_blended_right_labels(
+                widget,
+                painter,
+                _blend,
+                width=w,
+                height=h,
+                margin_right=margin_right,
+                margin_top=margin_top,
+                margin_bottom=margin_bottom,
+                old_max=_right_ends[0],
+                new_max=_right_ends[1],
+            )
+        else:
+            draw_right_axis_labels(
+                painter,
+                w,
+                h,
+                margin_right,
+                margin_top,
+                margin_bottom,
+                right_axis_max,
+                value_formatter=widget._axis_value_formatter if widget._is_time_mode() else None,
+                widget=widget,
+            )
     
     widget.draw_selection_overlay(painter, margin_left, margin_top, plot_w, plot_h)
 

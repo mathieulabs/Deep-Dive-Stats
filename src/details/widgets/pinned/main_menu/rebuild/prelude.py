@@ -46,6 +46,8 @@ def strip_main_layout_spacers(manager):
                     continue
             if not removed_any:
                 break
+    except RuntimeError:
+        pass  # the layout was deleted with its window (Anki closing)
     except Exception:
         log_swallowed()
 

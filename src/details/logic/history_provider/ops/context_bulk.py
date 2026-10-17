@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from .....utils import excluded_days_clause
-from ..shared import Config, REVLOG_RESCHED, Period, get_daystart_epoch_sql, get_rollover_offset_ms, mw
+from ..shared import Config, REVLOG_RESCHED, Period, get_daystart_epoch_sql, mw
 from ...logger import log_swallowed
 
 
@@ -35,8 +35,6 @@ def fetch_all_decks_context(provider_cls, addon_config, range_type=Period.YEAR, 
     delta_filter = f"{delta_filter} {excluded_days_clause()}"
     delta_filter_added = f"AND id > {min_card_id}" if min_card_id is not None else ""
     
-    offset_ms = get_rollover_offset_ms()
-    ms_per_bin = 86400000
     
     # Warm up the global deleted count in this background thread
     if not hasattr(provider_cls, "_session_deleted_count"):
@@ -423,41 +421,22 @@ def fetch_all_decks_context(provider_cls, addon_config, range_type=Period.YEAR, 
     
     get_entry(-1)["counts"]["deleted"] = deleted_cards_count
     
-    _, today_end, _, _ = get_time_range_ms(Period.TODAY, week_start=week_start)
-    today_bin = int((today_end - 1 - offset_ms) / ms_per_bin)
-    yesterday_bin = today_bin - 1
-    
+    from datetime import datetime as _dt
+
+    from ...data.core.streaks import current_streak_from_dates
+
     for did, data in deck_data.items():
         data["counts"]["total"] = sum(data["counts"][k] for k in ["new", "learn", "relearn", "young", "mature", "suspended", "buried", "deleted"])
-        
-        reviews_bins = data["reviews"] # {bin_idx: data}
-        if not reviews_bins:
-            data["stats"]["streak"] = 0
-            continue
-            
-        current_streak = 0
-        sorted_indices = sorted(reviews_bins.keys(), reverse=True)
-        newest_active_bin = None
-        for b_idx in sorted_indices:
-            if reviews_bins[b_idx]["reviews"] > 0:
-                newest_active_bin = b_idx
-                break
-        
-        if newest_active_bin is not None and (newest_active_bin == today_bin or newest_active_bin == yesterday_bin):
-            current_streak = 1
-            prev_bin = newest_active_bin
-            start_scan_idx = sorted_indices.index(newest_active_bin) + 1
-            for b_idx in sorted_indices[start_scan_idx:]:
-                if reviews_bins[b_idx]["reviews"] <= 0: continue
-                if (prev_bin - b_idx) == 1:
-                    current_streak += 1
-                    prev_bin = b_idx
-                elif (prev_bin - b_idx) == 0:
-                    continue
-                else:
-                    break
-        
-        data["stats"]["streak"] = current_streak
+
+        # Day keys are the instant of local midnight of each logical day: counted as dates,
+        # so the streak follows the same "today or yesterday" rule as everywhere else.
+        reviews_bins = data["reviews"]  # {bin_idx: data}
+        dates = [
+            _dt.fromtimestamp(b_idx / 1000).strftime("%Y-%m-%d")
+            for b_idx, r in reviews_bins.items()
+            if r.get("reviews", 0) > 0
+        ]
+        data["stats"]["streak"] = current_streak_from_dates(dates)
     
     return deck_data
     

@@ -79,6 +79,8 @@ def get_zoom_factor(manager):
         web = mw.deckBrowser.web if manager._is_deck_browser else mw.overview.web
         if web:
             return web.zoomFactor()
+    except RuntimeError:
+        pass  # the web view was deleted (Anki closing)
     except Exception:
         log_swallowed()
     return 1.0
@@ -116,9 +118,11 @@ def apply_zoom_scale_to_widgets(manager, zoom):
             stats_boxes.append(manager._stats_container)
 
         for stats_box in stats_boxes:
-            stats_box.set_scale(scaled_face)
             try:
+                stats_box.set_scale(scaled_face)
                 stats_box.update_layout(stats_box.width())
+            except RuntimeError:
+                continue  # this box was deleted with its page
             except Exception:
                 log_swallowed()
     except Exception:

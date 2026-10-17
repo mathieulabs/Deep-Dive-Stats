@@ -66,6 +66,14 @@ def refresh_theme(widget, conf=None, *, load_config_fn=None):
 
         color_ctx = "pinned" if widget.is_pinned else widget
         widget.base_color = get_color(active_conf, widget.stat_type, color_ctx)
+    elif widget.is_pinned and getattr(widget, "config_key", None):
+        # Pinned stat cards get their colour from the stat they show, not a stat type,
+        # so a theme preview has to look it up again here.
+        from ....ui import STAT_KEY_TO_COLOR_KEY, get_color
+
+        color_key = STAT_KEY_TO_COLOR_KEY.get(widget.config_key)
+        if color_key:
+            widget.base_color = get_color(active_conf, color_key, "pinned")
 
     widget._apply_inline_layout_mode()
     profile = resolve_visual_profile(active_conf, widget.is_pinned)

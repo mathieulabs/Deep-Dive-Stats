@@ -108,8 +108,15 @@ def refresh_dashboard_data(self):
 
     # Reset adaptive zoom state: stale hi-res data from a previous deck must not leak.
     self._adaptive_zoom_active = False
+    self._adaptive_zoom_active_added_only = False
+    self._pre_adaptive_zoom = None
     if hasattr(self, '_hi_res_history'):
         del self._hi_res_history
+    for _attr in ("activity_chart", "stacked_chart", "retention_chart", "added_chart"):
+        _chart = getattr(self, _attr, None)
+        if _chart is not None and hasattr(_chart, "_pre_adaptive_data"):
+            # The daily data saved on entering the 10-minute view is replaced by this refresh.
+            del _chart._pre_adaptive_data
 
     ctx_did = self.last_row_data.get("did") if self.last_row_data else None
     is_deleted = self.last_row_data.get("is_deleted", False) if self.last_row_data else False

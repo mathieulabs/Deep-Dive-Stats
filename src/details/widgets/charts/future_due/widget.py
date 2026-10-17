@@ -16,7 +16,6 @@ from .data_ops import (
     get_points_count_impl,
     get_stats_text_impl,
     get_tooltip_text_impl,
-    interpolate_relative_cumulative_line_impl,
     invalidate_data_caches_impl,
     refresh_data_colors_impl,
     set_chart_opacity_impl,
@@ -99,9 +98,6 @@ class FutureDueChart(ChartAnimationMixin, QWidget):
 
     def _build_display_values(self, dist, max_days, show_backlog):
         return build_display_values_impl(self, dist, max_days, show_backlog)
-
-    def _interpolate_relative_cumulative_line(self, t):
-        return interpolate_relative_cumulative_line_impl(self, t)
 
     def set_chart_opacity(self, pct):
         return set_chart_opacity_impl(self, pct)

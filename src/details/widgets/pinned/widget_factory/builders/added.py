@@ -17,6 +17,7 @@ from ....common import (
     create_chart_header_for_chart,
     refresh_parent_chart_header_stats,
 )
+from ....chart_utils.zoom_camera import with_camera
 
 
 def _build_added(widget_def, deck_id, cache=None, parent=None, cfg=None):
@@ -76,6 +77,7 @@ def _build_added(widget_def, deck_id, cache=None, parent=None, cfg=None):
         chart.reset_zoom()
         from ...zoom_link import propagate_reset
         propagate_reset(chart)
+    _added_reset_clicked = with_camera(_added_reset_clicked)
 
     btn_reset.clicked.connect(_added_reset_clicked)
     

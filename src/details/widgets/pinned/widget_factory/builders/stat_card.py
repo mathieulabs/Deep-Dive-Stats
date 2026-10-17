@@ -180,7 +180,13 @@ def _build_stat_values_map(
             _prune_stat_value_cache()
             _STAT_VALUE_CACHE[cache_key] = result
             return result
-        totals_payload = build_dashboard_history_totals(history, streak_current=0)
+        # No stats in the cache (it is being refreshed): count the streak from the review days.
+        from .....logic.data.core.streaks import current_streak_from_dates
+
+        streak = current_streak_from_dates(
+            [h.get("logical_date") or h.get("date", "") for h in history if (h.get("reviews") or 0) > 0]
+        )
+        totals_payload = build_dashboard_history_totals(history, streak_current=streak)
 
     if with_deck_state:
         state = deck_state_from_context(get_pinned_context(deck_id, Period.TOTAL, cfg=cfg, allow_slow_ops=False))

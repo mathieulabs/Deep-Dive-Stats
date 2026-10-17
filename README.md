@@ -29,8 +29,11 @@ Detailed statistics for Anki, in a separate window or pinned under your deck lis
 
 ## Install
 
-Download `Deep_Dive_Stats.ankiaddon` from the Releases page of this repository,
-then in Anki use Tools > Add-ons > Install from file and restart.
+Install it from [AnkiWeb](https://ankiweb.net/shared/info/1498951013): in Anki, go to
+Tools > Add-ons > Get Add-ons, enter the code `1498951013` and restart.
+
+You can also build the `.ankiaddon` yourself (see Build below) and use
+Tools > Add-ons > Install from file.
 
 Needs Anki 23.10 or newer. Tested on Anki 26.09.
 
@@ -53,7 +56,7 @@ Writes `dist/Deep_Dive_Stats.ankiaddon`. Add `--check` to only run the audit.
 
 ## Support
 
-If the add-on helps you, you can support me on [Ko-fi](https://ko-fi.com/mathieu_).
+If you find this add-on useful, you can support me on [Ko-fi](https://ko-fi.com/mathieu_).
 
 ## License
 

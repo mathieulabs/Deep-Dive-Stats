@@ -144,7 +144,16 @@ class ChartAnimationMixin:
             timer.stop()
         self._capturing_cache = True
         try:
-            px = self.grab()
+            # The chart alone, without its child widgets (zoom scroll bar, labels): they are
+            # painted over the cached frame again, and a semi-transparent one baked into it
+            # would show twice (darker) as soon as the cache is served.
+            from aqt.qt import QPixmap, QPoint, QRegion, QWidget, Qt as _Qt
+
+            dpr = self.devicePixelRatioF() or 1.0
+            px = QPixmap(max(1, int(round(self.width() * dpr))), max(1, int(round(self.height() * dpr))))
+            px.setDevicePixelRatio(dpr)
+            px.fill(_Qt.GlobalColor.transparent)
+            self.render(px, QPoint(0, 0), QRegion(), QWidget.RenderFlag.DrawWindowBackground)
             if not px.isNull():
                 self._idle_frame_cache = px
         except Exception:

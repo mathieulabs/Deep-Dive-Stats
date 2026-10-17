@@ -41,8 +41,9 @@ def merge_delta(cache, delta_map, is_undo=False):
         existing_history = total_ctx.get("reviews", [])
         
         merge_map = {item["logical_date"]: item for item in existing_history}
-        # Capture pre-merge dates so incremental stats know which bins are truly new
-        orig_existing_dates = set(merge_map.keys())
+        # Days that already had reviews. A dense cache also holds empty days (today before
+        # its first review), which still count as new active days.
+        orig_existing_dates = {d for d, item in merge_map.items() if (item.get("reviews") or 0) > 0}
 
         if is_undo:
             merge_map.pop(today_str, None)
@@ -133,7 +134,6 @@ def merge_delta(cache, delta_map, is_undo=False):
                 if ld not in orig_existing_dates and new_item.get("reviews", 0) > 0:
                     new_dates_added.add(ld)
             e_stats["active_days"] = e_stats.get("active_days", 0) + len(new_dates_added)
-            # Streak only changes when today or yesterday gets its first-ever review
             # Streak only changes when today or yesterday gets its first-ever review.
             # (Readers recount it anyway, see context_stats, so a stale value is harmless.)
             need_streak_recalc = bool(new_dates_added & {today_str, yesterday_str})

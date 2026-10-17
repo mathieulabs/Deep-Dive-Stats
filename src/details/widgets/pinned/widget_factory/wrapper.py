@@ -86,6 +86,25 @@ class _HeaderClickFilter(QObject):
         return super().eventFilter(obj, event)
 
 
+class _EdgeCursorSync(QObject):
+    """Keeps the resize cursor in step with the mouse while it is over a child widget.
+
+    The wrapper only sees mouse moves that no child takes, so a resize cursor set on
+    the border would stay once the mouse went on into the chart."""
+
+    def __init__(self, card):
+        super().__init__(card)
+        self._card = card
+
+    def eventFilter(self, obj, event):
+        if event.type() in (QEvent.Type.MouseMove, QEvent.Type.Enter):
+            try:
+                self._card._sync_edge_cursor(self._card.mapFromGlobal(QCursor.pos()))
+            except Exception:
+                log_swallowed()
+        return False
+
+
 class ResizableWrapper(QFrame):
     height_changed = pyqtSignal(int)
     col_span_changed = pyqtSignal(int)
@@ -419,6 +438,8 @@ class ResizableWrapper(QFrame):
 
     def showEvent(self, event):
         super().showEvent(event)
+        if self.resizable:
+            self._install_edge_cursor_sync()
         if getattr(self, "wtype", self.widget_id) == "text_label":
             # The first size was measured before the row had its real width; measure again
             # once it has, or the text stays wrapped on a few short lines.
@@ -510,15 +531,8 @@ class ResizableWrapper(QFrame):
             return
 
         if not self._resize_mode:
-            mode = self._check_border(event.pos())
-            if mode == "rb":
-                self.setCursor(QCursor(Qt.CursorShape.SizeFDiagCursor))
-            elif mode == "r":
-                self.setCursor(QCursor(Qt.CursorShape.SizeHorCursor))
-            elif mode == "b":
-                self.setCursor(QCursor(Qt.CursorShape.SizeVerCursor))
-            else:
-                self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+            self._install_edge_cursor_sync()
+            if not self._sync_edge_cursor(event.pos()):
                 if (event.buttons() & Qt.MouseButton.LeftButton) and self.widget_id:
                     self._handle_drag(event)
         else:
@@ -682,6 +696,26 @@ class ResizableWrapper(QFrame):
             MIME_CHART_ID, self.widget_id
         )
         
+
+    def _sync_edge_cursor(self, pos):
+        """Set the cursor for a position in this widget. Returns True on a resize border."""
+        if self._resize_mode or getattr(self, "_fullscreen_active", False) or not self.resizable:
+            return False
+        mode = self._check_border(pos)
+        shape = {
+            "rb": Qt.CursorShape.SizeFDiagCursor,
+            "r": Qt.CursorShape.SizeHorCursor,
+            "b": Qt.CursorShape.SizeVerCursor,
+        }.get(mode)
+        self.setCursor(QCursor(shape or Qt.CursorShape.ArrowCursor))
+        return shape is not None
+
+    def _install_edge_cursor_sync(self):
+        sync = getattr(self, "_edge_cursor_sync", None)
+        if sync is None:
+            sync = self._edge_cursor_sync = _EdgeCursorSync(self)
+        for child in self.findChildren(QWidget):
+            child.installEventFilter(sync)
 
     def leaveEvent(self, event):
         if not self._resize_mode:

@@ -75,6 +75,14 @@ def reset_zoom_with_transition_impl(widget, *, old_attr, new_attr):
                 total += float(row)
         return total
 
+    from ....chart_utils import zoom_camera
+
+    if widget.isVisible() or zoom_camera.active():
+        # The zoom animation takes over: a plain reset under it.
+        with zoom_camera.camera_zoom(widget):
+            ZoomableMixin.reset_zoom(widget)
+        return
+
     old_display = widget._compute_display_data(list(widget.data))
     new_display = widget._compute_display_data(list(widget._full_data))
 

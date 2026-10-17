@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 
 from .bars import draw_review_bars
+from .data_ops import current_value_range
 from .series import SERIES_KEYS
 from .smooth import build_paths, control_points, tangents
 from ..common.cache_dpr import cache_dpr, cache_surface, draw_cache, stale_cache
@@ -295,6 +296,13 @@ def draw_series_transition_impl(widget, painter, margin_left, margin_top, plot_w
 
         stride = max(1, int(1.0 / x_step)) if x_step > 0 else 1
         slopes = tangents(points) if (stride == 1 and getattr(widget, "rounded", False)) else None
+        old_curve = transition_cache.get("old_curve")
+        new_curve = transition_cache.get("new_curve")
+        curve_sub = 0
+        if slopes is not None and old_curve and new_curve:
+            curve_sub = 4 if x_step >= 6 else (2 if x_step >= 3 else 0)
+        if curve_sub:
+            curve_step = 4 // curve_sub
         for i in range(0, sample_count - 1, stride):
             j = min(i + stride, sample_count - 1)
             if i < len(segment_meta) and not segment_meta[i].get("candidate", False):
@@ -325,7 +333,21 @@ def draw_series_transition_impl(widget, painter, margin_left, margin_top, plot_w
             area = QPainterPath()
             area.moveTo(p1.x(), base_y)
             area.lineTo(p1)
-            if slopes is not None:
+            sub_pts = None
+            if curve_sub and j == i + 1:
+                sub_pts = []
+                for s in range(curve_sub + 1):
+                    k = i * 4 + s * curve_step
+                    v = old_curve[k] + (new_curve[k] - old_curve[k]) * p
+                    sub_pts.append(
+                        QPointF(
+                            margin_left + (i + s / curve_sub) * x_step,
+                            margin_top + plot_h - ((v - min_val) / val_range * plot_h),
+                        )
+                    )
+                for q in sub_pts[1:]:
+                    area.lineTo(q)
+            elif slopes is not None:
                 c1, c2 = control_points(p1, p2, slopes[i], slopes[j])
                 area.cubicTo(c1, c2, p2)
             else:
@@ -338,7 +360,12 @@ def draw_series_transition_impl(widget, painter, margin_left, margin_top, plot_w
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
-            if slopes is not None:
+            if sub_pts is not None:
+                seg = QPainterPath(sub_pts[0])
+                for q in sub_pts[1:]:
+                    seg.lineTo(q)
+                painter.strokePath(seg, pen)
+            elif slopes is not None:
                 seg = QPainterPath(p1)
                 seg.cubicTo(c1, c2, p2)
                 painter.strokePath(seg, pen)
@@ -394,17 +421,7 @@ def paint_event_impl(widget, event):
     w = widget.width()
     h = widget.height()
 
-    if getattr(widget, "fit_to_data", False):
-        if widget._data_transition_active:
-            p = max(0.0, min(1.0, float(getattr(widget, "_progress", 1.0))))
-            old_min, old_max = getattr(widget, "_data_transition_old_range", (0.0, 100.0))
-            new_min, new_max = getattr(widget, "_data_transition_new_range", (0.0, 100.0))
-            min_val = old_min + (new_min - old_min) * p
-            max_val = old_max + (new_max - old_max) * p
-        else:
-            min_val, max_val = widget.get_data_range()
-    else:
-        min_val, max_val = 0.0, 100.0
+    min_val, max_val = current_value_range(widget)
     val_range = max(float(max_val) - float(min_val), 0.001)
     margin_left = ChartGeometry.calculate_dynamic_left_margin(painter.fontMetrics(), max_val, min_val=min_val)
     margin_right = widget._get_margin_right(painter.fontMetrics())

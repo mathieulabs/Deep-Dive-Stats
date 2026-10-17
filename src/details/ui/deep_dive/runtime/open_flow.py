@@ -194,6 +194,10 @@ def open_deep_dive(manager, deck_identifier, title, period_range=None):
         manager.last_history_range = history_range
         manager.last_deck_identifier = captured_deck_id
         manager.last_period_range = captured_period
+        try:
+            manager.last_tab_index = int(manager.dialog.tab_widget.currentIndex())
+        except Exception:
+            manager.last_tab_index = None
         manager.last_title = title
 
         if hasattr(manager.dialog, "grid_view_btn"):
@@ -289,6 +293,10 @@ def open_deep_dive(manager, deck_identifier, title, period_range=None):
         manager.last_history_range = history_range_
         manager.last_deck_identifier = captured_deck_id
         manager.last_period_range = captured_period
+        try:
+            manager.last_tab_index = int(manager.dialog.tab_widget.currentIndex())
+        except Exception:
+            manager.last_tab_index = None
 
         if hasattr(manager.dialog, "grid_view_btn"):
             manager.dialog.grid_view_btn.setVisible(True)

@@ -7,7 +7,6 @@ from .theme import (
     get_palette,
     get_theme_colors,
     get_theme_manager,
-    get_text_col,
     is_night_mode,
     subscribe_theme_changed,
     unsubscribe_theme_changed,

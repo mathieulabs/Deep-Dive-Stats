@@ -64,13 +64,14 @@ class DeepDiveControlsMixin:
     def _add_chart_controls(self, activity_header, retention_header, added_header, activity_data, retention_data):
         return add_chart_controls(self, activity_header, retention_header, added_header, activity_data, retention_data)
 
-    def _try_adaptive_zoom(self, zoomed_slice, source_chart=None, start_idx=None, end_idx=None):
+    def _try_adaptive_zoom(self, zoomed_slice, source_chart=None, start_idx=None, end_idx=None, charts=None):
         return try_adaptive_zoom(
             self,
             zoomed_slice,
             source_chart=source_chart,
             start_idx=start_idx,
             end_idx=end_idx,
+            charts=charts,
         )
 
     def _adaptive_replace(self, chart, data_attr, new_data):

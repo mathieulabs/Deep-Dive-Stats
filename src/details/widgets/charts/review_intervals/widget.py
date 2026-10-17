@@ -14,7 +14,6 @@ from .data_ops import (
     get_points_count_impl,
     get_stats_text_impl,
     get_tooltip_text_impl,
-    interpolate_relative_cumulative_line_impl,
     invalidate_data_caches_impl,
     refresh_data_colors_impl,
     set_chart_opacity_impl,
@@ -83,9 +82,6 @@ class ReviewIntervalsChart(ChartAnimationMixin, QWidget):
 
     def _current_values_snapshot(self):
         return current_values_snapshot_impl(self)
-
-    def _interpolate_relative_cumulative_line(self, t):
-        return interpolate_relative_cumulative_line_impl(self, t)
 
     def set_chart_opacity(self, pct):
         return set_chart_opacity_impl(self, pct)

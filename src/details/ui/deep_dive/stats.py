@@ -221,6 +221,6 @@ class DeepDiveStatsMixin:
              
         return None
     
-    def _update_stats_from_history(self, history_slice):
-        return update_stats_from_history(self, history_slice)
+    def _update_stats_from_history(self, history_slice, part=None):
+        return update_stats_from_history(self, history_slice, part)
 

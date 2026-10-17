@@ -13,7 +13,6 @@ from ..common.discrete import (
     binning_active_getter,
     current_discrete_values_snapshot_impl,
     discrete_transition_target_unchanged,
-    interpolate_relative_cumulative_line_impl,
     reset_discrete_transition_state,
     set_chart_opacity_impl,
     set_cumulative_mode_impl,

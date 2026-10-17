@@ -6,7 +6,7 @@ Zooming one pinned chart zooms the other connected ones to the same dates.
 A chart (or all of them) can be disconnected from the right-click menu.
 """
 from ...logic.logger import log_swallowed
-from ..chart_utils.zoom_mixin import ZoomableMixin, zoom_rows
+from ..chart_utils.zoom_mixin import ZoomableMixin, remap_zoom, zoom_rows, zoom_snapshot
 from ...ui.shared.zoom_span import _row_date, zoom_dates
 
 _busy = False
@@ -110,7 +110,7 @@ def _on_zoom(manager, src, zoomed, start, end):
                 target = _target_chart(widget)
                 if target is None or not is_chart_linked(target):
                     continue
-                _apply(target, dates, was_adaptive and not adaptive_now)
+                _apply(target, dates, was_adaptive and not adaptive_now, src if adaptive_now else None)
         finally:
             _busy = False
     except Exception:
@@ -152,10 +152,32 @@ def _widget_of(manager, chart):
     return None
 
 
-def _apply(chart, dates, src_left_adaptive):
+def _follow_inside_adaptive(src, chart):
+    """Both charts show the 10-minute view: the zoom inside it is followed by index."""
+    st_s, st_c = _adaptive_state(src), _adaptive_state(chart)
+    if not st_s or not st_c or st_s.get("dates") != st_c.get("dates"):
+        return
+    if not getattr(src, "_is_zoomed", False):
+        if getattr(chart, "_is_zoomed", False):
+            chart.reset_zoom()
+        return
+    rows_s, rows_c = zoom_rows(src), zoom_rows(chart)
+    if not rows_c:
+        return
+    if len(rows_s) == len(rows_c):
+        span = (int(src._zoom_start), int(src._zoom_end))
+    else:
+        span = remap_zoom(zoom_snapshot(src), rows_c)
+    if span and span[1] > span[0] and (int(chart._zoom_start), int(chart._zoom_end)) != span:
+        chart.set_zoom_range(span[0], span[1])
+
+
+def _apply(chart, dates, src_left_adaptive, adaptive_src=None):
     """Bring chart to dates (None means reset)."""
     if _adaptive_active(chart):
         if dates is not None and not src_left_adaptive:
+            if adaptive_src is not None:
+                _follow_inside_adaptive(adaptive_src, chart)
             return  # already in the 10-minute view
         _leave_adaptive(chart)
         if dates is None:

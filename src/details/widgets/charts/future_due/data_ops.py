@@ -8,7 +8,6 @@ from ..common.discrete import (
     apply_discrete_transition_update,
     binning_active_getter,
     discrete_transition_target_unchanged,
-    interpolate_relative_cumulative_line_impl,
     set_chart_opacity_impl,
     set_cumulative_mode_impl,
 )

@@ -22,6 +22,14 @@ def apply_theme_change(dialog) -> None:
     if hasattr(dialog.parent_dialog, "update_dashboard_visibility"):
         dialog.parent_dialog.update_dashboard_visibility()
     dialog.parent_dialog.refresh_styles()
+    # A settings dialog opened from the pinned menu has no Deep Dive window behind it, so its
+    # refresh_styles() does nothing and the pinned widgets would only get the new data colors.
+    # Broadcast the theme here when the host did not.
+    from ....widgets.chart_utils.theme import sync_theme_manager_from_config, theme_already_synced
+
+    live_conf = dialog.parent_dialog.addon_config.config
+    if not theme_already_synced(live_conf):
+        sync_theme_manager_from_config(live_conf, emit=True, source="theme_change")
     dialog.refresh_styles()
     if scroll:
         QTimer.singleShot(0, lambda: scroll.verticalScrollBar().setValue(scroll_pos))

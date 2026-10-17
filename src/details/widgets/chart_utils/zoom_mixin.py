@@ -21,6 +21,7 @@ class ZoomableChartSignals(QObject):
 
 from contextlib import contextmanager
 from ...logic.logger import log_swallowed
+from . import zoom_camera
 
 
 def zoom_rows(chart):
@@ -236,6 +237,7 @@ class ZoomableMixin:
             
     def set_zoom_range(self, start_idx, end_idx):
         """Set a specific zoom range."""
+        zoom_camera.touch(self)
         if start_idx < 0:
             start_idx = 0
         if end_idx > self._full_length:
@@ -430,11 +432,15 @@ class ZoomableMixin:
         if self._selecting and event.button() == Qt.MouseButton.LeftButton:
             self._selecting = False
             
+            # With binning, an index stands for a whole bar of `step` rows: the zone ends
+            # after the last bar it touches, not one row into it.
+            step = self._get_zoom_snap_step(self._zoom_end - self._zoom_start)
             start_idx = min(self._selection_start_idx, self._selection_end_idx)
-            end_idx = max(self._selection_start_idx, self._selection_end_idx) + 1
+            end_idx = min(self._full_length, max(self._selection_start_idx, self._selection_end_idx) + step)
             
             if end_idx - start_idx >= 2:
-                self.set_zoom_range(start_idx, end_idx)
+                with zoom_camera.camera_zoom(self):
+                    self.set_zoom_range(start_idx, end_idx)
                 return True
             
             self.update()

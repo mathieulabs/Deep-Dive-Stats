@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+import time
 from aqt.qt import QPainter, QPainterPath, QPointF, QRect, QRectF, Qt, QPen, QColor, QFontMetrics
 from .theme import get_theme_colors, is_night_mode
 from .geometry import ChartGeometry
@@ -116,6 +117,8 @@ def draw_grid_and_axes(
     cumulative_value_formatter=None,
     widget=None,
     min_val=0,
+    draw_lines=True,
+    draw_labels=True,
 ):
     t_colors = get_theme_colors(widget)
     text_col = axis_text_color(t_colors, widget=widget)
@@ -132,11 +135,13 @@ def draw_grid_and_axes(
         y_ratio = i / grid_lines
         y_pos = margin_top + (avail_h * (1 - y_ratio))
         
-        if i == 0 or show_grid:  # "Grid lines" off keeps only the baseline
+        if draw_lines and (i == 0 or show_grid):  # "Grid lines" off keeps only the baseline
             painter.setPen(_grid_pen(grid_col, baseline=(i == 0)))
             y_line = int(y_pos) + 0.5  # crisp 1px line
             painter.drawLine(QPointF(margin_left, y_line), QPointF(width - margin_right, y_line))
-        
+
+        if not draw_labels:
+            continue
         val = min_val + (max_val - min_val) * y_ratio
         painter.setPen(text_col)
         if callable(value_formatter):
@@ -509,15 +514,37 @@ def draw_wrapped_bottom_stats(
         t_rect = QRectF(margin_left, y_start + (i * line_h), plot_w, line_h)
         draw_rich_stats_text(painter, t_rect, text, Qt.AlignmentFlag.AlignCenter)
 
+_DARK_CACHE = {}  # id(widget) -> (time, value): hundreds of bars per paint ask the same thing
+
+
 def _bar_is_dark(painter, widget=None) -> bool:
     try:
+        key = id(widget) if widget is not None else id(painter.device())
+        now = time.perf_counter()
+        hit = _DARK_CACHE.get(key)
+        if hit is not None and now - hit[0] < 0.05:
+            return hit[1]
         if widget is not None:
-            return bool(is_night_mode(widget))
-        dev = painter.device()
-        from aqt.qt import QWidget
-        return bool(is_night_mode(dev if isinstance(dev, QWidget) else None))
+            val = bool(is_night_mode(widget))
+        else:
+            dev = painter.device()
+            from aqt.qt import QWidget
+            val = bool(is_night_mode(dev if isinstance(dev, QWidget) else None))
+        if len(_DARK_CACHE) > 64:
+            _DARK_CACHE.clear()
+        _DARK_CACHE[key] = (now, val)
+        return val
     except Exception:
         return False
+
+
+def bar_fade_factor(width, height):
+    """0..1: how much of the vertical bar fade to use for a bar of this size."""
+    def smooth(x):
+        x = max(0.0, min(1.0, x))
+        return x * x * (3.0 - 2.0 * x)
+
+    return smooth((width - 2.0) / 4.0) * smooth((height - 2.0) / 8.0)
 
 
 def draw_bar_rect(painter, rect, radius=1.8, fade=True, widget=None):
@@ -526,18 +553,20 @@ def draw_bar_rect(painter, rect, radius=1.8, fade=True, widget=None):
     w = rect.width()
     h = rect.height()
     r = min(float(radius), w * 0.25, h)
-    if w < 4.0 or r < 1.0:
-        painter.drawRect(rect)
-        return
-    # Soft vertical fade: full colour at the top, a bit lighter at the base.
+    # Soft vertical fade: full colour at the top, a bit lighter at the base. It fades in
+    # with the bar size (no fade on hair-thin bars) instead of switching on at a fixed
+    # size, so bars growing during a zoom do not change shade at once.
+    base = None
+    _fill = False
     try:
+        size_k = bar_fade_factor(w, h)
         base = painter.brush().color()
-        if fade and base.alpha() > 0 and h > 6:
+        if fade and base.alpha() > 0 and size_k > 0.01:
             from aqt.qt import QLinearGradient
 
             top = QColor(base)
             bot = QColor(base)
-            k = chart_style(widget)[1] / 100.0  # 0 = flat bars, 1 = full gradient
+            k = chart_style(widget)[1] / 100.0 * size_k  # 0 = flat bars, 1 = full gradient
             if _bar_is_dark(painter, widget):
                 # Dark background: lighter at the top, a deeper shade of the same hue at the
                 # base. Fading to transparent would look muddy on the dark card, so the color
@@ -553,10 +582,13 @@ def draw_bar_rect(painter, rect, radius=1.8, fade=True, widget=None):
             g.setColorAt(1.0, bot)
             painter.setBrush(g)
             _fill = True
-        else:
-            _fill = False
     except Exception:
         _fill = False
+    if w < 4.0 or r < 1.0:
+        painter.drawRect(rect)
+        if _fill:
+            painter.setBrush(base)
+        return
     x = rect.x()
     y = rect.y()
     path = QPainterPath()

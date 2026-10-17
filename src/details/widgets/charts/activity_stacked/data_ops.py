@@ -100,7 +100,8 @@ def compute_display_data_impl(widget, source_data):
     source_data = source_data or []
     if not widget.binning_active:
         return source_data
-    bs = get_bin_size(len(source_data))
+    # A zoom animation draws with a fixed bin size (see chart_utils.zoom_camera).
+    bs = getattr(widget, "_forced_bin_step", None) or get_bin_size(len(source_data))
     if bs <= 1:
         return source_data
 

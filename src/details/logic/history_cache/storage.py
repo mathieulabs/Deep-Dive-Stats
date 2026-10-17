@@ -44,7 +44,7 @@ class StorageMixin:
                     "last_max_rev_id": self.last_max_rev_id,
                     "last_max_card_id": self.last_max_card_id,
                     "last_logical_date": getattr(self, "last_logical_date", None),
-                    "version": 13,
+                    "version": 14,  # 14: day keys are the real instant of local midnight (fix west of UTC)
                     "excluded": exclusion_signature(),
                 }
                 payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
@@ -117,7 +117,7 @@ class StorageMixin:
             with open(load_path, "rb") as f:
                 data = pickle.load(f)
                 
-            if not isinstance(data, dict) or data.get("version", 0) < 13:
+            if not isinstance(data, dict) or data.get("version", 0) < 14:
                 self._log("Cache file validation failed or old version. Forcing rebuild.")
                 return False
                 

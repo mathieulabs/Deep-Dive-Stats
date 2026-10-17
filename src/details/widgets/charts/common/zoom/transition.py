@@ -183,6 +183,9 @@ def update_chart_for_transition(
     """Best-effort cross-chart update helper for activity/stacked/added/retention widgets."""
     if not (chart and hasattr(chart, "update_data")):
         return False
+    from ....chart_utils import zoom_camera
+
+    zoom_camera.touch(chart)
 
     kwargs = {}
     if adaptive_binning is not None and hasattr(chart, "adaptive_binning"):

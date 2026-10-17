@@ -497,6 +497,27 @@ def _style_tab_row(dialog):
         btn.setStyleSheet(hide)
 
 
+def _style_auto_close(dialog):
+    """The Auto-close switches follow the window theme (the app theme can differ from it)."""
+    try:
+        from ...widgets.common.pill_toggles import pill_checkbox_qss
+        from ...widgets.chart_utils.theme import resolve_theme_runtime_state, ThemeContext
+
+        pal = get_theme_colors(dialog)
+        runtime = resolve_theme_runtime_state(dialog.addon_config.config, ThemeContext.DETAILS)
+        is_dark = bool(runtime.get("is_dark", bool(pal.get("is_dark"))))
+        muted = QColor(pal.get("text_secondary") or pal.get("text"))
+        accent = QColor(pal.get("accent"))
+        qss = pill_checkbox_qss(muted.name(), f"rgba({accent.red()},{accent.green()},{accent.blue()},180)", is_dark)
+    except Exception:
+        log_swallowed()
+        return
+    for name in ("table_drawer_auto_cb", "table_drawer_auto_cb2"):
+        cb = getattr(dialog, name, None)
+        if cb is not None and cb.styleSheet() != qss:
+            cb.setStyleSheet(qss)
+
+
 def _set_closer(dialog, show):
     """Show the close button in the table's tab row (corner widget), or take it out."""
     if show == bool(getattr(dialog, "_drawer_closer_on", False)):
@@ -977,6 +998,7 @@ def _update_bar(dialog):
             summary = "  \u00b7  ".join(bits)
         except Exception:
             summary = ""
+    _style_auto_close(dialog)
     if want and not side:
         _style_tab_row(dialog)
     key = (want, side, opened, title, summary)

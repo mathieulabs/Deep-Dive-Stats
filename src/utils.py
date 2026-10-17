@@ -70,13 +70,19 @@ def get_daystart_epoch_sql(column_name: str, is_ms: bool = True) -> str:
     Generate an SQLite SQL fragment that converts a timestamp column into the 
     unix epoch (in milliseconds) representing the start of the logical day based on the user's rollover hour.
     This correctly handles local timezone rules and daylight saving time shifts worldwide.
+
+    The result is the real instant of local midnight of that logical day (the same value as
+    int(datetime(y, m, d).timestamp() * 1000) in Python). Without the final 'utc' modifier
+    SQLite returns local midnight written as if it were UTC: turned back into a date with
+    datetime.fromtimestamp() it lands on the previous day west of UTC (the Americas), and it
+    never matches the day keys built in Python anywhere but in UTC.
     """
     off_h = rollover_hour()
     unixepoch = " 'unixepoch', "
     offset_str = f" '-{off_h} hours', " if off_h else ""
     col_modifier = f"{column_name} / 1000" if is_ms else column_name
     
-    return f"(CAST(STRFTIME('%s', {col_modifier}, {unixepoch}{offset_str}'localtime', 'start of day') AS INT) * 1000)"
+    return f"(CAST(STRFTIME('%s', {col_modifier}, {unixepoch}{offset_str}'localtime', 'start of day', 'utc') AS INT) * 1000)"
 
 
 def day_end_with_rollover(date: datetime = None):

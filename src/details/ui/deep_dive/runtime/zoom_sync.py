@@ -4,6 +4,70 @@ from .. import AddedChartWidget, log_debug
 from ....animations.chart_policy import local_chart_animation_batch
 
 
+# Each part of the stats update runs in its own timer tick, so no single tick holds the
+# UI thread long enough to make a zoom frame late. The heatmap one, the heaviest, runs
+# right after the zoom (280 ms). Every part plays its own transition.
+STATS_STEPS = (("cards", 90), ("dist", 120), ("hourly", 150), ("heatmap", 310))
+
+
+def _stats_candidates(manager):
+    return [
+        c for c in (
+            getattr(manager, "hourly_chart", None),
+            getattr(manager, "dist_chart", None),
+            getattr(manager, "heatmap_chart", None),
+        ) if c is not None
+    ]
+
+
+def _apply_stats(manager, part, data):
+    candidates = _stats_candidates(manager)
+    log_debug(f"[ZOOM-SYNC] Updating stats ({part}): rows={len(data)}", tag="DEEPDIVE")
+    if candidates:
+        with local_chart_animation_batch(candidates[0], candidates=candidates):
+            manager._update_stats_from_history(data, part)
+    else:
+        manager._update_stats_from_history(data, part)
+
+
+def schedule_stats(manager, data):
+    """Update the stats widgets for data (history rows, oldest first) in steps while a
+    zoom animation runs. The last request wins; a direct full update cancels it."""
+    from aqt.qt import QTimer
+
+    if not data:
+        return
+    jobs = getattr(manager, "_stats_jobs", None)
+    if jobs is None:
+        jobs = manager._stats_jobs = {}
+    timers = getattr(manager, "_stats_timers", None)
+    if timers is None:
+        timers = manager._stats_timers = {}
+    for part, delay in STATS_STEPS:
+        jobs[part] = data
+        timer = timers.get(part)
+        if timer is None:
+            timer = QTimer()
+            timer.setSingleShot(True)
+
+            def _run(part=part):
+                pending = jobs.pop(part, None)
+                if not pending:
+                    return
+                try:
+                    _apply_stats(manager, part, pending)
+                except RuntimeError:
+                    pass  # the window went away meanwhile
+                except Exception:
+                    from ....logic.logger import log_swallowed
+
+                    log_swallowed()
+
+            timer.timeout.connect(_run)
+            timers[part] = timer
+        timer.start(delay)
+
+
 def setup_zoom_sync(manager):
     """Link charts so zooming in one zooms the others to the same range."""
     valid_charts = []
@@ -100,41 +164,14 @@ def setup_zoom_sync(manager):
             if hasattr(manager, "_update_stats_from_history") and history_source:
                 # If adaptive, history_source is already oldest-first.
                 history_oldest_first = history_source if adaptive_active else history_source[::-1]
-                total_source_len = len(history_source)
-
-                stats_candidates = [
-                    c for c in (
-                        getattr(manager, "hourly_chart", None),
-                        getattr(manager, "dist_chart", None),
-                    ) if c is not None
-                ]
-                _stats_anchor = stats_candidates[0] if stats_candidates else None
-
                 if is_zoomed:
-                    s = max(0, global_start)
-                    e = max(0, min(total_source_len, global_end))
-
-                    log_debug(
-                        "[ZOOM-SYNC] Updating stats: "
-                        f"adaptive={adaptive_active}, is_zoomed={is_zoomed}, "
-                        f"s={s}, e={e}, total={total_source_len}",
-                        tag="DEEPDIVE",
-                    )
-
-                    if e > s:
-                        history_slice = history_oldest_first[s:e]
-                        if _stats_anchor:
-                            with local_chart_animation_batch(_stats_anchor, candidates=stats_candidates):
-                                manager._update_stats_from_history(history_slice)
-                        else:
-                            manager._update_stats_from_history(history_slice)
+                    s = max(0, int(global_start))
+                    e = max(0, min(len(history_source), int(global_end)))
+                    data = history_oldest_first[s:e] if e > s else None
                 else:
-                    log_debug(f"[ZOOM-SYNC] Full range update: adaptive={adaptive_active}", tag="DEEPDIVE")
-                    if _stats_anchor:
-                        with local_chart_animation_batch(_stats_anchor, candidates=stats_candidates):
-                            manager._update_stats_from_history(history_oldest_first)
-                    else:
-                        manager._update_stats_from_history(history_oldest_first)
+                    data = history_oldest_first
+                log_debug(f"[ZOOM-SYNC] stats: adaptive={adaptive_active}, zoomed={is_zoomed}", tag="DEEPDIVE")
+                schedule_stats(manager, data)
 
             if hasattr(manager, "update_all_reset_buttons"):
                 manager.update_all_reset_buttons()

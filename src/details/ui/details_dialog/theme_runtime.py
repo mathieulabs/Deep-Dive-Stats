@@ -51,6 +51,12 @@ def refresh_styles(dialog):
         dialog._repopulate_current_table()
     except Exception:
         log_swallowed()
+    try:
+        from .table_drawer import _style_auto_close
+
+        _style_auto_close(dialog)
+    except Exception:
+        log_swallowed()
 
 
 def refresh_ui_icons(dialog):
@@ -214,7 +220,7 @@ def update_dashboard_visibility(dialog):
                 ck = str(card.config_key)
                 card_title = custom_labels.get(ck) or default_labels.get(ck, card.display_name)
                 if card_title and card_title != getattr(card, "display_name", ""):
-                    card.update_val(card.value_lbl.text(), title=card_title, refresh=False)
+                    card.update_val(card.shown_value(), title=card_title, refresh=False)
 
             is_dd = hasattr(dialog, "expanded_container") and dialog.expanded_container.isVisible()
             card.set_title_visible(True)

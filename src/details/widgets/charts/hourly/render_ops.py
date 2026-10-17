@@ -56,7 +56,7 @@ def _draw_cached_scaffold(widget, painter, *, width, height, margin_left, margin
         int(margin_top),
         int(margin_right),
         int(margin_bottom),
-        int(round(float(max_val))),
+        float(max_val),
         _theme_color_token(theme.get("text")),
         _theme_color_token(theme.get("text_secondary")),
         _theme_color_token(theme.get("grid")),

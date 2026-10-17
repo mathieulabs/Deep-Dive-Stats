@@ -648,7 +648,7 @@ class WidgetSettingsDialog(QDialog):
                     for c in getattr(target, "cards", []):
                         if getattr(c, "config_key", None) == current_key:
                             try:
-                                c.update_val(c.value_lbl.text(), title=new_title, refresh=False)
+                                c.update_val(c.shown_value(), title=new_title, refresh=False)
                             except Exception:
                                 log_swallowed()
                     if hasattr(target, "trigger_layout_update"):

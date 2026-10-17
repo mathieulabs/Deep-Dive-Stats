@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from aqt.qt import QWidget
 
+from .data_ops import current_value_range
 from .series import SERIES_KEYS
 from ...chart_utils import ChartGeometry, ZoomableMixin, get_theme_colors
 from ...chart_utils.formatting import fmt_num, fmt_num_compact
@@ -13,6 +14,12 @@ from ...chart_utils.tooltip import (
 )
 
 
+def _plot_left_margin(widget):
+    """Left margin of the plot as painted, which follows the value axis range."""
+    min_val, max_val = current_value_range(widget)
+    return ChartGeometry.calculate_dynamic_left_margin(widget.fontMetrics(), max_val, min_val=min_val)
+
+
 def mouse_move_event_impl(widget, event):
     display_data = widget._get_display_data()
     if not display_data:
@@ -21,7 +28,8 @@ def mouse_move_event_impl(widget, event):
     if n == 0:
         return
 
-    margin_left = ChartGeometry.calculate_dynamic_left_margin(widget.fontMetrics(), 100)
+    min_val, max_val = current_value_range(widget)
+    margin_left = ChartGeometry.calculate_dynamic_left_margin(widget.fontMetrics(), max_val, min_val=min_val)
     margin_right = widget._get_margin_right(widget.fontMetrics())
     width = widget.width() - margin_left - margin_right
 
@@ -52,14 +60,12 @@ def mouse_move_event_impl(widget, event):
 
     was_hover_index = widget.hover_index
     widget.hover_index = idx
-    max_val = 100
-
     changed = widget.hover_index != was_hover_index
     mouse_y = event.pos().y()
     in_plot_x = (0 <= x < width)
     in_plot_y = (margin_top <= mouse_y <= (margin_top + plot_h))
     for key in widget.SERIES_CONFIG:
-        y_avg = widget._get_series_avg_y(key, margin_top, plot_h, max_val)
+        y_avg = widget._get_series_avg_y(key, margin_top, plot_h, max_val, min_val=min_val)
         if y_avg is None:
             if widget.hover_avgs[key]:
                 widget.hover_avgs[key] = False
@@ -114,7 +120,7 @@ def mouse_move_event_impl(widget, event):
     for key in sorted_keys:
         tooltip = widget.avg_tooltips[key]
         if widget.hover_avgs[key]:
-            y_avg = widget._get_series_avg_y(key, margin_top, plot_h, max_val)
+            y_avg = widget._get_series_avg_y(key, margin_top, plot_h, max_val, min_val=min_val)
             if y_avg is None:
                 tooltip.hide()
                 continue
@@ -124,7 +130,7 @@ def mouse_move_event_impl(widget, event):
             draw_y_local = int(y_avg)
             if last_y_local != -100 and abs(draw_y_local - last_y_local) < 22:
                 draw_y_local = last_y_local + 22
-            m_label_left = ChartGeometry.calculate_dynamic_left_margin(widget.fontMetrics(), 100)
+            m_label_left = margin_left
             show_floating_label_at_y(
                 widget,
                 tooltip,
@@ -169,7 +175,8 @@ def change_event_impl(widget, event):
 
 
 def wheel_event_impl(widget, event):
-    margin_left = ChartGeometry.calculate_dynamic_left_margin(widget.fontMetrics(), 100)
+    min_val, max_val = current_value_range(widget)
+    margin_left = ChartGeometry.calculate_dynamic_left_margin(widget.fontMetrics(), max_val, min_val=min_val)
     margin_right = widget._get_margin_right(widget.fontMetrics())
     plot_width = widget.width() - margin_left - margin_right
     if widget.handle_wheel_zoom(event, margin_left, plot_width):
@@ -178,8 +185,14 @@ def wheel_event_impl(widget, event):
 
 
 def reset_zoom_impl(widget):
+    from ...chart_utils import zoom_camera
+
     if not getattr(widget, "_is_zoomed", False):
         ZoomableMixin.reset_zoom(widget)
+        return
+    if widget.isVisible() or zoom_camera.active():
+        with zoom_camera.camera_zoom(widget):
+            ZoomableMixin.reset_zoom(widget)
         return
 
     transition_payload = None
@@ -214,7 +227,7 @@ def reset_zoom_impl(widget):
 
 
 def mouse_press_event_impl(widget, event):
-    margin_left = ChartGeometry.calculate_dynamic_left_margin(widget.fontMetrics(), 100)
+    margin_left = _plot_left_margin(widget)
     margin_right = widget._get_margin_right(widget.fontMetrics())
     plot_width = widget.width() - margin_left - margin_right
     if widget.handle_selection_press(event, margin_left, plot_width):
@@ -236,7 +249,7 @@ def set_zoom_range_impl(widget, start_idx, end_idx):
 
 
 def mouse_release_event_impl(widget, event):
-    margin_left = ChartGeometry.calculate_dynamic_left_margin(widget.fontMetrics(), 100)
+    margin_left = _plot_left_margin(widget)
     margin_right = widget._get_margin_right(widget.fontMetrics())
     plot_width = widget.width() - margin_left - margin_right
     if widget.handle_selection_release(event, margin_left, plot_width):

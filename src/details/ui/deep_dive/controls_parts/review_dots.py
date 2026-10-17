@@ -6,7 +6,7 @@ from datetime import datetime
 from aqt.qt import QTimer
 
 from ....logic.history_provider import HistoryProvider
-from ....widgets.chart_utils.stack_fade import set_stack_index_animated
+from ....widgets.chart_utils.zoom_camera import switch_stack
 from ....logic.history_provider.ops.review_events import fetch_review_events
 from ....logic.logger import log_debug, log_swallowed
 from ....widgets.charts.activity.review_dots import DOTS_MAX_SPAN_MS
@@ -14,8 +14,9 @@ from ....widgets.charts.activity.review_dots import DOTS_MAX_SPAN_MS
 BIN_MS = 600000
 
 
-def refresh_review_dots(manager):
-    """Debounced. Does nothing unless the Activity chart is in the 10-minute view or already showing dots."""
+def refresh_review_dots(manager, immediate=False):
+    """Debounced (unless immediate). Does nothing unless the Activity chart is in the
+    10-minute view or already showing dots."""
     dots = getattr(manager, "review_dots_chart", None)
     stack = getattr(manager, "activity_stack", None)
     if dots is None or stack is None:
@@ -25,8 +26,13 @@ def refresh_review_dots(manager):
     except RuntimeError:
         return
     if not showing and not getattr(manager, "_adaptive_zoom_active", False):
-        if getattr(manager, "last_sync_zoom", False) or not _zoomed_chart(manager):
-            return
+        return
+    if immediate:
+        timer = getattr(manager, "_review_dots_timer", None)
+        if timer is not None:
+            timer.stop()
+        _apply(manager)
+        return
     timer = getattr(manager, "_review_dots_timer", None)
     if timer is None:
         timer = QTimer(manager.dialog)
@@ -43,33 +49,49 @@ def _zoomed_chart(manager):
     return next((c for c in candidates if c is not None and getattr(c, "_is_zoomed", False)), None)
 
 
-def _window_from_daily_rows(manager, chart):
-    """Zoom window in ms for the daily view (no zoom sync), only if it is 2 days or less."""
-    from .... import rollover_hour
-    from ....widgets.charts.common.zoom import build_adaptive_fetch_bounds, resolve_adaptive_zoom_window
-
-    history = list(reversed(manager.last_history_data or []))
-    if not history:
-        return None
-    start, end = chart.get_zoom_range()
-    source_len = int(getattr(chart, "_full_length", 0) or len(history))
-    offset = len(history) - source_len
-    window = resolve_adaptive_zoom_window(
-        history[max(0, int(start) + offset):max(0, min(len(history), int(end) + offset))],
-        date_keys=("logical_date", "date"),
-    )
-    if not window:
-        return None
-    return build_adaptive_fetch_bounds(window["first_dt"], window["last_dt"], offset_seconds=rollover_hour() * 3600)
-
-
 def _parse(date_str):
     return int(datetime.strptime(date_str, "%Y-%m-%d %H:%M").timestamp() * 1000)
 
 
 def _show_bars(manager, stack):
-    if stack.currentIndex() == 2:
-        set_stack_index_animated(stack, 1 if (manager.last_activity_breakdown and manager.stacked_chart) else 0, "details")
+    if stack.currentIndex() == 2 or getattr(stack, "_pending_switch", None) is not None:
+        switch_stack(stack, 1 if (manager.last_activity_breakdown and manager.stacked_chart) else 0, "details")
+
+
+def _zoom_out(manager, frac):
+    """Ctrl+wheel out of the full dots window: widen the zoom by a step right away (the
+    dots glide to the wider window, or the bars take over once it is over the dots limit)
+    instead of waiting for the debounced refresh. False: cannot widen, let the chart do it."""
+    from bisect import bisect_left, bisect_right
+
+    dots = getattr(manager, "review_dots_chart", None)
+    chart = _zoomed_chart(manager)
+    rows = getattr(manager, "_hi_res_history", None)
+    if dots is None or chart is None or not rows or not getattr(manager, "_adaptive_zoom_active", False):
+        return False
+    if not hasattr(chart, "_pre_adaptive_data"):
+        return False
+    cache = getattr(manager, "_hi_res_times", None)
+    if cache is None or cache[0] is not rows or cache[1] != len(rows):
+        cache = (rows, len(rows), [_parse(r["date"]) for r in rows])
+        manager._hi_res_times = cache
+    times = cache[2]
+    cs, ce = chart.get_zoom_range()
+    cs, ce = max(0, int(cs)), min(len(rows), int(ce))
+    t0, t1 = dots._t0, dots._t1
+    new_span = (t1 - t0) * 1.25
+    n0 = t0 + frac * (t1 - t0) - frac * new_span
+    n1 = n0 + new_span
+    s = max(0, bisect_right(times, n0) - 1)
+    e = min(len(rows), bisect_left(times, n1 - BIN_MS) + 1)
+    s, e = min(s, cs), max(e, ce)
+    if s == cs and e == ce:
+        s, e = max(0, cs - 1), min(len(rows), ce + 1)
+    if s >= cs and e <= ce:
+        return False
+    chart.set_zoom_range(s, e)
+    refresh_review_dots(manager, immediate=True)
+    return True
 
 
 def _apply(manager):
@@ -83,7 +105,7 @@ def _apply(manager):
         if chart is None:
             _show_bars(manager, stack)
             return
-        if getattr(manager, "_adaptive_zoom_active", False) and rows:
+        if getattr(manager, "_adaptive_zoom_active", False) and rows and hasattr(chart, "_pre_adaptive_data"):
             start, end = chart.get_zoom_range()
             end = min(int(end), len(rows))
             start = max(0, int(start))
@@ -95,12 +117,6 @@ def _apply(manager):
             if t1 - t0 > DOTS_MAX_SPAN_MS:
                 _show_bars(manager, stack)
                 return
-        elif not getattr(manager, "last_sync_zoom", False):
-            bounds = _window_from_daily_rows(manager, chart)
-            if bounds is None:
-                _show_bars(manager, stack)
-                return
-            t0, t1 = bounds
         else:
             _show_bars(manager, stack)
             return
@@ -126,7 +142,8 @@ def _apply(manager):
         dots.set_mode("time" if time_mode else "reviews", manager.last_activity_breakdown)
         dots.set_events(events, t0, t1)
         dots.wheel_target = chart
-        set_stack_index_animated(stack, 2, "details")
+        dots.zoom_out_handler = lambda frac, m=manager: _zoom_out(m, frac)
+        switch_stack(stack, 2, "details")
         log_debug(f"[DOTS] {len(events)} reviews shown", tag="DEEPDIVE")
     except Exception:
         log_swallowed()

@@ -4,7 +4,6 @@ from aqt.qt import (
     QWidget, QVBoxLayout, Qt
 )
 from aqt import mw
-import time
 from .. import Config, LAST_YEAR, Period
 from ..logger import log_error
 from ..logger import log_swallowed

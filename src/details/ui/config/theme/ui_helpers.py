@@ -33,7 +33,7 @@ def get_builtin_theme_defs():
         (ThemePalettes.MIDNIGHT, "Midnight"),
         (ThemePalettes.DARK_PRO, "Dark Pro"),
         (ThemePalettes.DARK_OCEAN, "Dark Ocean"),
-        (ThemePalettes.DEFAULT_DARK, "Default Dark"),
+        (ThemePalettes.DEFAULT_DARK, "Navy"),
         (ThemePalettes.DARK_PURPLE, "Dark Purple"),
         (ThemePalettes.DRACULA, "Dracula"),
         (ThemePalettes.CATPPUCCIN, "Catppuccin"),

@@ -591,6 +591,11 @@ def _export_visual_impl(dialog, mode):
                     tab_name = dialog.tab_widget.tabText(
                         dialog.tab_widget.currentIndex()
                     )
+                    mgr_ = getattr(dialog, 'deep_dive_manager', None)
+                    ctx_idx = getattr(mgr_, 'last_tab_index', None) if mgr_ else None
+                    if (mode == 'full' and is_dd_open and ctx_idx is not None
+                            and ctx_idx != dialog.tab_widget.currentIndex()):
+                        subtitle_parts = list(subtitle_parts) + [('Table', tab_name)]
                     sections.append(dict(
                         kind='table', label=f'Statistics - {tab_name}',
                         widget=tbl, w=tbl_w, h=tbl_h,

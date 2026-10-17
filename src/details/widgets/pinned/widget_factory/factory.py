@@ -253,7 +253,7 @@ class WidgetFactory:
                         label = default_labels.get(wtype, wtype.replace("_", " ").title())
                         
                     if isinstance(wrapper, StatCardWidget):
-                        wrapper.update_val(wrapper.value_lbl.text(), title=label, refresh=False)
+                        wrapper.update_val(wrapper.shown_value(), title=label, refresh=False)
                     else:
                         header = wrapper.findChild(QLabel, "pinned_header")
                         if header:

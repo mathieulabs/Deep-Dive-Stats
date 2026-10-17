@@ -7,6 +7,7 @@ from ...chart_utils import ChartGeometry, get_theme_colors, is_night_mode
 from ...chart_utils.drawing import (
     stroke_average_line,
     draw_bar_rect,
+    bar_fade_factor,
     chart_style,
     draw_cumulative_line_and_area,
     draw_right_axis_labels,
@@ -24,7 +25,14 @@ from ..common.metric import (
     transition_margin_formatters,
     split_transition_labels,
 )
-from ..common.metric.chrome import draw_cached_chrome as _draw_cached_chrome, draw_cached_scaffold as _draw_cached_scaffold
+from ..common.metric.chrome import (
+    draw_blended_right_labels,
+    draw_blended_scaffold,
+    draw_cached_chrome as _draw_cached_chrome,
+    draw_cached_scaffold as _draw_cached_scaffold,
+    mode_switch_blend,
+)
+from ..common.zoom_view import dense_bar_ratio, zoom_view_bar, bar_slot, cumulative_points, get_zoom_view, zoom_view_margins
 
 
 def paint_event_impl(widget, event):
@@ -83,6 +91,9 @@ def paint_event_impl(widget, event):
     max_cumulative = cumulative_totals[-1] if cumulative_totals else 1
     if max_cumulative == 0:
         max_cumulative = 1
+    zv = get_zoom_view(widget)
+    if zv is not None:
+        max_val = max(1e-9, float(zv["max"]))
 
     bar_display_data = display_data
     bar_scale_max = max_val
@@ -109,6 +120,14 @@ def paint_event_impl(widget, event):
             old_formatter=old_fmt,
             new_formatter=new_fmt,
         )
+    elif zv is not None:
+        margin_left, margin_right = zoom_view_margins(
+            zv,
+            fm,
+            cumulative_totals,
+            getattr(widget, "cumulative_visible", False),
+            value_formatter=widget._axis_value_formatter if widget._is_time_mode() else None,
+        )
     else:
         margin_left, margin_right = calculate_margin_pair(
             fm,
@@ -126,6 +145,8 @@ def paint_event_impl(widget, event):
 
     left_axis_max = max_val
     axis_old_labels = None
+    _blend = None
+    _left_ends = None
     labels = [item.get("pretty_date", "").split(" - ")[0] for item in display_data]
     if widget._global_transition_mode is not None or widget._data_transition_active:
         old_totals_for_axis = [
@@ -135,6 +156,13 @@ def paint_event_impl(widget, event):
             sum(item.get(cfg["key"], 0) for cfg in widget.series_config) for item in (widget._transition_new_display_data or [])
         ]
         left_axis_max = interpolate_axis_max(old_totals_for_axis, new_totals_for_axis, t)
+        if widget._global_transition_mode is None:
+            _blend = mode_switch_blend(widget, t)
+            if _blend is not None:
+                _left_ends = (
+                    interpolate_axis_max(old_totals_for_axis, new_totals_for_axis, 0.0),
+                    interpolate_axis_max(old_totals_for_axis, new_totals_for_axis, 1.0),
+                )
         old_label_rows = list(widget._transition_old_display_data or [])
         new_label_rows = list(widget._transition_new_display_data or [])
         if old_label_rows or new_label_rows:
@@ -144,17 +172,32 @@ def paint_event_impl(widget, event):
                 label_getter=lambda item: item.get("pretty_date", ""),
             )
 
-    _draw_cached_scaffold(
-        widget,
-        painter,
-        width=w,
-        height=h,
-        margin_left=margin_left,
-        margin_top=margin_top,
-        margin_right=margin_right,
-        margin_bottom=margin_bottom,
-        left_axis_max=left_axis_max,
-    )
+    if _blend is not None:
+        draw_blended_scaffold(
+            widget,
+            painter,
+            _blend,
+            width=w,
+            height=h,
+            margin_left=margin_left,
+            margin_top=margin_top,
+            margin_right=margin_right,
+            margin_bottom=margin_bottom,
+            old_max=_left_ends[0],
+            new_max=_left_ends[1],
+        )
+    else:
+        _draw_cached_scaffold(
+            widget,
+            painter,
+            width=w,
+            height=h,
+            margin_left=margin_left,
+            margin_top=margin_top,
+            margin_right=margin_right,
+            margin_bottom=margin_bottom,
+            left_axis_max=left_axis_max,
+        )
 
     n = len(bar_display_data)
     if n == 0:
@@ -162,7 +205,15 @@ def paint_event_impl(widget, event):
 
     width_ratio = max(0.05, min(1.0, float(getattr(widget, "_bar_width_ratio", 1.0))))
     width_ratio = min(width_ratio, 0.9)
-    bar_w = (avail_w / n) * width_ratio
+    if zv is not None:
+        widget._zoom_view_plot = (margin_left, margin_top, avail_w, avail_h)
+        slot_x0, slot_w = bar_slot(zv, margin_left, avail_w)
+        painter.save()
+        painter.setClipRect(QRectF(margin_left, 0.0, avail_w, margin_top + avail_h))
+    else:
+        slot_x0, slot_w = margin_left, avail_w / n
+    width_ratio = dense_bar_ratio(slot_w, width_ratio)
+    bar_w = slot_w * width_ratio
     bar_slots = None
     if widget._data_transition_active and widget._transition_align_right:
         bar_slots = widget.interpolate_bar_slots(
@@ -175,19 +226,30 @@ def paint_event_impl(widget, event):
             width_ratio=width_ratio,
         )
 
+    _shade_max = float((zv.get("color_max") if zv is not None else None) or bar_scale_max)
+    _night = is_night_mode(widget)
+    _style_k = chart_style(widget)[1] / 100.0
+    _chart_alpha = int(getattr(widget, "chart_opacity_pct", 100) * 2.55)
+    _intensity = getattr(widget, "_intensity_by_value_coloring", False)
+    _series_colors = {c["key"]: QColor(c["color"]) for c in widget.series_config}
     for i, item in enumerate(bar_display_data):
         if bar_slots and i < len(bar_slots):
             center_x, slot_w = bar_slots[i]
             x = center_x - (slot_w * 0.5)
             draw_bar_w = slot_w
         else:
-            x = margin_left + (i * (avail_w / n)) + ((avail_w / n) - bar_w) / 2.0
+            x = slot_x0 + (i * slot_w) + (slot_w - bar_w) / 2.0
             draw_bar_w = bar_w
+            if zv is not None:
+                x, draw_bar_w = zoom_view_bar(zv, i, x, draw_bar_w, slot_x0, slot_w)
+        if zv is not None and (x > margin_left + avail_w or x + draw_bar_w < margin_left):
+            continue
         current_y = margin_top + avail_h
         _base_y = current_y
         _total_h = sum(
             max(0.0, item.get(_c["key"], 0)) for _c in widget.series_config
         ) / max(1e-9, bar_scale_max) * avail_h * presence
+        _size_k = bar_fade_factor(draw_bar_w, _total_h)
         top_key = None
         for _c in widget.series_config:
             if item.get(_c["key"], 0) > 0:
@@ -201,14 +263,14 @@ def paint_event_impl(widget, event):
             bar_h = (val / bar_scale_max) * avail_h * presence
             y = current_y - bar_h
             rect = QRectF(x, y, draw_bar_w, bar_h)
-            alpha = int(getattr(widget, "chart_opacity_pct", 100) * 2.55)
-            base_color = QColor(config["color"])
+            alpha = _chart_alpha
+            base_color = QColor(_series_colors[key])
             base_color.setAlpha(alpha)
 
-            if getattr(widget, "_intensity_by_value_coloring", False):
+            if _intensity:
                 bar_total = sum(item.get(c["key"], 0) for c in widget.series_config)
-                ratio = min(1.0, (bar_total / max(1.0, bar_scale_max))) if bar_scale_max > 0 else 0.0
-                dark = is_night_mode(widget)
+                ratio = min(1.0, (bar_total / max(1.0, _shade_max))) if _shade_max > 0 else 0.0
+                dark = _night
                 light_mul = 1.4 if dark else 1.22
                 dark_mul = 0.7 if dark else 0.68
                 light_l = min(255, int(base_color.lightness() * light_mul))
@@ -218,14 +280,14 @@ def paint_event_impl(widget, event):
                 base_color.setAlpha(alpha)
 
             if i == widget.hover_index:
-                base_color = base_color.lighter(130) if is_night_mode(widget) else base_color.darker(115)
+                base_color = base_color.lighter(130) if _night else base_color.darker(115)
 
-            if draw_bar_w >= 4.0 and _total_h > 6.0:
+            if _size_k > 0.01:
                 # Same soft vertical fade as the plain Activity bars, spread over the whole stack.
                 _bot = QColor(base_color)
                 _top = QColor(base_color)
-                _k = chart_style(widget)[1] / 100.0
-                if is_night_mode(widget):
+                _k = _style_k * _size_k
+                if _night:
                     _top = _top.lighter(100 + int(round(14 * _k)))
                     _top.setAlpha(base_color.alpha())
                     _bot = _bot.darker(100 + int(round(30 * _k)))
@@ -237,10 +299,18 @@ def paint_event_impl(widget, event):
                 _g.setColorAt(1.0, _bot)
                 painter.setBrush(_g)
             else:
+                if draw_bar_w < 2.0:
+                    # Hair-thin bar: a plain filled rectangle (same picture, much cheaper).
+                    painter.fillRect(rect, base_color)
+                    current_y = y
+                    continue
                 painter.setBrush(base_color)
             painter.setPen(Qt.PenStyle.NoPen)
             if key == top_key:
-                draw_bar_rect(painter, rect, fade=False, widget=widget)
+                draw_bar_rect(
+                    painter, rect, fade=False,
+                    radius=(zv.get("radius", 1.8) if zv is not None else 1.8), widget=widget,
+                )
             else:
                 painter.drawRect(rect)
             current_y = y
@@ -257,6 +327,10 @@ def paint_event_impl(widget, event):
         line_presence = presence if widget._global_transition_mode in ("from_empty", "to_empty") else 1.0
         path = QPainterPath()
         points = []
+        if zv is not None and cumulative_draw_values:
+            zv_points, max_cumulative = cumulative_points(zv, cumulative_draw_values, margin_left, avail_w)
+            cumulative_draw_values = [v for _x, v in zv_points]
+            cumulative_draw_max = max_cumulative
         step_x_line = avail_w / (n - 1) if n > 1 else 0
         x_positions = None
         if widget._data_transition_active and widget._transition_align_right:
@@ -269,7 +343,9 @@ def paint_event_impl(widget, event):
                 align_right=True,
             )
         for i, cum in enumerate(cumulative_draw_values):
-            if x_positions and i < len(x_positions):
+            if zv is not None:
+                x = zv_points[i][0]
+            elif x_positions and i < len(x_positions):
                 x = x_positions[i]
             else:
                 x = margin_left + (i * step_x_line) if n > 1 else margin_left + avail_w / 2
@@ -288,6 +364,8 @@ def paint_event_impl(widget, event):
             # Same Total line + soft area as every other chart.
             draw_cumulative_line_and_area(painter, path, fill_path, widget=widget)
             painter.restore()
+    if zv is not None:
+        painter.restore()
 
     avg_y = None
     avg_pen_target = None
@@ -325,7 +403,7 @@ def paint_event_impl(widget, event):
             else:
                 alpha_factor = 1.0
         else:
-            avg_val = widget._get_avg()
+            avg_val = widget._get_avg() if zv is None else float(zv.get("avg") or 0.0)
             if avg_val <= 0:
                 y_avg = None
             else:
@@ -338,6 +416,7 @@ def paint_event_impl(widget, event):
             _base = _pal.get("total_line") or ("#ffffff" if bool(_pal.get("is_dark")) else "#000000")
             avg_pen_target = (_base, bool(widget.hover_avg), alpha_factor, y_avg)
 
+    _right_ends = None
     if getattr(widget, "cumulative_visible", False) and cumulative_totals:
         right_axis_max = max_cumulative
         if widget._global_transition_mode is not None or widget._data_transition_active:
@@ -352,11 +431,37 @@ def paint_event_impl(widget, event):
                 [sum(new_totals_for_axis)] if new_totals_for_axis else [],
                 t,
             )
+            _right_ends = (
+                interpolate_axis_max([sum(old_totals_for_axis)] if old_totals_for_axis else [], [sum(new_totals_for_axis)] if new_totals_for_axis else [], 0.0),
+                interpolate_axis_max([sum(old_totals_for_axis)] if old_totals_for_axis else [], [sum(new_totals_for_axis)] if new_totals_for_axis else [], 1.0),
+            )
 
     use_cached_chrome = (
         (widget._global_transition_mode is None)
         and (not widget._data_transition_active)
+        and zv is None
     )
+    if zv is not None:
+        # Zoom animation: no x labels or stats (the animation fades them), no hover.
+        if avg_pen_target is not None:
+            _avg_base, _avg_hover, _avg_alpha, avg_y_val = avg_pen_target
+            stroke_average_line(
+                painter, margin_left, w - margin_right, int(avg_y_val), _avg_base,
+                widget=widget, hovered=False, alpha_factor=_avg_alpha,
+            )
+        if getattr(widget, "cumulative_visible", False) and cumulative_totals:
+            draw_right_axis_labels(
+                painter,
+                w,
+                h,
+                margin_right,
+                margin_top,
+                margin_bottom,
+                right_axis_max,
+                value_formatter=widget._axis_value_formatter if widget._is_time_mode() else None,
+                widget=widget,
+            )
+        return
     if use_cached_chrome:
         _draw_cached_chrome(
             widget,
@@ -419,17 +524,31 @@ def paint_event_impl(widget, event):
                 current_y = y
 
     if getattr(widget, "cumulative_visible", False) and cumulative_totals and (not use_cached_chrome):
-        draw_right_axis_labels(
-            painter,
-            w,
-            h,
-            margin_right,
-            margin_top,
-            margin_bottom,
-            right_axis_max,
-            value_formatter=widget._axis_value_formatter if widget._is_time_mode() else None,
-            widget=widget,
-        )
+        if _blend is not None and _right_ends is not None:
+            draw_blended_right_labels(
+                widget,
+                painter,
+                _blend,
+                width=w,
+                height=h,
+                margin_right=margin_right,
+                margin_top=margin_top,
+                margin_bottom=margin_bottom,
+                old_max=_right_ends[0],
+                new_max=_right_ends[1],
+            )
+        else:
+            draw_right_axis_labels(
+                painter,
+                w,
+                h,
+                margin_right,
+                margin_top,
+                margin_bottom,
+                right_axis_max,
+                value_formatter=widget._axis_value_formatter if widget._is_time_mode() else None,
+                widget=widget,
+            )
 
     widget.draw_selection_overlay(painter, margin_left, margin_top, avail_w, avail_h)
     if widget._data_transition_active and widget.get_progress() >= 0.999:
