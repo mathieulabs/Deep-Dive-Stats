@@ -14,13 +14,12 @@ class StatsMixin:
         """
         if did_limit is None:
             did_limit = HistoryProvider._get_did_limit(addon_config, deck_id)
-            
+
         week_start = addon_config.config.get(Config.WEEK_START, 0)
         start_ms, end_ms, _, _ = get_time_range_ms(range_type, week_start=week_start,
                                                    custom_days=custom_days, custom_type=custom_type,
                                                    start_date_str=start_date_str, end_date_str=end_date_str)
-        
-        
+
         query = f"""
             SELECT 
                 COUNT(*) as reviews,
@@ -44,7 +43,7 @@ class StatsMixin:
                 "total_reviews": 0, "total_time_ms": 0, "total_passed": 0,
                 "rev_young": 0, "pass_young": 0, "rev_mat": 0, "pass_mat": 0, "active_days": 0, "retention": 0
             }
-        
+
         reviews, t_ms, passed, r_young, p_young, r_mat, p_mat, active_days = row
         return {
             "total_reviews": reviews,
@@ -74,7 +73,7 @@ class StatsMixin:
         start_ms, end_ms, _, _ = get_time_range_ms(range_type, week_start=week_start,
                                                    custom_days=custom_days, custom_type=custom_type,
                                                    start_date_str=start_date_str, end_date_str=end_date_str)
-        
+
         if range_type == Period.TOTAL:
             start_ms = 0
 
@@ -82,7 +81,7 @@ class StatsMixin:
         # Learning: type in (0, 2)
         # Young: type = 1 AND lastIvl < 21
         # Mature: type = 1 AND lastIvl >= 21
-        
+
         query = f"""
             SELECT 
                 CASE 
@@ -101,21 +100,21 @@ class StatsMixin:
             {did_limit} {excluded_days_clause()}
             GROUP BY card_type, revlog.ease
         """
-        
+
         rows = [] if did_limit_has_no_cards(did_limit) else mw.col.db.all(query)
-        
+
         distribution = {
             "learning": [0, 0, 0, 0],
             "young": [0, 0, 0, 0],
             "mature": [0, 0, 0, 0]
         }
-        
+
         for r in rows:
             ctype, ease, count = r
             if ctype in distribution and 1 <= ease <= 4:
                 # ease 1-4 maps to index 0-3
                 distribution[ctype][ease-1] = count
-                
+
         return distribution
 
 

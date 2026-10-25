@@ -16,7 +16,7 @@ class GridContainer(QWidget):
     def __init__(self, parent, manager):
         super().__init__(parent)
         self.manager = manager
-        
+
     def wheelEvent(self, event):
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self.manager._handle_grid_wheel(event)
@@ -29,7 +29,7 @@ class GridContainer(QWidget):
             event.acceptProposedAction()
             if self.layout() and hasattr(self.layout(), "set_animate_moves"):
                 self.layout().set_animate_moves(True)
-    
+
     def dragMoveEvent(self, event):
         if event.mimeData().hasFormat("application/x-ankidive-chart-id"):
             event.acceptProposedAction()
@@ -61,14 +61,14 @@ class DeepDiveLayoutMixin:
             container.btn_toggle.setIcon(
                 get_svg_icon("chevron-right" if collapsed else "chevron-down", color=text_hex)
             )
-            set_qss(container.btn_toggle, 
+            set_qss(container.btn_toggle,
                 "QPushButton { background: transparent; border: none; padding: 0; margin: 0; } "
                 f"QPushButton:hover {{ background: {hover_bg}; border-radius: 4px; }}"
             )
 
         title_label = getattr(container, "title_label", None)
         if title_label is not None:
-            set_qss(title_label, 
+            set_qss(title_label,
                 f"margin-left: 0px; color: {text_hex}; font-weight: 700; font-size: 10px; letter-spacing: 0.6px;"
             )
 
@@ -106,7 +106,7 @@ class DeepDiveLayoutMixin:
         else:
             # Zoom out: smaller boxes, more columns
             self.grid_columns = min(4, self.grid_columns + 1)
-            
+
         if hasattr(self, 'current_grid_layout') and self.current_grid_layout:
             self.current_grid_layout.set_preferred_columns(self.grid_columns)
             self.current_grid_layout.activate()
@@ -114,11 +114,11 @@ class DeepDiveLayoutMixin:
 
     def _update_grid_widget_collapse(self, w, collapsed, update_persistence=True):
         w.is_collapsed = collapsed
-        
+
         sk = getattr(w, "state_key", None)
-        if sk and update_persistence: 
+        if sk and update_persistence:
             self.section_collapse_states[sk] = collapsed
-        
+
         if collapsed:
             if not hasattr(w, "original_min_h"):
                 w.original_min_h = w.minimumHeight()
@@ -180,7 +180,6 @@ class DeepDiveLayoutMixin:
 
         return rows
 
-
     def _sync_grid_row_collapse(self):
         if not hasattr(self, 'current_grid_layout') or not self.current_grid_layout:
             return
@@ -192,16 +191,16 @@ class DeepDiveLayoutMixin:
         for row_widgets in row_sets:
             if not row_widgets:
                 continue
-            
+
             # Source of truth: is ANY widget in this row marked as collapsed in persistence?
             should_collapse = any(
-                self.section_collapse_states.get(getattr(w, "state_key", ""), False) 
+                self.section_collapse_states.get(getattr(w, "state_key", ""), False)
                 for w in row_widgets
             )
-            
+
             for w in row_widgets:
                 self._update_grid_widget_collapse(w, should_collapse, update_persistence=False)
-        
+
         layout.invalidate()
         if layout.parentWidget():
             layout.parentWidget().updateGeometry()
@@ -220,14 +219,14 @@ class DeepDiveLayoutMixin:
             return
 
         emitting_widget.setFixedHeight(new_h)
-        
+
         for row_widgets in row_sets:
             if emitting_widget in row_widgets:
                 for wi in row_widgets:
                     if wi != emitting_widget:
                         wi.setFixedHeight(new_h)
                 break
-        
+
         layout.invalidate()
         if layout.parentWidget():
             layout.parentWidget().updateGeometry()
@@ -236,7 +235,7 @@ class DeepDiveLayoutMixin:
         """When a resize finishes (mouse release), save heights of all widgets in the row to the config."""
         if new_h is None:
             return
-            
+
         if not hasattr(self, 'current_grid_layout') or not self.current_grid_layout:
             return
         layout = self.current_grid_layout
@@ -244,9 +243,8 @@ class DeepDiveLayoutMixin:
         if not row_sets:
             return
 
-
         self._update_grid_widget_height(emitting_widget, new_h)
-        
+
         target_row = None
         for row_widgets in row_sets:
             if emitting_widget in row_widgets:
@@ -256,7 +254,7 @@ class DeepDiveLayoutMixin:
         if target_row:
             for wi in target_row:
                 self._update_grid_widget_height(wi, new_h)
-                
+
                 # Persist to config WITHOUT triggering a refresh and WITHOUT writing to disk yet
                 sk = getattr(wi, "state_key", None)
                 if sk:
@@ -269,21 +267,19 @@ class DeepDiveLayoutMixin:
                     }
                     show_bottom_stats = self.addon_config.config.get(Config.DEEP_DIVE_SHOW_BOTTOM_STATS, False)
                     show_all_stats = self.addon_config.config.get(Config.DEEP_DIVE_SHOW_STATS, True)
-                    
+
                     persisted_h = new_h
                     if show_bottom_stats and show_all_stats:
                         persisted_h -= _text_extra.get(sk, 50)
-                    
+
                     self._update_dd_widget_setting(sk, "height", persisted_h, refresh=False, write=False)
-        
+
             if hasattr(self, 'addon_config'):
                 self.addon_config.write_config()
 
-        
         layout.invalidate()
         if layout.parentWidget():
             layout.parentWidget().updateGeometry()
-
 
     def _get_widget_history(self, section_key, full_history):
         """Slice history data based on widget-specific time span (Newest First).
@@ -300,18 +296,18 @@ class DeepDiveLayoutMixin:
 
     def _slice_widget_history(self, section_key, full_history):
         span = self._get_dd_widget_setting(section_key, "time_span")
-        
+
         # In List mode, we want Activity and Retention to strictly follow the global tab range
         # (ignoring ghost settings from previous versions or Pinned views)
         if not self.grid_mode and section_key in ["activity", "retention"]:
             return full_history
-            
+
         if span is None or int(span) == int(self.last_history_range):
             return full_history
-            
+
         from .. import Period
         days = Period.DAYS_IN.get(int(span), 0)
-        
+
         if int(span) == Period.CUSTOM:
              days = self._get_dd_widget_setting(section_key, "custom_days", 7)
         elif int(span) == Period.TOTAL:
@@ -322,7 +318,7 @@ class DeepDiveLayoutMixin:
         elif int(span) == Period.YEAR: days = 365
         elif int(span) == Period.LAST_YEAR:
              days = 365 # Rough slicing for last year if global is Total
-             
+
         if days > 0:
              return full_history[:days]
         return full_history
@@ -335,7 +331,7 @@ class DeepDiveLayoutMixin:
         self._last_drag_move_time = now
 
         from ...widgets.pinned.drag_drop.engine import ReorderEngine
-        
+
         if self.grid_mode:
             if not self.current_grid_layout: return
             target_idx = ReorderEngine.get_grid_target_index(
@@ -345,14 +341,14 @@ class DeepDiveLayoutMixin:
             target_idx = ReorderEngine.get_linear_target_index(
                 self.dialog.expanded_chart_area, drop_pos, exclude_id=self._drag_source_id, vertical=True
             )
-        
+
         # Capture the source ID if it is still missing
         if not getattr(self, "_drag_source_id", None):
              if event and hasattr(event, "mimeData"):
                   mime = event.mimeData()
                   if mime.hasFormat("application/x-ankidive-chart-id"):
                        self._drag_source_id = mime.data("application/x-ankidive-chart-id").data().decode()
-        
+
         if not getattr(self, "_drag_source_id", None):
             return
 
@@ -385,7 +381,7 @@ class DeepDiveLayoutMixin:
     def _toggle_global_bottom_stats(self, enabled):
         """Toggle the visibility of bottom stats for all charts globally. Forces a full rebuild."""
         self.addon_config.set_value(Config.DEEP_DIVE_SHOW_BOTTOM_STATS, enabled)
-        
+
         # Only rebuild if the deep dive is currently open with data
         if not getattr(self, 'last_row_data', None):
             return
@@ -398,7 +394,7 @@ class DeepDiveLayoutMixin:
     def _toggle_global_show_stats(self, enabled):
         """Toggle the visibility of all stats globally. Forces a full rebuild."""
         self.addon_config.set_value(Config.DEEP_DIVE_SHOW_STATS, enabled)
-        
+
         # Only rebuild if the deep dive is currently open with data
         if not getattr(self, 'last_row_data', None):
             return
@@ -407,7 +403,6 @@ class DeepDiveLayoutMixin:
         self._cleanup_previous_view()
         self._populate_dashboard()
         self._setup_zoom_sync()
-
 
     def _set_section_visible(self, key, visible):
         wrapper = self.section_wrappers.get(key)
@@ -445,7 +440,9 @@ class DeepDiveLayoutMixin:
                     if hasattr(p.body_widget, 'get_stats_text'):
                         chart = p.body_widget
                     elif isinstance(p.body_widget, QStackedWidget):
-                        chart = p.body_widget.currentWidget()
+                        current = p.body_widget.currentWidget()
+                        # The review dots page has no stats text: keep the last one.
+                        chart = current if hasattr(current, 'get_stats_text') else None
                     else:
                         for candidate in p.body_widget.findChildren(QWidget):
                             if hasattr(candidate, 'get_stats_text'):
@@ -479,7 +476,7 @@ class DeepDiveLayoutMixin:
                     event.acceptProposedAction()
                     self._finalize_deep_dive_reorder()
                     return True
-        
+
         # For Grid mode, the GridContainer calls manager directly,
         # but the source ID must still be captured on drag enter.
         if self.grid_mode and isinstance(obj, GridContainer):
@@ -487,9 +484,8 @@ class DeepDiveLayoutMixin:
                 if event.mimeData().hasFormat("application/x-ankidive-chart-id"):
                     self._drag_source_id = event.mimeData().data("application/x-ankidive-chart-id").data().decode()
                     # Event is accepted in GridContainer.dragEnterEvent
-        
-        return super().eventFilter(obj, event)
 
+        return super().eventFilter(obj, event)
 
     def _cleanup_previous_view(self):
         stats_container = getattr(self.dialog, 'expanded_stats_layout', None)

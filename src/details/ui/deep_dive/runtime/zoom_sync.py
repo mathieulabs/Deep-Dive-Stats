@@ -125,8 +125,6 @@ def setup_zoom_sync(manager):
             source_len = getattr(source_chart, "_full_length", total_len)
 
             # Added chart can have a larger local domain than the standard activity period.
-            if isinstance(source_chart, AddedChartWidget) and source_len > total_len:
-                pass
 
             source_offset = total_len - source_len
             global_start = start + source_offset

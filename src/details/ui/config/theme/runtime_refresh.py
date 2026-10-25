@@ -29,14 +29,19 @@ def refresh_live_data_colors(*, parent_dialog, addon_config, self_widget=None, s
         except Exception:
             log_swallowed()
 
-    try:
-        from aqt.qt import QWidget as _QWidget
-        for w in parent_dialog.findChildren(_QWidget):
-            if hasattr(w, "refresh_data_colors"):
-                w.refresh_data_colors()
-                w.update()
-    except Exception:
-        log_swallowed()
+    from aqt.qt import QWidget as _QWidget, sip
+
+    # One widget at a time: refreshing one can delete others, which must not stop the rest.
+    for w in parent_dialog.findChildren(_QWidget):
+        if not hasattr(w, "refresh_data_colors"):
+            continue
+        try:
+            if sip.isdeleted(w):
+                continue
+            w.refresh_data_colors()
+            w.update()
+        except Exception:
+            log_swallowed()
 
     try:
         from aqt.qt import QApplication as _QApplication, QWidget as _QWidget

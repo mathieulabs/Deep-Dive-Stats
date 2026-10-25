@@ -173,16 +173,14 @@ def _build_stat_values_map(
             start_date_str=start_date_str,
             end_date_str=end_date_str,
         )
-        if not history:
-            if fail_if_not_cached:
-                return None
-            result = {}
-            _prune_stat_value_cache()
-            _STAT_VALUE_CACHE[cache_key] = result
-            return result
+        if not history and fail_if_not_cached:
+            return None
         # No stats in the cache (it is being refreshed): count the streak from the review days.
+        # No history at all is a deck without reviews: its numbers are zeros (a stat card
+        # showed "..." and a text widget its raw {variables}).
         from .....logic.data.core.streaks import current_streak_from_dates
 
+        history = history or []
         streak = current_streak_from_dates(
             [h.get("logical_date") or h.get("date", "") for h in history if (h.get("reviews") or 0) > 0]
         )

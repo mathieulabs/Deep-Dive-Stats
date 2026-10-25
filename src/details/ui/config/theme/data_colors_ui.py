@@ -54,7 +54,7 @@ def make_color_button(
     btn.setFixedSize(28, 22)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setToolTip("Click to pick color")
-    set_qss(btn, 
+    set_qss(btn,
         f"background-color: {current_hex}; border: 1px solid rgba(128,128,128,0.45); border-radius: 4px;"
     )
     dialog._color_buttons[storage_key] = btn
@@ -68,7 +68,7 @@ def make_color_button(
     btn_reset.setFixedSize(22, 22)
     btn_reset.setCursor(Qt.CursorShape.PointingHandCursor)
     btn_reset.setToolTip("Reset to preset value")
-    set_qss(btn_reset, 
+    set_qss(btn_reset,
         "QPushButton { background: transparent; border: none; } "
         "QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }"
     )
@@ -76,13 +76,13 @@ def make_color_button(
     update_reset_button_visibility(dialog, config_key, btn_reset)
 
     def _apply_hex(hex_val: str) -> None:
-        set_qss(btn, 
+        set_qss(btn,
             f"background-color: {hex_val}; border: 1px solid rgba(128,128,128,0.45); border-radius: 4px;"
         )
         hex_lbl.setText(hex_val.upper())
         for k, color_btn in dialog._color_buttons.items():
             if k.startswith(config_key) and color_btn is not btn:
-                set_qss(color_btn, 
+                set_qss(color_btn,
                     f"background-color: {hex_val}; border: 1px solid rgba(128,128,128,0.45); border-radius: 4px;"
                 )
         for k, label in dialog._hex_labels.items():

@@ -83,73 +83,29 @@ class FutureDueDataProvider:
                 log_swallowed()
 
         backlog_count = 0
-        excluded_invalid_due_cards = 0
-        excluded_invalid_due_keys = 0
         if ghc.is_initialized and not isinstance(lookup_id, list) and lookup_id in ghc.cache:
             ctx = ghc.get_context(lookup_id, Period.TOTAL, allow_sync_check=False)
             if ctx and "future_due" in ctx:
                 raw_dist = ctx["future_due"].get("distribution", {})
 
-                # The cache stores absolute Anki due day offsets (queue 2 and 3 only): convert them to relative days.
+                # The cache stores absolute Anki due days (queues 2 and 3): make them relative.
                 distribution = {}
-                neg_rel_samples = []
-                extreme_rel_count = 0
-                extreme_rel_samples = []
-                max_abs_rel = 0
                 for k, v in raw_dist.items():
                     try:
                         k = int(k)
                     except Exception:
                         continue
-
-                    # Skip epoch timestamps, these are queue=1 learning cards
-                    # which are excluded to match Anki's native forecast.
-                    if k >= 1000000000:
-                        excluded_invalid_due_keys += 1
-                        excluded_invalid_due_cards += int(v or 0)
+                    # Epoch timestamps are learning cards (queue 1), left out like in
+                    # Anki's own forecast. Negative due days are invalid.
+                    if k >= 1000000000 or k < 0:
                         continue
-
                     rel_day = k - today
-
-                    if rel_day < 0 and len(neg_rel_samples) < 5:
-                        neg_rel_samples.append((k, int(rel_day), int(v or 0)))
-                    abs_rel = abs(int(rel_day))
-                    if abs_rel > max_abs_rel:
-                        max_abs_rel = abs_rel
-                    if abs_rel > 5000:
-                        extreme_rel_count += 1
-                        if len(extreme_rel_samples) < 5:
-                            extreme_rel_samples.append((k, int(rel_day), int(v or 0)))
-
-                    # Ignore invalid Anki day-based due values.
-                    # For non-epoch dues, negative values are corrupt/out-of-domain.
-                    if k < 0 and k < 1000000000:
-                        excluded_invalid_due_keys += 1
-                        excluded_invalid_due_cards += int(v or 0)
-                        continue
-                    # Also reject impossible relative backlog values.
-                    # For day-based cards, lowest valid rel_day is -today (due=0).
-                    if rel_day < -today:
-                        excluded_invalid_due_keys += 1
-                        excluded_invalid_due_cards += int(v or 0)
-                        continue
-
-                    # If include_backlog is FALSE: keep rel_day >= 0 only.
-                    # If include_backlog is TRUE: keep both future and past.
                     if include_backlog or rel_day >= 0:
                         distribution[rel_day] = distribution.get(rel_day, 0) + v
                         if rel_day < 0:
                             backlog_count += v
 
-            else:
-                pass
-        else:
-            pass
-
         if distribution is None:
-            sql_extreme_future = []
-            sql_extreme_backlog = []
-
             # Future cards (review and day-learning only, matching Anki's native forecast)
             query = f"""
                 SELECT due
@@ -157,17 +113,10 @@ class FutureDueDataProvider:
                 WHERE queue IN (2, 3) AND due >= {today}
                 {did_limit}
             """
-            rows = mw.col.db.all(query)
-
             distribution = {}
-            for (due,) in rows:
+            for (due,) in mw.col.db.all(query):
                 days_future = due - today
-                if abs(int(days_future)) > 5000 and len(sql_extreme_future) < 5:
-                    sql_extreme_future.append((int(due), int(days_future)))
-
-                if days_future >= 0:
-                    distribution[days_future] = distribution.get(days_future, 0) + 1
-
+                distribution[days_future] = distribution.get(days_future, 0) + 1
 
             if include_backlog:
                 try:
@@ -179,12 +128,8 @@ class FutureDueDataProvider:
                         {did_limit}
                         GROUP BY due
                     """
-                    b_rows = mw.col.db.all(b_query)
-                    for (due, cnt) in b_rows:
+                    for (due, cnt) in mw.col.db.all(b_query):
                         day = due - today
-                        if abs(int(day)) > 5000 and len(sql_extreme_backlog) < 5:
-                            sql_extreme_backlog.append((int(due), int(day), int(cnt or 0)))
-
                         distribution[day] = distribution.get(day, 0) + cnt
                         backlog_count += cnt
                 except Exception:
@@ -196,10 +141,4 @@ class FutureDueDataProvider:
             addon_config=addon_config,
             backlog_count=backlog_count,
         )
-
-
         return payload
-
-
-
-

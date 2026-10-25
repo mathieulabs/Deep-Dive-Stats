@@ -94,7 +94,6 @@ class HeatmapWidget(ChartAnimationMixin, QWidget):
 
         self.view_mode = view_mode  # "year", "365", or "continuous"
         self.cont_month_offset = 0  # months shifted from today in continuous mode
-        self.cont_right_anchor = False  # if True, right edge is fixed in continuous mode
         self.empty_white = empty_white
         self.scale = scale
         self.hide_labels = hide_labels
@@ -146,10 +145,8 @@ class HeatmapWidget(ChartAnimationMixin, QWidget):
         self._transition_old_cells = {}
         self._transition_new_cells = {}
         self._transition_cell_pairs = []
-        self._transition_draw_ops = None
         self._transition_progress = 1.0
         self._suppress_next_transition = False
-        self._transition_old_pixmap = None
         self._transition_new_pixmap = None
         self._data_transition_anim = QPropertyAnimation(self, b"transition_progress")
         self._data_transition_anim.setDuration(320 if animations_enabled(self._animation_scope()) else 1)
@@ -161,7 +158,6 @@ class HeatmapWidget(ChartAnimationMixin, QWidget):
         self._mode_transition_old_cells = {}
         self._mode_transition_new_cells = {}
         self._mode_transition_cell_pairs = []
-        self._mode_transition_draw_ops = None
         self._mode_transition_progress = 1.0
         self._mode_transition_anim = QPropertyAnimation(self, b"mode_transition_progress")
         self._mode_transition_anim.setDuration(320 if animations_enabled(self._animation_scope()) else 1)
@@ -171,8 +167,6 @@ class HeatmapWidget(ChartAnimationMixin, QWidget):
         self._mode_transition_anim.finished.connect(self._on_mode_transition_finished)
         self._mode_transition_old_labels_pixmap = None
         self._mode_transition_new_labels_pixmap = None
-        self._mode_transition_old_scaffold_pixmap = None
-        self._mode_transition_new_scaffold_pixmap = None
         self._nav_transition_active = False
         self._nav_transition_progress = 1.0
         self._nav_transition_direction = 1

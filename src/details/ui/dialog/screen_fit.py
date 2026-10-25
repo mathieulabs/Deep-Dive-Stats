@@ -11,7 +11,6 @@ from aqt.qt import QEvent, Qt
 from ...logic.logger import log_swallowed
 
 _FULL = Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen
-OPEN_FRACTION = 0.85
 
 
 def fit_geometry(size, pos, old_area, new_area, min_size, recenter=False):

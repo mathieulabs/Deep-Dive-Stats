@@ -37,7 +37,6 @@ def rebuild_stat_cards(
     if stat_defs:
         defs_by_box = {}
         cards_by_box = {}
-        stat_index = 0
 
         for wdef in stat_defs:
             wid = wdef["id"]
@@ -52,12 +51,10 @@ def rebuild_stat_cards(
                 if manager._widget_update_signatures.get(wid) == signature:
                     cards_by_box.setdefault(box_num, []).append(widget)
                     has_widgets = True
-                    stat_index += 1
                     continue
                 if review_return_light_mode and not review_return_phase_b_mode and deck_id is None:
                     cards_by_box.setdefault(box_num, []).append(widget)
                     has_widgets = True
-                    stat_index += 1
                     continue
                 if review_return_phase_b_mode or review_return_light_mode or overview_light_mode:
                     fast_sync_ok = WidgetFactory.update(
@@ -72,7 +69,6 @@ def rebuild_stat_cards(
                         manager._widget_update_signatures[wid] = signature
                         cards_by_box.setdefault(box_num, []).append(widget)
                         has_widgets = True
-                        stat_index += 1
                         continue
 
                     delay_ms = 140
@@ -84,13 +80,8 @@ def rebuild_stat_cards(
                         delay_ms=delay_ms,
                         allow_blocking=False,
                     )
-                    if review_return_phase_b_mode:
-                        pass
-                    else:
-                        pass
                     cards_by_box.setdefault(box_num, []).append(widget)
                     has_widgets = True
-                    stat_index += 1
                     continue
                 if not WidgetFactory.update(
                     widget,
@@ -121,10 +112,7 @@ def rebuild_stat_cards(
                 if isinstance(widget, StatCardWidget):
                     widget.set_centered()
                     new_co = int(wdef.get("col_offset", 0))
-                    old_co = int(getattr(widget, "_col_offset", 0) or 0)
                     widget._col_offset = new_co
-                    if new_co != old_co:
-                        pass
                     widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
                     try:
                         if widget.receivers(widget.customContextMenuRequested):
@@ -136,7 +124,6 @@ def rebuild_stat_cards(
                     )
                 cards_by_box.setdefault(box_num, []).append(widget)
                 has_widgets = True
-            stat_index += 1
 
         used_boxes = sorted(cards_by_box.keys())
         manager._stats_box_order = list(used_boxes)

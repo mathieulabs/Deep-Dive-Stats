@@ -219,7 +219,6 @@ class TemplateTextEdit(QTextEdit):
         self._theme_config = theme_config
         self._completion_mode = None
         self._completion_editor_prefix = ""
-        self._completion_all_entries = []
         self._completion_popup = QFrame(
             self,
             Qt.WindowType.Tool
@@ -581,7 +580,6 @@ class TemplateTextEdit(QTextEdit):
     def _refresh_completion_list(self) -> None:
         base_entries = self._filter_completion_entries(self._completion_mode, self._completion_editor_prefix)
         entries = self._apply_search_filter(base_entries, self._completion_search.text())
-        self._completion_all_entries = entries
         self._completion_list.clear()
         for token, description in entries:
             item = QListWidgetItem(f"{token}  -  {description}")
@@ -619,7 +617,6 @@ class TemplateTextEdit(QTextEdit):
     def _hide_completion(self) -> None:
         self._completion_mode = None
         self._completion_editor_prefix = ""
-        self._completion_all_entries = []
         self._completion_search.blockSignals(True)
         self._completion_search.clear()
         self._completion_search.blockSignals(False)
@@ -725,7 +722,7 @@ class TemplateTextEdit(QTextEdit):
         tokens = _resolve_theme_tokens(self._theme_config)
         accent_soft = _hex_to_rgba(tokens["accent"], 0.14)
         accent_border = _hex_to_rgba(tokens["accent"], 0.38)
-        set_qss(self._completion_popup, 
+        set_qss(self._completion_popup,
             f"""
             QFrame#textLabelSuggestionPopup {{
                 background: transparent;
@@ -1082,7 +1079,7 @@ class TextLabelEditor(QWidget):
         accent_strong = _hex_to_rgba(tokens["accent"], 0.28)
         subtle_fill = _hex_to_rgba(tokens["text_secondary"], 0.08 if tokens["is_dark"] else 0.05)
 
-        set_qss(self, 
+        set_qss(self,
             f"""
             QFrame#textLabelEditorFrame {{
                 background: {tokens["bg_surface"]};

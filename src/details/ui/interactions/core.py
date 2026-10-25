@@ -63,11 +63,11 @@ def _is_click_on_folder_handle(table, item):
     text = item.text()
     if "▸" not in text and "▾" not in text:
         return False
-        
+
     pos = table.mapFromGlobal(QCursor.pos())
     cell_rect = table.visualItemRect(item)
     click_x = pos.x() - cell_rect.x()
-    
+
     prefix_match = re.search(r"<span style='font-family:Consolas, monospace; color:#606060;'>(.*?)</span>([▸▾])", text)
     if not prefix_match:
         prefix_match = re.search(
@@ -78,20 +78,20 @@ def _is_click_on_folder_handle(table, item):
         prefix_html = prefix_match.group(1)
         icon = prefix_match.group(2)
         prefix_text = prefix_html.replace("&nbsp;", " ") + icon + " "
-        
+
         f_c = QFont("Consolas", table.font().pointSize())
         if not f_c.exactMatch(): f_c = QFont("monospace", table.font().pointSize())
         fm_c = QFontMetrics(f_c)
-        
+
         name_part = text.split("</span>")[-1]
         clean_name = re.sub('<[^<]+?>', '', name_part).strip()
         f_m = QFont(table.font())
         if "<b>" in name_part: f_m.setBold(True)
         fm_m = QFontMetrics(f_m)
-        
+
         content_width = fm_c.horizontalAdvance(prefix_text) + fm_m.horizontalAdvance(clean_name) + 12 # 12px buffer
         return click_x <= content_width
-    
+
     return click_x <= 100 # Simple fallback
 
 def _selected_deck_dids(dialog, table):
@@ -174,7 +174,7 @@ def on_cell_double_clicked(dialog, row, col):
     """Handle double click on table cell to expand chart or open Deep-Dive."""
     sender_table = dialog.sender()
     if not sender_table: return
-    
+
     # If the dialog is in Full Table mode, switch to Split View immediately
     if hasattr(dialog, 'layout_state') and dialog.layout_state == 0:
         dialog.switch_layout(1)
@@ -184,7 +184,7 @@ def on_cell_double_clicked(dialog, row, col):
 
     if dialog.view_mode == 'time' and _open_selection_merged(dialog, sender_table):
         return
-    
+
     # If double-clicking the folder TEXT/ICON area, don't open Deep Dive
     # This prevents the "opening anyway" issue when users double-click to toggle
     if col == 0 and _is_click_on_folder_handle(sender_table, name_item):
@@ -192,14 +192,14 @@ def on_cell_double_clicked(dialog, row, col):
 
     title = name_item.text()
     identifier = name_item.data(Qt.ItemDataRole.UserRole)
-    
+
     if identifier is None:
         clean_title = re.sub('<[^<]+?>', '', title).strip()
         dialog.deep_dive_manager.open_deep_dive(clean_title, clean_title)
         return
 
     clean_title = re.sub('<[^<]+?>', '', title).strip()
-    
+
     if dialog.view_mode == 'time':
         dialog.target_deck_id = identifier
         current_idx = dialog.tab_widget.currentIndex()
@@ -207,18 +207,18 @@ def on_cell_double_clicked(dialog, row, col):
              tabs_config = dialog.get_active_tabs_config()
              if current_idx < len(tabs_config):
                  dialog.target_time_span = tabs_config[current_idx].get("range", None)
-                 
+
         dialog.deep_dive_manager.open_deep_dive(identifier, clean_title, period_range=dialog.target_time_span)
     else:
         dialog.target_time_span = identifier
         current_idx = dialog.tab_widget.currentIndex()
         deck_name = dialog.tab_widget.tabText(current_idx)
-        
+
         w = dialog.tab_widget.widget(current_idx)
         if w:
             raw_deck_id = w.property("deck_id")
             dialog.target_deck_id = None if raw_deck_id == DELETED_TAB_DID else raw_deck_id
-            
+
         dialog.deep_dive_manager.open_deep_dive(dialog.target_deck_id, f"{deck_name} ({clean_title})", period_range=identifier)
 
 def on_cell_clicked(dialog, row, col):
@@ -226,70 +226,68 @@ def on_cell_clicked(dialog, row, col):
     if col != 0:
         on_cell_double_clicked(dialog, row, col)
         return
-        
+
     table = dialog.sender()
     if not isinstance(table, QTableWidget):
         return
-        
+
     item = table.item(row, col)
     if not item:
         return
-        
+
     full_path = item.data(Qt.ItemDataRole.UserRole)
     if full_path is None:
         return
-        
+
     if dialog.view_mode == 'time':
         dialog.target_deck_id = full_path
     else:
         dialog.target_time_span = full_path
-        
-    # Targeted Toggle vs Deep-Dive within the "Deck" column
-    if _is_click_on_folder_handle(table, item):
-        pass
-    else:
+
+    # In the "Deck" column the folder arrow expands or collapses; anywhere else opens the deck.
+    if not _is_click_on_folder_handle(table, item):
         on_cell_double_clicked(dialog, row, col)
         return
-        
+
     if full_path in dialog.expanded_decks:
         dialog.expanded_decks.remove(full_path)
         is_expanded = False
     else:
         dialog.expanded_decks.add(full_path)
         is_expanded = True
-        
+
     from ..deck_view.visibility import persist_expanded_decks
     persist_expanded_decks(dialog)
-        
+
     if dialog.view_mode == 'time':
         for i in range(dialog.tab_widget.count()):
             tab = dialog.tab_widget.widget(i)
             tab_table = tab.findChild(QTableWidget)
             if not tab_table: continue
-            
+
             for r in range(tab_table.rowCount()):
                 r_item = tab_table.item(r, 0)
                 if not r_item: continue
                 r_path = r_item.data(Qt.ItemDataRole.UserRole)
                 if not r_path: continue
-                
+
                 if r_path == full_path:
                     curr_text = r_item.text()
                     if is_expanded and "▸" in curr_text:
                         r_item.setText(curr_text.replace("▸", "▾", 1))
                     elif not is_expanded and "▾" in curr_text:
                         r_item.setText(curr_text.replace("▾", "▸", 1))
-                
+
                 # A row is visible if all its ancestors are expanded
                 parts = r_path.split("::")
                 ancestors = ["::".join(parts[:j]) for j in range(1, len(parts))]
-                
+
                 should_hide = False
                 for ancestor in ancestors:
                     if ancestor not in dialog.expanded_decks:
                         should_hide = True
                         break
-                
+
                 if tab_table.isRowHidden(r) != should_hide:
                     tab_table.setRowHidden(r, should_hide)
     else:
@@ -298,9 +296,9 @@ def on_cell_clicked(dialog, row, col):
 def on_tab_changed(dialog, index):
     """Handle tab change and adjust window width to fit current tab content."""
     if index < 0: return
-    
+
     from ..table import filter_table
-    
+
     if dialog.view_mode == 'deck':
         from ..deck_view import (
             _refresh_deck_tab_header_styles,
@@ -331,10 +329,10 @@ def on_tab_changed(dialog, index):
                      table._has_been_resized = True
                  else:
                      _schedule_deferred_table_resize(dialog, table, index)
-                 
+
              if hasattr(dialog, 'search_bar') and dialog.view_mode == 'time':
                  filter_table(dialog, dialog.search_bar.text())
-                 
+
              if hasattr(dialog, '_last_horizontal_scroll'):
                  table.horizontalScrollBar().setValue(dialog._last_horizontal_scroll)
 
@@ -345,7 +343,7 @@ def on_tab_changed(dialog, index):
                      table.doItemsLayout()
                  except Exception:
                      log_swallowed()
-    
+
     # Do not overwrite the dashboard stats from the tab while Deep Dive charts are active and visible (layout_state > 0)
     if hasattr(dialog, 'layout_state') and dialog.layout_state > 0:
         return
@@ -372,17 +370,17 @@ def filter_deck_tabs(dialog, text):
     text = text.lower()
     visible_indices = []
     current_idx = dialog.tab_widget.currentIndex()
-    
+
     for i in range(dialog.tab_widget.count()):
         tab_name = dialog.tab_widget.tabText(i).lower()
         tab_widget = dialog.tab_widget.widget(i)
         deck_id = str(tab_widget.property("deck_id") or "").lower()
-        
+
         is_visible = (text in tab_name) or (text in deck_id)
         dialog.tab_widget.setTabVisible(i, is_visible)
         if is_visible:
             visible_indices.append(i)
-            
+
     # If the current tab became hidden, switch to the first available visible tab
     if current_idx >= 0 and not dialog.tab_widget.isTabVisible(current_idx):
         if visible_indices:

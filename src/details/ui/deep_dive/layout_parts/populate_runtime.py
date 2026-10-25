@@ -2,7 +2,6 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Deep Dive layout populate runtime helpers."""
 
-import time
 
 from aqt.qt import QPoint, QRect, QSplitter, Qt, QTimer, QWidget
 
@@ -73,18 +72,14 @@ def _pending_initial_animation_targets(section_wrappers, viewport):
 
 def populate_dashboard(self, grid_container_cls, is_warmup=False):
     """Build the dashboard widgets sequentially to maintain UI responsiveness."""
-    if not hasattr(self, "_perf_start_time") or is_warmup:
-        self._perf_start_time = time.time()
     pending_defer_reveal = bool(getattr(self, "_defer_deep_dive_chart_reveal", False))
-    
-        
+
     if not hasattr(self.dialog, 'expanded_scroll') or self.dialog.expanded_scroll is None:
         return
 
     scroll_bar = self.dialog.expanded_scroll.verticalScrollBar()
     old_scroll = scroll_bar.value()
-    
-       
+
     if hasattr(self, 'masonry_layout') and self.masonry_layout:
         try:
             while self.masonry_layout.count():
@@ -94,21 +89,12 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
         except RuntimeError:
             pass # The C++ object was already deleted
         self.masonry_layout = None
-    
-    
-    # Clear it so it doesn't affect future internal updates (like toggles)
-    # unless explicitly set again by open_deep_dive
-    self.last_scroll_value = 0
 
-    if hasattr(self, 'activity_chart') and self.activity_chart and getattr(self.activity_chart, 'is_zoomed', False):
-        self.persisted_zoom_range = self.activity_chart.get_zoom_range()
-    else: self.persisted_zoom_range = None
-        
     self.dialog.expanded_chart_area.setContentsMargins(0, 0, 0, 0)
     self.dialog.expanded_chart_area.setSpacing(0)
     self._cleanup_previous_view()
     self._defer_deep_dive_chart_reveal = pending_defer_reveal
-    
+
     self.main_split = QSplitter(Qt.Orientation.Vertical, self.dialog)
     self.main_split.setHandleWidth(9)
     split_border = (
@@ -116,12 +102,12 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
         if self.theme_vars.get("is_dark", False)
         else "rgba(0,0,0,0.08)"
     )
-    set_qss(self.main_split, 
+    set_qss(self.main_split,
         f"QSplitter::handle:vertical {{ background: transparent; border-top: 1px solid {split_border}; }}"
     )
-    
+
     ctx_did = self.last_row_data.get("did") if self.last_row_data else None
-    
+
     stats_span = self._get_dd_widget_setting("stats", "time_span", self.last_history_range)
     stats_row_data = self.last_row_data
     if stats_span is not None and int(stats_span) != int(self.last_history_range):
@@ -136,7 +122,7 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
                  range_type=int(stats_span),
                  custom_days=c_days,
              )
-         
+
     stats_widget = self._build_stats_section(stats_row_data, manual_add=True, deck_id=ctx_did, time_span=stats_span)
     if stats_widget:
          is_collapsed = self.addon_config.config.get(Config.DEEP_DIVE_STATS_COLLAPSED, False)
@@ -167,22 +153,22 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
         masonry_layout.on_cols_changed = lambda n: QTimer.singleShot(0, self._sync_grid_row_collapse)
         self.current_grid_layout = masonry_layout
         self.masonry_layout = masonry_layout
-        
+
         masonry_container.setAcceptDrops(True)
         masonry_container.installEventFilter(self._event_filter_proxy)
-        
+
         self.dialog.expanded_chart_area.addWidget(masonry_container)
         from .fill_height import install as _install_fill_height
 
         _install_fill_height(self)
         if defer_reveal:
             masonry_container.setVisible(False)
-        
+
         if not is_warmup:
             self._show_and_animate()
-        
+
         chart_order = self.addon_config.config.get(Config.DEEP_DIVE_CHART_ORDER, [])
-        
+
         # Build chart payloads from the latest history at build time, avoiding stale skeleton data when background results arrive mid-queue.
         def _current_activity_payload():
             cur_hist = self._get_widget_history("activity", self.last_history_data)[::-1]
@@ -198,10 +184,6 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
             )
             return cur_hist, cur_data
 
-        # Keep initial copies for early controls; final values are recomputed at queue completion.
-        act_hist, act_data = _current_activity_payload()
-        ret_hist, ret_data = _current_retention_payload()
-
         def _build_activity_widget():
             cur_hist, cur_data = _current_activity_payload()
             return self._create_activity_chart_view(cur_data, cur_hist)
@@ -209,7 +191,7 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
         def _build_retention_widget():
             _, cur_data = _current_retention_payload()
             return self._create_retention_chart_view(cur_data)
-        
+
         widget_builders = [
             (_build_activity_widget, "activity", "Activity"),
             (_build_retention_widget, "retention", "Retention"),
@@ -220,26 +202,22 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
             (lambda: self._build_card_counts_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "card_counts", "Card Counts"),
             (lambda: self._build_review_intervals_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "review_intervals", "Review Intervals"),
             (lambda: self._build_stability_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "stability", "Stability"),
-            (lambda: self._build_difficulty_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "difficulty", "Difficulty"), 
+            (lambda: self._build_difficulty_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "difficulty", "Difficulty"),
             (lambda: self._build_retrievability_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "retrievability", "Retrievability"),
             (lambda: self._build_added_section(self.last_deck_identifier, self._get_dd_widget_setting("added", "time_span", self.last_history_range), self.last_row_data, manual_add=True), "added", "Added")
         ]
-        
+
         if chart_order:
             order_map = {name: i for i, name in enumerate(chart_order)}
             widget_builders.sort(key=lambda x: order_map.get(x[1], 999))
-        
+
         act_header_ref = [None]
         ret_header_ref = [None]
         add_header_ref = [None]
 
-        self._widget_build_queue = widget_builders
         self._build_queue_active = True
-        build_step = 0
-        first_widget_started_at = None
-        
+
         def process_next_widget():
-            nonlocal build_step, first_widget_started_at
             if masonry_layout != getattr(self, "current_grid_layout", None):
                 if suppress_initial_chart_anims_during_build:
                     try:
@@ -249,18 +227,15 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
                 return # Stale queue from a previous view
             if not widget_builders:
                 self._build_queue_active = False
-                self._widget_build_queue = []
                 _, final_act_data = _current_activity_payload()
                 _, final_ret_data = _current_retention_payload()
                 self._add_chart_controls(act_header_ref[0], ret_header_ref[0], add_header_ref[0], final_act_data, final_ret_data)
-                
+
                 self._sync_grid_row_collapse()
                 if old_scroll > 0:
                     QTimer.singleShot(100, lambda: scroll_bar.setValue(old_scroll))
-                
+
                 self._setup_zoom_sync()
-                if hasattr(self, 'persisted_zoom_range') and self.persisted_zoom_range and self.activity_chart:
-                    self.activity_chart.set_zoom_range(*self.persisted_zoom_range)
                 threshold = get_chart_animation_visible_threshold()
                 pending_intro_targets = []
                 if defer_reveal:
@@ -316,21 +291,18 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
                 if (not is_warmup) and (not getattr(self, "_is_skeleton", False)):
                     self._deep_dive_real_view_shown = True
                 return
-            
+
             builder, k, label = widget_builders.pop(0)
-            build_step += 1
-            if first_widget_started_at is None:
-                first_widget_started_at = time.perf_counter()
             try:
                 res = builder()
-                if not res: 
+                if not res:
                     if not self._build_queue_active: return
                     if is_warmup:
                         QTimer.singleShot(5, process_next_widget)
                     else:
                         process_next_widget()
                     return
-                
+
                 w, h = None, None
                 if k == "activity" and isinstance(res, tuple) and len(res) >= 4:
                     w, self.activity_chart, self.stacked_chart, h = res[0:4]
@@ -365,10 +337,10 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
                         self.retrievability_chart = w
                 else:
                     w = res
-                     
+
                 if w:
                     sect = self._add_section_card(label, w, manual_add=True, header_layout=h, state_key=k)
-                    if sect: 
+                    if sect:
                         try:
                             masonry_layout.addWidget(sect)
                             self.section_wrappers[k] = sect
@@ -379,9 +351,9 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
                 log_error(f"RuntimeError building widget {k}: {re}")
             except Exception as e:
                 log_error(f"Error building widget {k}: {e}")
-            
+
             if not self._build_queue_active: return
-            
+
             if is_warmup:
                 QTimer.singleShot(30, process_next_widget)
             else:

@@ -10,12 +10,12 @@ def merge_delta(cache, delta_map, is_undo=False):
     if now_date.hour < rollover_hour(): now_date -= timedelta(days=1)
     today_str = now_date.strftime("%Y-%m-%d")
     yesterday_str = (now_date - timedelta(days=1)).strftime("%Y-%m-%d")
-    
+
     for did, delta_ctx in delta_map.items():
         if did not in cache.cache:
             cache.cache[did] = delta_ctx
             continue
-        
+
         existing_cache = cache.cache[did]
         total_ctx = existing_cache.setdefault(Period.TOTAL, {
             "reviews": [], "heatmap_data": {}, "counts": {}, "stats": {
@@ -28,18 +28,18 @@ def merge_delta(cache, delta_map, is_undo=False):
         # Make sure they exist so delta merge never crashes.
         total_ctx.setdefault("counts", {})
         total_ctx.setdefault("stats", {})
-        
+
         new_total = delta_ctx.get(Period.TOTAL, {})
-        
+
         total_ctx["counts"] = new_total.get("counts", total_ctx["counts"])
         total_ctx["future_reviews"] = new_total.setdefault("future_reviews", {})
         total_ctx["future_list"] = new_total.setdefault("future_list", [])
         total_ctx["future_dates"] = new_total.setdefault("future_dates", [])
-        
+
         # Merge the reviews list (kept in descending order), skipping dates we already have.
         new_history = new_total.get("reviews", [])
         existing_history = total_ctx.get("reviews", [])
-        
+
         merge_map = {item["logical_date"]: item for item in existing_history}
         # Days that already had reviews. A dense cache also holds empty days (today before
         # its first review), which still count as new active days.
@@ -48,12 +48,12 @@ def merge_delta(cache, delta_map, is_undo=False):
         if is_undo:
             merge_map.pop(today_str, None)
             merge_map.pop(yesterday_str, None)
-            
+
         # A delta update adds the new data to existing bins, so other decks' data for the same day in the global view is not overwritten.
         for new_item in new_history:
             ld = new_item.get("logical_date")
             if not ld: continue
-            
+
             if not is_undo and ld in merge_map:
                 target = merge_map[ld]
                 for k in ["reviews", "time_ms", "passed", "rev_young", "pass_young", "rev_mat", "pass_mat", "learn_count", "relearn_count", "young_count", "mature_count", "cram_count", "again", "hard", "good", "easy",
@@ -62,11 +62,11 @@ def merge_delta(cache, delta_map, is_undo=False):
                           "young_btn1", "young_btn2", "young_btn3", "young_btn4",
                           "mature_btn1", "mature_btn2", "mature_btn3", "mature_btn4"]:
                     target[k] = target.get(k, 0) + new_item.get(k, 0)
-                
+
                 target["retention"] = (target["passed"] / target["reviews"] * 100) if target["reviews"] > 0 else None
                 target["ret_young"] = (target["pass_young"] / target["rev_young"] * 100) if target["rev_young"] > 0 else None
                 target["ret_mat"] = (target["pass_mat"] / target["rev_mat"] * 100) if target["rev_mat"] > 0 else None
-                
+
                 if "hourly" in new_item:
                     tgt_h = target.setdefault("hourly", {h: {"total": 0, "correct": 0} for h in range(24)})
                     src_h = new_item["hourly"]
@@ -78,13 +78,13 @@ def merge_delta(cache, delta_map, is_undo=False):
                 merge_map[ld] = new_item.copy()
                 if "hourly" in new_item:
                     merge_map[ld]["hourly"] = {h: new_item["hourly"][h].copy() for h in new_item["hourly"]}
-            
+
         # Sparse cache for performance, densification happens lazily in get_context
         merged_list = sorted(list(merge_map.values()), key=lambda x: x["logical_date"], reverse=True)
-                
+
         total_ctx["reviews"] = merged_list
         merged_history = merged_list
-        
+
         d_stats = new_total.get("stats", {})
         e_stats = total_ctx["stats"]
 
@@ -161,30 +161,30 @@ def merge_delta(cache, delta_map, is_undo=False):
         e_stats["retention"] = (e_stats["total_passed"] / e_stats["total_reviews"] * 100) if e_stats.get("total_reviews", 0) > 0 else 0
         e_stats["ret_young"] = (e_stats["pass_young"] / e_stats["rev_young"] * 100) if e_stats.get("rev_young", 0) > 0 else 0
         e_stats["ret_mat"] = (e_stats["pass_mat"] / e_stats["rev_mat"] * 100) if e_stats.get("rev_mat", 0) > 0 else 0
-        
+
         new_hm = new_total.get("heatmap_data", {})
         existing_hm = total_ctx.setdefault("heatmap_data", {})
-        
+
         if is_undo:
             existing_hm.pop(today_str, None)
             existing_hm.pop(yesterday_str, None)
-            
+
         for date_key, entry in new_hm.items():
             existing_hm[date_key] = entry
-        
+
         new_added = new_total.get("added", [])
         existing_added = total_ctx.get("added", [])
-        
+
         if new_added or existing_added:
             a_merge_map = {item["date"]: item for item in existing_added}
-            
+
             if is_undo:
                 a_merge_map.pop(today_str, None)
                 a_merge_map.pop(yesterday_str, None)
-                
+
             for item in new_added:
                 a_merge_map[item["date"]] = item
-            
+
             a_sorted_dates = sorted(a_merge_map.keys())
             if a_sorted_dates:
                 dense_added = []
@@ -194,10 +194,10 @@ def merge_delta(cache, delta_map, is_undo=False):
                     curr_cum += entry.get("count", 0)
                     entry["cumulative"] = curr_cum
                     dense_added.append(entry)
-                    
+
                 total_ctx["added"] = dense_added[::-1]
                 total_ctx["added_dates"] = [a["date"] for a in total_ctx["added"]]
-        
+
         new_dist = new_total.get("distribution")
         if new_dist:
             e_dist = total_ctx.setdefault("distribution", {"learning":[0,0,0,0], "young":[0,0,0,0], "mature":[0,0,0,0]})
@@ -208,13 +208,13 @@ def merge_delta(cache, delta_map, is_undo=False):
                             e_dist[ctype][i] += counts[i]
                         else:
                             e_dist[ctype][i] = counts[i]
-        
+
         # Use the latest streak from delta, but avoid dropping it to 0 if we have an old one
         old_s = e_stats.get("streak", total_ctx.get("streak", 0))
         new_s = d_stats.get("streak", 0)
         e_stats["streak"] = max(old_s, new_s)
         total_ctx["streak"] = e_stats["streak"]
-        
+
         # Clear expensive derived caches (They will be rebuilt lazily in background)
         total_ctx.pop("oldest_first_reviews", None)
         total_ctx.pop("activity_data", None)
@@ -223,7 +223,7 @@ def merge_delta(cache, delta_map, is_undo=False):
         total_ctx.pop("oldest_first_dates", None)
         total_ctx.pop("desc_dates", None)
         total_ctx["is_dense"] = False
-        
+
         if "hourly" in new_total:
             e_hourly = total_ctx.setdefault("hourly", {h: {"total": 0, "correct": 0} for h in range(24)})
             n_hourly = new_total["hourly"]
@@ -235,7 +235,7 @@ def merge_delta(cache, delta_map, is_undo=False):
                     else:
                         e_hourly[h]["total"] = n_hourly[h]["total"]
                         e_hourly[h]["correct"] = n_hourly[h]["correct"]
-        
+
         for k in ["future_due", "future_list", "future_dates"]:
             if k in new_total:
                 total_ctx[k] = new_total[k]
@@ -244,15 +244,15 @@ def merge_delta(cache, delta_map, is_undo=False):
         new_ivl = new_total.get("review_intervals")
         if new_ivl and new_ivl.get("total", 0) > 0:
             total_ctx["review_intervals"] = new_ivl
-    
+
         if "fsrs" in total_ctx:
             del total_ctx["fsrs"]
-            
+
         # Invalidate OTHER ranges (YEAR, MONTH) to force re-slice next time
         keys_to_clear = [k for k in existing_cache if k != Period.TOTAL]
         for k in keys_to_clear:
             del existing_cache[k]
-    
-    
-    
+
+
+
 

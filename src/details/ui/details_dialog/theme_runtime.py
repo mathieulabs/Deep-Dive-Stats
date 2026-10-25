@@ -148,7 +148,7 @@ def refresh_ui_icons(dialog):
 
     if hasattr(dialog, "layout_toggle_container"):
         container_border = palette.get("border_strong", "#52525b" if is_dark else "#d4d4d8")
-        set_qss(dialog.layout_toggle_container, 
+        set_qss(dialog.layout_toggle_container,
             f"QFrame#layout_toggle_container {{ background: transparent; border: 1px solid {container_border}; border-radius: 8px; }}"
         )
 
@@ -165,7 +165,7 @@ def refresh_ui_icons(dialog):
             handle_hover = "rgba(200, 200, 200, 0.45)" if is_dark else "rgba(90, 90, 90, 0.4)"
             handle_pressed = "rgba(200, 200, 200, 0.6)" if is_dark else "rgba(90, 90, 90, 0.5)"
             handle_border = "rgba(127, 127, 127, 0.55)"
-        set_qss(dialog.expanded_scroll, 
+        set_qss(dialog.expanded_scroll,
             f"""
             QScrollArea#expanded_scroll {{ background: transparent; }}
             QScrollBar:vertical {{ width: 10px; background: transparent; margin: 0; }}

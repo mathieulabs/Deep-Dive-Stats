@@ -133,7 +133,6 @@ class DeepDiveChartsMixin:
             setup_container=self.apply_deep_dive_theme,
         )
 
-
     def _create_activity_chart_view(self, activity_data, history_oldest_first):
         return create_activity_chart_view(self, activity_data, history_oldest_first)
 
@@ -158,18 +157,18 @@ class DeepDiveChartsMixin:
     def _build_added_section(self, deck_identifier, period_range, row_data, target_layout=None, manual_add=False, header_layout=None):
         current_idx = self.dialog.tab_widget.currentIndex()
         tab_config = self._resolve_tab_config(current_idx, period_range)
-        
+
         target_did = row_data.get("did")
         if target_did is None and self.dialog.view_mode != 'time':
              target_did = tab_config.get("deck_id")
-            
+
         if period_range is not None:
              history_range = int(period_range)
         else:
              history_range = tab_config.get("range", Period.TOTAL)
 
         is_deleted = row_data.get("is_deleted", False)
-        
+
         ctx = getattr(self, "last_history_context", {}) or {}
         is_skeleton = getattr(self, "_is_skeleton", False)
         added_data_desc = resolve_added_history_desc(
@@ -188,20 +187,19 @@ class DeepDiveChartsMixin:
             ),
         )
         added_data = added_data_desc[::-1]
-        
+
         if not added_data or not any(d.get("count", 0) > 0 for d in added_data):
             if not (is_skeleton or self._show_empty_charts()):
                 return None, None
             added_data = []
- 
+
         adaptive = self.dialog.addon_config.config.get(ADAPTIVE_CHART_BINNING, True)
         self.added_chart = AddedChartWidget(added_data, parent=self.dialog, adaptive_binning=adaptive)
-        
+
         section_key = "added"
         binning_override = self._get_dd_widget_setting(section_key, "binning_override", None)
         self.added_chart.binning_override = binning_override
-        self.added_chart.binning_toggled_callback = lambda val: self._update_dd_widget_setting("added", "binning_override", val, refresh=False)
-        
+
         section_key = "added"
         is_cumul = self._get_dd_widget_setting(section_key, "show_cumulative", True)
         show_avg = self._get_dd_widget_setting(section_key, "show_average", True)
@@ -226,17 +224,17 @@ class DeepDiveChartsMixin:
             Config.DEEP_DIVE_SHOW_STATS,
             parent=self.dialog,
         )
-        
+
         return self.added_chart, header_widget
 
     def _build_distribution_section(self, deck_identifier, period_range, row_data, target_layout=None, manual_add=False):
         current_idx = self.dialog.tab_widget.currentIndex()
         tab_config = self._resolve_tab_config(current_idx, period_range)
-        
+
         target_did = row_data.get("did")
         if target_did is None and self.dialog.view_mode != 'time':
              target_did = tab_config.get("deck_id")
-            
+
         if period_range is not None:
              history_range = int(period_range)
         else:
@@ -274,7 +272,7 @@ class DeepDiveChartsMixin:
             if not (is_skeleton or self._show_empty_charts()):
                 return None, None
             dist_data = empty_distribution_payload()
-        
+
         dist_chart = GroupedBarWidget(dist_data, parent=self.dialog)
         apply_chart_display_config(
             dist_chart,
@@ -289,7 +287,7 @@ class DeepDiveChartsMixin:
         self.dist_chart = dist_chart
 
         header_widget, _, _ = create_chart_header(parent=self.dialog)
-        
+
         return dist_chart, header_widget
 
     def _build_card_counts_section(self, deck_identifier, period_range, row_data, target_layout=None, manual_add=False):
@@ -299,9 +297,9 @@ class DeepDiveChartsMixin:
         if target_did is None and self.dialog.view_mode != 'time':
              tab_config = self._resolve_tab_config(current_idx, None)
              target_did = tab_config.get("deck_id")
-             
+
         is_deleted = row_data.get("is_deleted", False)
-        
+
         # Prefer context counts, then fall back to SQL when they are missing or suspicious.
         is_skeleton = getattr(self, "_is_skeleton", False)
         ctx = getattr(self, "last_history_context", {}) or {}
@@ -323,7 +321,7 @@ class DeepDiveChartsMixin:
 
         if is_deleted or (not data or data.get("total", 0) <= 0) and not getattr(self, "_is_skeleton", False):
             return None, None
-        
+
         pie_chart = PieChartWidget(data, parent=self.dialog)
         self.pie_chart = pie_chart
         apply_chart_display_config(
@@ -338,9 +336,9 @@ class DeepDiveChartsMixin:
         pie_chart.set_separate_suspended(self.last_pie_sep)
         pie_chart.set_show_legend(self._get_dd_widget_setting("card_counts", "show_legend", True))
         pie_chart.set_legend_mode(self._get_dd_widget_setting("card_counts", "legend_mode", "auto"))
-        
+
         header_widget, header_lay, _ = create_chart_header(parent=self.dialog)
-        
+
         cb_sep = self._make_styled_checkbox("Sep. Susp.", checked=self.last_pie_sep, parent=header_widget)
         def on_sep_toggled(checked):
             self.last_pie_sep = checked
@@ -348,7 +346,7 @@ class DeepDiveChartsMixin:
             pie_chart.set_separate_suspended(checked)
         cb_sep.toggled.connect(on_sep_toggled)
         header_lay.addWidget(cb_sep)
-        
+
         return pie_chart, header_widget
 
     def _build_heatmap_section(self, history_data, row_data, history_range, period_range, target_layout=None, manual_add=False):
@@ -365,12 +363,12 @@ class DeepDiveChartsMixin:
     def _get_or_fetch_fsrs_data(self, row_data):
         if hasattr(self, 'last_fsrs_data') and hasattr(self, 'last_fsrs_did') and self.last_fsrs_did == row_data.get("did"):
             return self.last_fsrs_data
-            
+
         target_did = row_data.get("did")
         if target_did is None and self.dialog.view_mode != 'time':
              tab_config = self._resolve_tab_config(self.dialog.tab_widget.currentIndex(), None)
              target_did = tab_config.get("deck_id")
-             
+
         # Fall back to the background context (opened via DeepDiveManager with a cache hit); only use it when stability is non-empty, since the FSRS job may not have completed.
         ctx = getattr(self, "last_history_context", {}) or {}
         is_skeleton = getattr(self, "_is_skeleton", False)
@@ -396,22 +394,21 @@ class DeepDiveChartsMixin:
     def _build_stability_section(self, deck_identifier, period_range, row_data, target_layout=None, manual_add=False):
         fsrs_data = self._get_or_fetch_fsrs_data(row_data)
         from ...widgets.charts.stability import StabilityChartWidget
-        
+
         if fsrs_data is None:
             if getattr(self, "_is_skeleton", False):
                 fsrs_data = {"stability": {}, "difficulty": {}, "retrievability": {}}
             else:
                 fsrs_data = self._get_or_fetch_fsrs_data(row_data)
-        
+
         stability_data = fsrs_data.get("stability", {})
         if not stability_data and not (getattr(self, "_is_skeleton", False) or self._show_empty_charts()):
             return None, None
-            
+
         adaptive = self.dialog.addon_config.config.get(ADAPTIVE_CHART_BINNING, True)
         binning_override = self._get_dd_widget_setting("stability", "binning_override", None)
         chart = StabilityChartWidget(stability_data, parent=self.dialog, adaptive_binning=adaptive)
         chart.binning_override = binning_override
-        chart.binning_toggled_callback = lambda val: self._update_dd_widget_setting("stability", "binning_override", val, refresh=False)
         chart._last_timespan_token = (
             int(period_range if period_range is not None else self.last_history_range),
             int(self._get_dd_widget_setting("stability", "custom_days", 7) or 7),
@@ -429,7 +426,7 @@ class DeepDiveChartsMixin:
         if hasattr(self, "_apply_cumulative_mode_to_chart"):
             show_cumulative = self._get_dd_widget_setting("stability", "show_cumulative", True)
             self._apply_cumulative_mode_to_chart(chart, show_cumulative)
-        
+
         header_widget, header_lay, _, _ = create_chart_header_for_chart(
             chart,
             self.addon_config,
@@ -437,12 +434,12 @@ class DeepDiveChartsMixin:
             Config.DEEP_DIVE_SHOW_STATS,
             parent=self.dialog,
         )
-        
+
         def on_stability_filter_applied(idx):
             self._update_dd_widget_setting("stability", "time_span_idx", idx, refresh=False)
             if hasattr(self, '_refresh_bottom_stats'):
                 self._refresh_bottom_stats()
-            
+
         fsrs_modes, _fsrs_short, fsrs_labels = resolve_fsrs_filters(
             self._get_dd_widget_setting("stability", "filter_modes", None)
         )
@@ -450,7 +447,7 @@ class DeepDiveChartsMixin:
             self._get_dd_widget_setting("stability", "time_span_idx"), modes=fsrs_modes
         )
         chart.set_view_filter(initial_mode)
-            
+
         radio_group = create_fsrs_filter_group(
             chart,
             labels=fsrs_labels,
@@ -462,7 +459,7 @@ class DeepDiveChartsMixin:
             default_idx=default_fsrs_filter_idx(fsrs_modes),
         )
         header_lay.addWidget(radio_group)
-        
+
         return chart, header_widget
 
     def _build_difficulty_section(self, deck_identifier, period_range, row_data, target_layout=None, manual_add=False):
@@ -471,12 +468,11 @@ class DeepDiveChartsMixin:
         difficulty_data = fsrs_data.get("difficulty", {})
         if not difficulty_data and not self._show_empty_charts():
             return None, None
-            
+
         adaptive = self.addon_config.config.get(ADAPTIVE_CHART_BINNING, True)
         binning_override = self._get_dd_widget_setting("difficulty", "binning_override", None)
         chart = DifficultyChartWidget(difficulty_data, parent=self.dialog, adaptive_binning=adaptive)
         chart.binning_override = binning_override
-        chart.binning_toggled_callback = lambda val: self._update_dd_widget_setting("difficulty", "binning_override", val, refresh=False)
         apply_chart_display_config(
             chart,
             opacity=self._get_dd_widget_setting("difficulty", "chart_opacity", 100),
@@ -486,7 +482,7 @@ class DeepDiveChartsMixin:
             minimum_height=120,
             expanding=True,
         )
-        
+
         header_widget, _, _, _ = create_chart_header_for_chart(
             chart,
             self.addon_config,
@@ -494,7 +490,7 @@ class DeepDiveChartsMixin:
             Config.DEEP_DIVE_SHOW_STATS,
             parent=self.dialog,
         )
-        
+
         return chart, header_widget
 
     def _build_retrievability_section(self, deck_identifier, period_range, row_data, target_layout=None, manual_add=False):
@@ -503,12 +499,11 @@ class DeepDiveChartsMixin:
         retrievability_data = fsrs_data.get("retrievability", {})
         if not retrievability_data and not self._show_empty_charts():
             return None, None
-            
+
         adaptive = self.addon_config.config.get(ADAPTIVE_CHART_BINNING, True)
         binning_override = self._get_dd_widget_setting("retrievability", "binning_override", None)
         chart = RetrievabilityChartWidget(retrievability_data, parent=self.dialog, adaptive_binning=adaptive)
         chart.binning_override = binning_override
-        chart.binning_toggled_callback = lambda val: self._update_dd_widget_setting("retrievability", "binning_override", val, refresh=False)
         apply_chart_display_config(
             chart,
             opacity=self._get_dd_widget_setting("retrievability", "chart_opacity", 100),
@@ -518,7 +513,7 @@ class DeepDiveChartsMixin:
             minimum_height=120,
             expanding=True,
         )
-        
+
         header_widget, _, _, _ = create_chart_header_for_chart(
             chart,
             self.addon_config,
@@ -526,7 +521,7 @@ class DeepDiveChartsMixin:
             Config.DEEP_DIVE_SHOW_STATS,
             parent=self.dialog,
         )
-        
+
         return chart, header_widget
 
     def _build_hourly_section(self, deck_identifier, period_range, row_data, target_layout=None, manual_add=False):

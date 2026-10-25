@@ -66,8 +66,18 @@ class MasonryLayout(QLayout):
         if not enabled:
             self._last_animated_targets.clear()
 
+    def invalidate(self):
+        self._hfw_cache = {}
+        super().invalidate()
+
     def heightForWidth(self, width):
-        return self._do_layout(QRect(0, 0, width, 0), True)
+        # Qt asks this many times per layout pass for the same width. Any change to the
+        # items (sizes, hints, items added or removed) invalidates the layout first.
+        cache = self.__dict__.setdefault("_hfw_cache", {})
+        h = cache.get(width)
+        if h is None:
+            h = cache[width] = self._do_layout(QRect(0, 0, width, 0), True)
+        return h
 
     def setGeometry(self, rect):
         super().setGeometry(rect)
@@ -83,7 +93,7 @@ class MasonryLayout(QLayout):
         w = self.geometry().width()
         if w <= 0 and self.parentWidget():
             w = self.parentWidget().width()
-            
+
         if w > 0:
             h = self.heightForWidth(w)
             return QSize(w, h if self.itemList else 0)
@@ -112,11 +122,11 @@ class MasonryLayout(QLayout):
         margin_r = self.contentsMargins().right()
         margin_t = self.contentsMargins().top()
         margin_b = self.contentsMargins().bottom()
-        
+
         eff_width = rect.width() - margin_l - margin_r
         num_cols = max(1, (eff_width + spacing) // (self.min_column_width + spacing))
         col_width = (eff_width - (num_cols - 1) * spacing) // num_cols
-        
+
         # Prevent division by zero if col_width + spacing becomes 0 or negative
         if col_width <= 0 or (col_width + spacing) <= 0:
             return 0
@@ -228,7 +238,7 @@ class MasonryLayout(QLayout):
                 items_to_place.append((item, QRect(int(final_xs[idx]), int(y), int(item_w), int(item_h))))
 
             y += row_h + spacing
-        
+
         if not test_only:
              for item, target_rect in items_to_place:
                 widget = item.widget()

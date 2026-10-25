@@ -182,7 +182,6 @@ def get_labels_impl(widget):
         return widget._labels_cache
     display_data = widget._get_display_data()
     widget._labels_cache = [str(d[0]) if isinstance(d, (list, tuple)) else "" for d in display_data]
-    widget._has_labels_cache = any(widget._labels_cache)
     return widget._labels_cache
 
 
@@ -205,7 +204,6 @@ def invalidate_geometry_caches_impl(widget):
 def invalidate_data_caches_impl(widget):
     widget._invalidate_geometry_caches()
     widget._max_val_cache = None
-    widget._has_labels_cache = None
     widget._avg_val_cache = None
     widget._cumulative_cache = None
     widget._values_cache = None

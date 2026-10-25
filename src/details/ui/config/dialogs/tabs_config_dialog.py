@@ -130,30 +130,29 @@ from .colors_tab_builder import build_colors_tab
 
 class DetailedStatsConfigDialog(QDialog):
     """Configuration dialog for detailed stats tabs."""
-    
+
     def __init__(self, parent: "DetailedStatsDialog"):
         super().__init__(parent)
         self.parent_dialog = parent
         self.setWindowTitle("Settings")
         self._cancel_restored = False
-        
+
         apply_standard_dialog_sizing(self, min_width=600)
-        
+
         self.tabs_data = parent.get_tabs_config().copy()
-        
+
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(15, 15, 15, 15)
         self.layout.setSpacing(10)
 
         self.tabs_widget = QTabWidget(self)
         self.layout.addWidget(self.tabs_widget)
-        
+
         build_general_tab(self)
 
         build_time_span_tab(self)
         build_colors_tab(self)
 
-        
         self.bottom_area = QWidget(self)
         dialog_btns = QHBoxLayout(self.bottom_area)
         dialog_btns.setContentsMargins(0, 5, 0, 5)
@@ -165,7 +164,7 @@ class DetailedStatsConfigDialog(QDialog):
         dialog_btns.addWidget(self.cancel_btn)
         dialog_btns.addWidget(self.ok_btn)
         self.layout.addWidget(self.bottom_area)
-        
+
         self.refresh_styles()
         self._install_wheel_filters()
         self.load_tabs_list()
@@ -174,12 +173,12 @@ class DetailedStatsConfigDialog(QDialog):
         self._initial_config_snapshot = copy.deepcopy(self.parent_dialog.addon_config.config)
         # Live readers (chart style, theme, number format) see the edited values before Save.
         set_live_config_override(self.parent_dialog.addon_config.config)
-        
+
         # Compute the final height from size hints (no processEvents, avoids a flash)
         content_h = self.tabs_widget.sizeHint().height()
         footer_h = self.bottom_area.sizeHint().height()
         total_h = content_h + footer_h + 40  # buffer for layout gaps
-        
+
         final_h = clamp_dialog_height(self.max_height, total_h)
         self.resize(720, final_h)
 
@@ -266,7 +265,7 @@ class DetailedStatsConfigDialog(QDialog):
 
     def on_thousands_separator_changed(self, state):
         on_thousands_separator_changed_impl(self, state)
-    
+
     def on_toolbar_button_style_changed(self, index):
         on_toolbar_button_style_changed_impl(self)
 
@@ -347,7 +346,7 @@ class DetailedStatsConfigDialog(QDialog):
             if not key:
                 continue
             hex_val = self._get_data_color_current(key)
-            set_qss(btn, 
+            set_qss(btn,
                 f"background-color: {hex_val}; border: 1px solid rgba(128,128,128,0.45); border-radius: 4px;"
             )
         for storage_key, lbl in self._hex_labels.items():
@@ -390,7 +389,6 @@ class DetailedStatsConfigDialog(QDialog):
             write_config=self.parent_dialog.addon_config.write_config,
         )
         self._refresh_data_color_controls()
-
 
     def _get_current_data_colors(self):
         """Return current stat + card type colors as a dict {config_key: hex}."""
@@ -526,7 +524,6 @@ class DetailedStatsConfigDialog(QDialog):
 
     def on_full_name_changed(self, state):
         self.parent_dialog.addon_config.config[Config.SHOW_FULL_DECK_NAME] = (state == Qt.CheckState.Checked.value)
-
 
     def on_adaptive_binning_changed(self, state):
         on_adaptive_binning_changed_impl(self, state)

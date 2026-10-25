@@ -85,7 +85,7 @@ class ResponsiveGridLayout(QLayout):
                 pass
             return item
         return None
-        
+
     def set_preferred_columns(self, count):
         count = max(1, min(4, count))
         if self.preferred_columns != count:
@@ -158,19 +158,19 @@ class ResponsiveGridLayout(QLayout):
         """Natural height of one row of cards."""
         # Row is collapsed ONLY if ALL visible items in it are collapsed
         all_collapsed = all(getattr(item.widget(), "is_collapsed", False) for item, span in row if item.widget())
-        
+
         if all_collapsed:
             row_h = 40
         else:
             dominant_heights = []
             adaptive_heights = []
-            
+
             for item, span in row:
                 widget = item.widget()
                 is_adaptive = False
                 if widget and hasattr(widget, "widget_id"):
                     is_adaptive = widget.widget_id in ["heatmap", "card_counts"]
-                
+
                 # For spanning items, heightForWidth needs to know the actual pixel width
                 item_pixel_w = span * col_width + (span - 1) * spacing
 
@@ -196,22 +196,18 @@ class ResponsiveGridLayout(QLayout):
                     adaptive_heights.append(h)
                 else:
                     dominant_heights.append(h)
-            
+
             if dominant_heights:
                 row_h = max(dominant_heights)
             elif adaptive_heights:
                 row_h = max(adaptive_heights)
             else:
                 row_h = 150
-                
+
             max_required_min_h = max([item.widget().minimumHeight() for item, span in row if item.widget()] or [row_h])
             if row_h < max_required_min_h:
                 row_h = max_required_min_h
 
-            if adaptive_heights:
-                pass
-            if dominant_heights:
-                pass
         return row_h
 
     def _stretch_extra(self, rows, row_hs, spacing, margins):
@@ -252,33 +248,33 @@ class ResponsiveGridLayout(QLayout):
 
         spacing = self.spacing()
         margin_l, margin_t, margin_r, margin_b = self.getContentsMargins()
-        
+
         eff_width = rect.width() - margin_l - margin_r
-        
+
         num_cols = self.preferred_columns
-        
+
         if eff_width < 600:
             num_cols = min(num_cols, 1)
         elif eff_width < 1000:
             num_cols = min(num_cols, 2)
         elif eff_width < 1400:
             num_cols = min(num_cols, 3)
-            
+
         if num_cols != self.current_cols:
             self.current_cols = num_cols
             if self.on_cols_changed:
                 self.on_cols_changed(num_cols)
 
         col_width = (eff_width - (num_cols - 1) * spacing) // num_cols
-        
+
         x = rect.x() + margin_l
         y = rect.y() + margin_t
-        
+
         # Pass 1: group items into rows and determine each row height from col_span
         rows = []
         current_row = []
         slots_occupied = 0
-        
+
         visible_items = []
         for item in self.itemList:
             w = item.widget()
@@ -290,18 +286,18 @@ class ResponsiveGridLayout(QLayout):
             widget = item.widget()
             span = getattr(widget, "col_span", 1) if widget else 1
             span = max(1, min(num_cols, span))
-            
+
             if slots_occupied + span > num_cols:
                 rows.append(current_row)
                 current_row = []
                 slots_occupied = 0
-            
+
             current_row.append((item, span))
             slots_occupied += span
-            
+
         if current_row:
             rows.append(current_row)
-            
+
         ref_cols = min(_REF_COLS, 1 if eff_width < 600 else 2 if eff_width < 1000 else 3)
         ref_col_w = (eff_width - (ref_cols - 1) * spacing) // ref_cols
         scale = 1.0
@@ -319,20 +315,20 @@ class ResponsiveGridLayout(QLayout):
                 num_items_in_row = len(row)
                 total_slots_occupied = sum(span for item, span in row)
                 is_last_row = (row == rows[-1])
-                
+
                 for idx, (item, span) in enumerate(row):
                     visual_span = span
                     # If row has gaps and it's not the last row, expand the last item
                     if not is_last_row and idx == num_items_in_row - 1:
                         if total_slots_occupied < num_cols:
                             visual_span += (num_cols - total_slots_occupied)
-                    
+
                     item_x = x + current_slot * (col_width + spacing)
                     item_pixel_w = visual_span * col_width + (visual_span - 1) * spacing
                     target = QRect(item_x, current_y, item_pixel_w, row_h)
                     self._place(item, target)
                     current_slot += visual_span
-            
+
             current_y += row_h + spacing
-            
+
         return current_y - rect.y() - spacing + margin_b

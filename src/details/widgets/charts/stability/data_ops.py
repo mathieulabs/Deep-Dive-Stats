@@ -20,7 +20,6 @@ from ..fsrs_base import FSRSBaseChart
 
 
 def init_state_impl(widget):
-    widget.bottom_text_lines = 2
     widget.cumulative_visible = True
     widget.show_cumulative_axis = True
     widget.max_days = 31

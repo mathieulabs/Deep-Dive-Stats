@@ -69,7 +69,6 @@ class ActivityChart(ZoomableMixin, ChartAnimationMixin, QWidget):
         self._values_cache = None
         self._labels_cache = None
         self._max_val_cache = None
-        self._has_labels_cache = None
         self._path_cache = None
         self._area_path_cache = None
         self._cum_path_cache = None

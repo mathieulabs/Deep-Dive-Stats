@@ -80,7 +80,7 @@ def _refresh_deck_tab_header_styles(dialog):
         is_selected = (i == selected_idx)
         color = selected_color if is_selected else text_secondary
         weight = 700 if is_selected else 600
-        set_qss(label, 
+        set_qss(label,
             f"background: transparent; border: none; padding: 0px 4px; color: {color}; font-weight: {weight};"
         )
         btn = container.findChild(QPushButton)
@@ -177,13 +177,13 @@ def refresh_deck_tab_visibility(dialog):
 def populate_deck_tab(dialog, index, do_resize=True, from_tab_change=False):
     """Fill a skeleton deck tab with its pre-fetched data."""
     if index < 0: return
-    
+
     tab_widget = dialog.tab_widget.widget(index)
     if not tab_widget: return
-        
+
     deck_id = tab_widget.property("deck_id")
     has_data = (deck_id in getattr(dialog, 'deck_view_data', {}))
-    
+
     if index in getattr(dialog, '_deck_tabs_populated', set()):
         return
 
@@ -194,56 +194,52 @@ def populate_deck_tab(dialog, index, do_resize=True, from_tab_change=False):
         stats_list = []
     else:
         stats_list = dialog.deck_view_data[deck_id]
-        
+
     table = tab_widget.findChild(QTableWidget)
     if not table:
         table = HorizontalScrollTable()
-        
+
         from ...logic.tabs import get_tabs_config
         tabs_config = [t for t in get_tabs_config(dialog.addon_config) if t.get("enabled", True)]
         first_tab = tabs_config[0] if tabs_config else {}
-        
+
         row_height = dialog.addon_config.config.get(Config.GLOBAL_ROW_HEIGHT, 30)
 
         from ..table import setup_table_for_deck_view
-        setup_table_for_deck_view(dialog, table, 
-                                  show_time=first_tab.get("show_time", True), 
-                                  show_reviews=first_tab.get("show_reviews", True), 
-                                  show_retention=first_tab.get("show_retention", True), 
-                                  show_retention_young=first_tab.get("show_retention_young", True), 
-                                  show_retention_mature=first_tab.get("show_retention_mature", True), 
+        setup_table_for_deck_view(dialog, table,
+                                  show_time=first_tab.get("show_time", True),
+                                  show_reviews=first_tab.get("show_reviews", True),
+                                  show_retention=first_tab.get("show_retention", True),
+                                  show_retention_young=first_tab.get("show_retention_young", True),
+                                  show_retention_mature=first_tab.get("show_retention_mature", True),
                                   show_avg_time=first_tab.get("show_avg_time", True),
-                                  show_streak=first_tab.get("show_streak", False), 
+                                  show_streak=first_tab.get("show_streak", False),
                                   show_longest_streak=first_tab.get("show_longest_streak", True),
-                                  show_buttons_dist=first_tab.get("show_buttons_dist", False), 
+                                  show_buttons_dist=first_tab.get("show_buttons_dist", False),
                                   row_height=row_height,
-                                  show_active_days=first_tab.get("show_active_days", True), 
+                                  show_active_days=first_tab.get("show_active_days", True),
                                   show_forecast=first_tab.get("show_forecast", True))
-                                   
+
         tab_widget.layout().addWidget(table)
         table.cellDoubleClicked.connect(dialog.on_cell_double_clicked)
         table.cellClicked.connect(dialog.on_cell_clicked)
-    
+
     _fill_deck_table(dialog, table, stats_list, deck_id, index, do_resize=do_resize)
-    
+
     if not hasattr(dialog, '_deck_tabs_populated'): dialog._deck_tabs_populated = set()
-    
+
     # Only mark as populated if there was data
     if has_data:
         dialog._deck_tabs_populated.add(index)
-    
+
     if index == dialog.tab_widget.currentIndex():
+        # A plain update: forcing the repaint and running the event loop here also ran
+        # the Deep Dive build steps queued meanwhile, all in one freeze.
         table.viewport().update()
-        table.viewport().repaint()
-        table.repaint()
-        tab_widget.repaint()
-        
+
         if not from_tab_change and hasattr(dialog, 'on_tab_changed'):
             dialog.on_tab_changed(index)
-            
-        from aqt.qt import QCoreApplication
-        QCoreApplication.sendPostedEvents()
-        QCoreApplication.processEvents()
+
         # First deck tab can be populated before the widget is fully visible.
         # Retry a little later to avoid "squashed" columns on initial open.
         if do_resize and not getattr(table, "_has_been_resized", False):

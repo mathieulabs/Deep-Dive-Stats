@@ -111,7 +111,6 @@ def toggle_view(dialog):
         dialog.view_toggle_btn.setText(" View by Time")
         dialog.view_toggle_btn.setIcon(get_svg_icon("calendar", context_ref=dialog))
         dialog.search_bar.setPlaceholderText("Search decks...")
-        dialog._initial_deck_selected = False
         dialog.load_deck_view(prefer_cached=True)
     else:
         dialog.view_mode = "time"

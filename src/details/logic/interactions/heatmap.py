@@ -25,18 +25,18 @@ class HeatmapInteractions:
             from ..history_provider import HistoryProvider
             from ..logger import log_debug
             from datetime import timedelta
-            
+
             dt = datetime.strptime(date_str, "%Y-%m-%d")
             rollover = rollover_hour()
             now = datetime.now()
-            
+
             if now.hour < rollover:
                 logical_today = (now - timedelta(days=1)).date()
             else:
                 logical_today = now.date()
-                
+
             is_future = dt.date() > logical_today
-            
+
             deck_name = None
             if did is not None:
                 if isinstance(did, str) and not did.isdigit():
@@ -46,7 +46,7 @@ class HeatmapInteractions:
                         deck_name = mw.col.decks.name(did)
                     except Exception:
                         log_swallowed()
-            
+
             if is_future:
                 days_ahead = (dt.date() - logical_today).days
                 query = f"prop:due={days_ahead}"
@@ -55,7 +55,7 @@ class HeatmapInteractions:
             else:
                 start_ms = int((dt.timestamp() + rollover * 3600) * 1000)
                 end_ms = start_ms + (24 * 3600 * 1000)
-                
+
                 cfg = ConfigManager(mw)
                 did_limit = HistoryProvider._get_did_limit(cfg, did)
 
@@ -69,14 +69,14 @@ class HeatmapInteractions:
                 """
                 cids = mw.col.db.list(sql)
                 log_debug(f"HeatmapInteractions: Past date. Found {len(cids)} cids", tag="INTERACTION")
-                
+
                 # Falling back to pending cards if Today and no reviews found
                 if not cids and dt.date() == logical_today:
                     log_debug("HeatmapInteractions: No reviews today. Falling back to 'is:due'", tag="INTERACTION")
                     return (None, deck_name, date_str, "is:due")
-                    
+
                 return (cids, deck_name, date_str, None)
-                
+
         except Exception as e:
             import traceback
             log_error(f"Error fetching heatmap cids: {e}\n{traceback.format_exc()}")
@@ -90,13 +90,13 @@ class HeatmapInteractions:
                 res = future_or_result.result()
             else:
                 res = future_or_result
-                
+
             if len(res) == 4:
                 card_ids, deck_name, date_str, direct_query = res
             else:
                 card_ids, deck_name, date_str = res
                 direct_query = None
-                
+
         except Exception as e:
             log_error(f"Error retrieving heatmap cids: {e}")
             return
@@ -114,7 +114,7 @@ class HeatmapInteractions:
 
         if deck_name:
             search_parts.append(f'deck:"{deck_name}"')
-            
+
         from aqt import dialogs
         browser = dialogs.open("Browser", mw)
         browser.search_for_terms(" ".join(search_parts))

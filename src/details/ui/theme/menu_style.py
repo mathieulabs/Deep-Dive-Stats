@@ -48,7 +48,7 @@ def apply_menu_theme_style(menu, *, context: str, is_submenu: bool) -> None:
 
     padding_left = "2px" if is_submenu else "8px"
 
-    set_qss(menu, 
+    set_qss(menu,
         f"""
             QMenu {{
                 background-color: {bg_color};

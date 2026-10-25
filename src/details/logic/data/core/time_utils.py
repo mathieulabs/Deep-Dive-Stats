@@ -9,7 +9,7 @@ from ...logger import log_swallowed
 from .abs_period import is_abs, decode as decode_abs
 
 
-def get_time_range_ms(range_type, week_start, custom_days=7, custom_type="relative", 
+def get_time_range_ms(range_type, week_start, custom_days=7, custom_type="relative",
                       start_date_str="", end_date_str="", show_trends=False):
     """
     Calculate start_ms, end_ms, prev_start_ms, prev_end_ms based on range type.
@@ -19,26 +19,26 @@ def get_time_range_ms(range_type, week_start, custom_days=7, custom_type="relati
     # Rollover-aligned end of the current logical day.
     off_h = rollover_hour()
     now = datetime.now()
-    
+
     today_rollover = now.replace(hour=off_h, minute=0, second=0, microsecond=0)
-    
+
     if now >= today_rollover:
         # Currently in today's logical day -> ends at tomorrow's rollover
         anki_day_end_dt = today_rollover + timedelta(days=1)
     else:
         # Currently in yesterday's logical day -> ends at today's rollover
         anki_day_end_dt = today_rollover
-    
+
     ms_per_day = 86400000
-    
+
     # anki_day_start_dt is the rollover boundary that started the CURRENT logical day
     anki_day_start_dt = anki_day_end_dt - timedelta(days=1)
-    
+
     end_ms = int(anki_day_end_dt.timestamp() * 1000)
     anchor_ms = int(anki_day_start_dt.timestamp() * 1000)
-    
+
     start_ms = 0
-    
+
     if is_abs(range_type):
         d0, d1 = decode_abs(range_type)
         start_ms = int(datetime(d0.year, d0.month, d0.day, off_h, 0).timestamp() * 1000)
@@ -111,7 +111,7 @@ def get_time_range_ms(range_type, week_start, custom_days=7, custom_type="relati
                 prev_start_ms = int(datetime(cal_year - 1, 1, 1, rollover_hour(), 0).timestamp() * 1000)
         except Exception:
             log_swallowed()
-        
+
     return start_ms, end_ms, prev_start_ms, prev_end_ms
 
 

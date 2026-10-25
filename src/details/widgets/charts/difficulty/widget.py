@@ -6,7 +6,6 @@ from ..fsrs_base.percent import FSRSPercentChartBase
 
 class DifficultyChartWidget(FSRSPercentChartBase):
     chart_title = "Difficulty"
-    chart_bottom_text_lines = 2
     reverse_gradient = True
     exact_hover_match = True
     clear_hover_outside_plot = True

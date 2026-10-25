@@ -2,9 +2,9 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Multi-series retention chart with toggleable retention types."""
 
-from aqt.qt import QCheckBox, QHBoxLayout, QEasingCurve, QSizePolicy, Qt, QVBoxLayout, QWidget, pyqtSignal
+from aqt.qt import QEasingCurve, QSizePolicy, QWidget, pyqtSignal
 
-from ...chart_utils import ChartAnimationMixin, FloatingAvgLabel, ZoomableMixin, get_theme_colors
+from ...chart_utils import ChartAnimationMixin, FloatingAvgLabel, ZoomableMixin
 from ..common import init_chart_widget_state
 from .data_ops import (
     apply_zoom_to_data_impl,
@@ -49,7 +49,6 @@ from .event_ops import (
     wheel_event_impl,
 )
 from .render_ops import draw_bottom_stats_impl, draw_series_transition_impl, paint_event_impl
-from .....qss import set_qss
 from ....logic.logger import log_swallowed
 
 
@@ -90,7 +89,6 @@ class RetentionChart(ZoomableMixin, ChartAnimationMixin, QWidget):
         self.retention_data = retention_data or {}
         self.adaptive_binning = adaptive_binning
         self.binning_override = None
-        self.binning_toggled_callback = None
         # Saved states from before a series existed leave it out: it starts at its default.
         self.visible_series = {k: v["default_on"] for k, v in self.SERIES_CONFIG.items()}
         if visible_series:
@@ -143,7 +141,6 @@ class RetentionChart(ZoomableMixin, ChartAnimationMixin, QWidget):
         self._data_transition_new_series = {}
         self._data_transition_sample_count = 0
         self._data_transition_old_labels = []
-        self._data_transition_new_labels = []
         self._data_transition_old_display_data = {}
         self._data_transition_new_display_data = {}
         self._data_transition_render_cache = {}
@@ -308,59 +305,3 @@ class RetentionChart(ZoomableMixin, ChartAnimationMixin, QWidget):
 
     def get_stats_text(self):
         return get_stats_text_impl(self)
-
-
-class RetentionChartContainer(QWidget):
-    """Container widget with retention chart and toggle controls."""
-
-    def __init__(self, retention_data, parent=None, fixed_height=180):
-        super().__init__(parent)
-        self.setLayout(QVBoxLayout())
-        self.layout().setContentsMargins(0, 0, 0, 0)
-        self.layout().setSpacing(8)
-
-        controls = QHBoxLayout()
-        controls.setSpacing(16)
-        is_dark = get_theme_colors(self)["is_dark"]
-        self.chart = RetentionChart(retention_data)
-
-        for key, config in RetentionChart.SERIES_CONFIG.items():
-            cb = QCheckBox(config["label"])
-            cb.setChecked(config.get("default_on", True))
-            cb.setCursor(Qt.CursorShape.PointingHandCursor)
-
-            live_color = RetentionChart._get_series_color(key, self)
-            set_qss(cb, 
-                f"""
-                QCheckBox {{
-                    color: {live_color};
-                    font-weight: 600;
-                    font-size: 12px;
-                    spacing: 6px;
-                }}
-                QCheckBox::indicator {{
-                    width: 16px;
-                    height: 16px;
-                    border-radius: 4px;
-                    border: 2px solid {live_color};
-                    background: {'rgba(255,255,255,0.05)' if is_dark else 'rgba(0,0,0,0.02)'};
-                }}
-                QCheckBox::indicator:hover {{
-                    background: {'rgba(255,255,255,0.1)' if is_dark else 'rgba(0,0,0,0.05)'};
-                }}
-                QCheckBox::indicator:checked {{
-                    background: {live_color};
-                    border-color: {live_color};
-                }}
-            """
-            )
-            cb.stateChanged.connect(lambda state, k=key: self.chart.set_series_visible(k, bool(state)))
-            controls.addWidget(cb)
-
-        controls.addStretch()
-        self.layout().addLayout(controls)
-        if fixed_height:
-            self.chart.setFixedHeight(fixed_height)
-        else:
-            self.chart.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.layout().addWidget(self.chart)

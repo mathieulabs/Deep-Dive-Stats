@@ -5,6 +5,7 @@ from aqt.qt import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPoint
 from ..common.smooth_line import add_smooth_line
 
 from ...chart_utils.drawing import (
+    chart_style,
     draw_bar_rect,
     draw_grid_and_axes,
     draw_right_axis_labels,
@@ -132,6 +133,7 @@ def _draw_cached_overlay(
 ):
     theme = get_theme_colors(widget)
     cache_key = (
+        chart_style(widget),  # line opacity setting (Total / Average lines)
         int(width),
         int(height),
         int(round(float(plot_w))),

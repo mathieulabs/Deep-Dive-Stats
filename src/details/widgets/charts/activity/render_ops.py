@@ -66,7 +66,7 @@ def _decimate_points(points, plot_w, col_px=1):
 
 
 def paint_event_impl(widget, event):
-    if not widget.data: 
+    if not widget.data:
         return
 
     painter = QPainter(widget)
@@ -74,13 +74,13 @@ def paint_event_impl(widget, event):
 
     w = widget.width()
     h = widget.height()
-    
+
     t_colors = get_theme_colors(widget)
     is_dark = bool(t_colors.get("is_dark"))
-    
+
     margin_top = ChartGeometry.MARGIN_TOP
     margin_bottom = ChartGeometry.MARGIN_BOTTOM
-    
+
     values = widget._get_values()
     labels = widget._get_labels()
     axis_old_labels = None
@@ -187,13 +187,13 @@ def paint_event_impl(widget, event):
             getattr(widget, "cumulative_visible", False),
             value_formatter=widget._axis_value_formatter if widget._is_time_mode() else None,
         )
-    
+
     plot_w = w - margin_left - margin_right
-    
+
     margin_bottom = calculate_stats_margin(widget, painter, plot_w)
-        
+
     plot_h = h - margin_bottom - margin_top
-    
+
     cumulative_values = []
     max_cumulative = 1
     zv_cum_points = None
@@ -226,7 +226,7 @@ def paint_event_impl(widget, event):
         if zv_cum_points is not None:
             max_cumulative = _zv_top
         if max_cumulative == 0: max_cumulative = 1
-    
+
     left_axis_max = max_val
     _blend = None
     _left_ends = None
@@ -290,7 +290,6 @@ def paint_event_impl(widget, event):
 
         x_step = plot_w / (n - 1) if n > 1 else 0
 
-
         if widget.chart_type == "line":
             use_cache = not widget._data_transition_active
             if (not use_cache) or widget._path_cache is None:
@@ -300,22 +299,22 @@ def paint_event_impl(widget, event):
                     x = margin_left + (i * x_step)
                     y = margin_top + plot_h - (val / max_val * plot_h)
                     points.append(QPointF(x, y))
-                
+
                 points = _decimate_points(points, plot_w, 2 if widget._data_transition_active else 1)
                 if points:
                     path.moveTo(points[0])
                     for p in points[1:]:
                         path.lineTo(p)
-                
+
                 area_path = QPainterPath(path)
                 area_path.lineTo(points[-1].x(), margin_top + plot_h)
                 area_path.lineTo(points[0].x(), margin_top + plot_h)
                 area_path.closeSubpath()
-                
+
                 if use_cache:
                     widget._path_cache = path
                     widget._area_path_cache = area_path
-            
+
             gradient = QLinearGradient(0, margin_top, 0, margin_top + plot_h)
             c_top = QColor(widget.color)
             c_top.setAlpha(150)
@@ -323,12 +322,12 @@ def paint_event_impl(widget, event):
             c_bottom.setAlpha(10)
             gradient.setColorAt(0, c_top)
             gradient.setColorAt(1, c_bottom)
-            
+
             if use_cache:
                 painter.fillPath(widget._area_path_cache, gradient)
             else:
                 painter.fillPath(area_path, gradient)
-            
+
             pen = QPen(widget.color, 2)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -336,7 +335,7 @@ def paint_event_impl(widget, event):
                 painter.strokePath(widget._path_cache, pen)
             else:
                 painter.strokePath(path, pen)
-            
+
         elif widget.chart_type == "bar":
             step_x = plot_w / n
             bar_x0 = margin_left
@@ -358,7 +357,7 @@ def paint_event_impl(widget, event):
                     align_right=True,
                     width_ratio=_wr,
                 )
-            
+
             # Height-based color interpolation (taller = darker), shared with Hourly and Added.
             _base = QColor(widget.color)
             _is_dark = is_night_mode(widget)
@@ -366,7 +365,7 @@ def paint_event_impl(widget, event):
             _dark_mul = 0.7 if _is_dark else 0.68
             _l_max = min(255, int(_base.lightness() * _light_mul))
             _l_min = max(0, int(_base.lightness() * _dark_mul))
-            
+
             _hue, _sat = _base.hslHue(), _base.hslSaturation()
             _alpha = int(getattr(widget, 'chart_opacity_pct', 100) * 2.55)
             _shade_max = float((zv.get("color_max") if zv is not None else None) or max_val)
@@ -386,7 +385,7 @@ def paint_event_impl(widget, event):
                     continue
                 bar_h = (val / max_val) * plot_h * draw_presence
                 y = margin_top + plot_h - bar_h
-                
+
                 ratio = min(1.0, val / _shade_max) if _shade_max > 0 else 0
                 # ratio=1 => dark, ratio=0 => light
                 current_l = int(_l_max - ((_l_max - _l_min) * ratio))
@@ -410,7 +409,7 @@ def paint_event_impl(widget, event):
                     painter, QRectF(x, y, draw_bar_w, bar_h),
                     radius=(zv.get("radius", 1.8) if zv is not None else 1.8), widget=widget,
                 )
-        
+
         if getattr(widget, "cumulative_visible", False) and cumulative_values:
             if zv_cum_points is not None:
                 points = [QPointF(zv_cum_points[i][0], margin_top + plot_h - (val / max_cumulative * plot_h))
@@ -461,28 +460,28 @@ def paint_event_impl(widget, event):
                 n_cum = len(cumulative_values)
                 if n_cum > 0:
                     step_x_cum = plot_w / (n_cum - 1) if n_cum > 1 else 0
-                        
+
                     for i, val in enumerate(cumulative_values):
                         x = margin_left + (i * step_x_cum)
                         y = margin_top + plot_h - (val / max_cumulative * plot_h)
                         points.append(QPointF(x, y))
-                    
+
                     if points:
                         cum_path.moveTo(points[0])
                         add_smooth_line(cum_path, points)
-                        
+
                         fill_path = QPainterPath(cum_path)
                         fill_path.lineTo(points[-1].x(), margin_top + plot_h)
                         fill_path.lineTo(points[0].x(), margin_top + plot_h)
                         fill_path.closeSubpath()
                         widget._cum_path_cache = (cum_path, fill_path)
-            
+
             if (not widget._data_transition_active) and zv_cum_points is None and widget._cum_path_cache:
                 p_line, p_fill = widget._cum_path_cache
                 draw_cumulative_line_and_area(painter, p_line, p_fill, widget=widget)
         if zv is not None and widget.chart_type == "bar":
             painter.restore()
-        
+
         if needs_clip:
             painter.restore()
 
@@ -538,7 +537,7 @@ def paint_event_impl(widget, event):
             else:
                 y_avg = margin_top + plot_h - (avg_val / max_val * plot_h)
             alpha_factor = 1.0
-        
+
         avg_y = y_avg
         if y_avg is not None:
             _pal = get_theme_colors(widget)
@@ -698,7 +697,7 @@ def paint_event_impl(widget, event):
                 value_formatter=widget._axis_value_formatter if widget._is_time_mode() else None,
                 widget=widget,
             )
-    
+
     widget.draw_selection_overlay(painter, margin_left, margin_top, plot_w, plot_h)
 
 

@@ -80,7 +80,7 @@ class DeepDiveControlsMixin:
             return
         if not hasattr(chart, '_pre_adaptive_data'):
             chart._pre_adaptive_data = getattr(chart, data_attr)
-        
+
         if hasattr(chart, 'update_data'):
             self._adaptive_update_chart_data(chart, new_data)
         else:
@@ -98,7 +98,7 @@ class DeepDiveControlsMixin:
         """Restore chart data to original (pre-adaptive) state."""
         if hasattr(self, '_hi_res_history') and not only_added:
             del self._hi_res_history
-            
+
         self._adaptive_transitioning = True
         try:
             charts_to_restore = []
@@ -146,11 +146,11 @@ class DeepDiveControlsMixin:
         """Reset the chart order and all chart sizes to defaults."""
         conf = self.addon_config.config
         changed = False
-        
+
         if Config.DEEP_DIVE_CHART_ORDER in conf:
             del conf[Config.DEEP_DIVE_CHART_ORDER]
             changed = True
-            
+
         if Config.DEEP_DIVE_WIDGET_SETTINGS in conf:
             settings = conf[Config.DEEP_DIVE_WIDGET_SETTINGS]
             for section in settings:
@@ -160,7 +160,7 @@ class DeepDiveControlsMixin:
                 if "col_span" in settings[section]:
                     settings[section]["col_span"] = 1
                     changed = True
-        
+
         if changed:
             self.addon_config.write_config()
             if hasattr(self, '_populate_dashboard'):

@@ -3,7 +3,7 @@
 from ..common.cache_dpr import cache_dpr, cache_surface, draw_cache, stale_cache
 from aqt.qt import QColor, QPainter, QPen, QRectF, Qt
 
-from ...chart_utils.drawing import draw_bar_rect, draw_right_axis_labels
+from ...chart_utils.drawing import chart_style, draw_bar_rect, draw_right_axis_labels
 from ...chart_utils.theme import get_theme_colors, is_night_mode
 from ..common.discrete import (
     build_discrete_gradient_color,
@@ -23,6 +23,7 @@ def _draw_cached_chrome(widget, painter, *, width, height, plot_w, plot_h, margi
     theme = get_theme_colors(widget)
     stats = widget.get_stats_text() if getattr(widget, "show_stats", False) else []
     cache_key = (
+        chart_style(widget),  # line opacity setting (Total / Average lines)
         int(width),
         int(height),
         int(round(float(plot_w))),

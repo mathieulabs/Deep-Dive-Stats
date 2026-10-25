@@ -104,19 +104,19 @@ def get_svg_icon(name, color=None, size=24, context_ref=None):
     """Get a QIcon from an SVG name. Dynamically injects color."""
     if name not in ICONS:
         return QIcon()
-    
+
     if color is None:
         color = _resolve_default_icon_color(context_ref=context_ref)
-        
+
     cache_key = (name, color, size)
     if cache_key in _icon_cache:
         return _icon_cache[cache_key]
-    
+
     svg_data = ICONS[name]
-    
+
     colored_svg = svg_data.replace('stroke="currentColor"', f'stroke="{color}"')
     colored_svg = colored_svg.replace('fill="currentColor"', f'fill="{color}"')
-    
+
     try:
         try:
             from PyQt6.QtSvg import QSvgRenderer
@@ -124,29 +124,29 @@ def get_svg_icon(name, color=None, size=24, context_ref=None):
         except ImportError:
             from PyQt5.QtSvg import QSvgRenderer
             from PyQt5.QtWidgets import QApplication
-                
+
         renderer = QSvgRenderer()
         if not renderer.load(QByteArray(colored_svg.encode('utf-8'))):
             return QIcon()
-        
+
         # Use device pixel ratio for crisp HiDPI display
         dpr = QApplication.instance().devicePixelRatio() if QApplication.instance() else 1.0
         render_size = int(size * dpr)
-        
+
         pixmap = QPixmap(render_size, render_size)
         pixmap.fill(Qt.GlobalColor.transparent)
-        
+
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         renderer.render(painter, QRectF(0, 0, float(render_size), float(render_size)))
         painter.end()
-        
+
         pixmap.setDevicePixelRatio(dpr)
         icon = QIcon(pixmap)
         _icon_cache[cache_key] = icon
         return icon
-        
+
     except Exception:
         return QIcon()
 

@@ -123,8 +123,6 @@ def update_data_impl(widget, new_data, adaptive_binning=None, transition_mode=No
         widget.adaptive_binning = adaptive_binning
     old_dist = dict(widget.data_dict.get("distribution", {}) or {})
 
-
-
     old_values = [float(v or 0.0) for v in (widget._display_values or [])]
     old_points_count = int(widget._points_count or len(old_values))
     old_max = max(1.0, float(widget.max_val or 0.0))

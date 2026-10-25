@@ -12,9 +12,7 @@ def clear_data_transition_state_impl(widget):
     widget._transition_old_cells = {}
     widget._transition_new_cells = {}
     widget._transition_cell_pairs = []
-    widget._transition_draw_ops = None
     widget._transition_progress = 1.0
-    widget._transition_old_pixmap = None
     widget._transition_new_pixmap = None
 
 
@@ -30,12 +28,9 @@ def clear_mode_transition_state_impl(widget):
     widget._mode_transition_old_cells = {}
     widget._mode_transition_new_cells = {}
     widget._mode_transition_cell_pairs = []
-    widget._mode_transition_draw_ops = None
     widget._mode_transition_progress = 1.0
     widget._mode_transition_old_labels_pixmap = None
     widget._mode_transition_new_labels_pixmap = None
-    widget._mode_transition_old_scaffold_pixmap = None
-    widget._mode_transition_new_scaffold_pixmap = None
 
 
 def interpolate_data_map_impl(widget, t):

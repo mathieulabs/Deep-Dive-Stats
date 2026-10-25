@@ -18,7 +18,6 @@ def init_metric_chart_base(
     widget.data = data
     widget.adaptive_binning = adaptive_binning
     widget.binning_override = None
-    widget.binning_toggled_callback = None
 
     widget.setMouseTracking(True)
     widget.hover_index = -1

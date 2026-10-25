@@ -33,7 +33,7 @@ def _build_added(widget_def, deck_id, cache=None, parent=None, cfg=None):
         fail_if_not_cached=True,
     )
     added_data = source["oldest_first"]
-    
+
     if cfg is None:
         cfg = _addon_config()
     adaptive_binning = cfg.config.get(ADAPTIVE_CHART_BINNING, True)
@@ -41,7 +41,6 @@ def _build_added(widget_def, deck_id, cache=None, parent=None, cfg=None):
     chart = AddedChartWidget(added_data, parent=parent, adaptive_binning=adaptive_binning)
     chart._chart_owner = "added"
     chart.binning_override = widget_def.get("binning_override", None)
-    chart._last_time_span = span
     chart._last_timespan_token = widget_def.get("_timespan_token", 0)
     chart._last_deck_id = deck_id
     apply_chart_display_config(
@@ -80,7 +79,7 @@ def _build_added(widget_def, deck_id, cache=None, parent=None, cfg=None):
     _added_reset_clicked = with_camera(_added_reset_clicked)
 
     btn_reset.clicked.connect(_added_reset_clicked)
-    
+
     if hasattr(chart, 'zoom_changed'):
         chart.zoom_changed.connect(lambda z, s, e: btn_reset.setVisible(z))
         connect_chart_header_refresh(
@@ -109,11 +108,11 @@ def _update_added(chart, widget_def, deck_id, cache=None, fail_if_not_cached=Fal
     if source["history_is_none"]:
         return False
     oldest_first = source["oldest_first"]
-    
+
     show_avg = widget_def.get("show_average", True)
     show_total = widget_def.get("show_cumulative", True)
     avg_on_active = widget_def.get("avg_on_active_days", True)
-    
+
     if hasattr(chart, "update_data"):
         chart._chart_owner = "added"
         if cfg is None:
@@ -134,7 +133,7 @@ def _update_added(chart, widget_def, deck_id, cache=None, fail_if_not_cached=Fal
             transition_meta,
             deck_policy="block",
         )
-        
+
         chart.set_average_mode(show_avg, avg_on_active)
         chart.set_cumulative_mode(show_total)
         chart.binning_override = widget_def.get("binning_override", None)
@@ -143,12 +142,11 @@ def _update_added(chart, widget_def, deck_id, cache=None, fail_if_not_cached=Fal
             adaptive_binning=adaptive_binning,
             transition_mode="timespan" if use_timespan_transition else None,
         )
-        chart._last_time_span = span
         chart._last_timespan_token = span_token
         chart._last_deck_id = deck_id
-        
+
         refresh_parent_chart_header_stats(chart)
-                
+
         return True
     return False
 

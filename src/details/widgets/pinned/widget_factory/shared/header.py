@@ -26,7 +26,7 @@ def add_pinned_zoom_reset_button(
     btn_reset.setToolTip("Reset Zoom")
     btn_reset.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     btn_reset.setVisible(False)
-    set_qss(btn_reset, 
+    set_qss(btn_reset,
         """
         QPushButton { background: transparent; border: none; padding: 2px; }
         QPushButton:hover { background: rgba(255,255,255,0.1); border-radius: 4px; }

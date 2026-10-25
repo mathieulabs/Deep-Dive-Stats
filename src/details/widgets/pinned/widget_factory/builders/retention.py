@@ -44,8 +44,6 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
     ret_data = source["retention_data"]
     _raw_hist = source["raw_hist"]
     _loading = bool(source["history_is_none"])
-    if _loading:
-        pass
     if cfg is None:
         from ..utils import _addon_config
         cfg = _addon_config()
@@ -70,7 +68,7 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
     chart.review_bars = bool(widget_def.get("review_bars", True))
     chart.review_axis = bool(widget_def.get("review_axis", False))
     chart.rounded = bool(widget_def.get("rounded", True))
-    
+
     header_widget, header_lay, _, stats_state = create_chart_header_for_chart(
         chart,
         cfg,
@@ -86,7 +84,7 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
         header_lay,
         retain_size_when_hidden=True,
     )
-    _adaptive_ret = {"active": False, "pre_data": None, "dates": None}
+    _adaptive_ret = {"active": False, "pre_data": None, "dates": None, "span_key": _span_key(widget_def)}
     chart._adaptive_state = _adaptive_ret
     # Store on chart so _update_retention can refresh stale closure references
     _state = {"deck_id": deck_id}
@@ -157,6 +155,7 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
             if not hi_res:
                 return
             hi_res_ret = build_retention_series(hi_res, strict_series=RETENTION_SERIES_KEYS)
+            _adaptive_ret["fetch"] = (start_ms, end_ms)
             _adaptive_ret["pre_data"] = chart._full_retention_data
             _adaptive_ret["pre_zoom"] = (int(start), int(end))
             with local_chart_animation_batch(chart):
@@ -224,6 +223,31 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
 
     _adaptive_ret["leave"] = _leave_adaptive_ret
 
+    def _refresh_adaptive_ret(new_daily):
+        """Same deck and time span, new reviews: stay in the 10-minute view, with fresh rows.
+        new_daily is what the reset button goes back to. False when it cannot be done."""
+        bounds = _adaptive_ret.get("fetch")
+        if not _adaptive_ret["active"] or not bounds:
+            return False
+        hi_res = HistoryProvider.fetch_history(
+            cfg, _state.get("deck_id", deck_id),
+            override_start_ms=bounds[0], override_end_ms=bounds[1], override_bin_ms=600000,
+        )
+        if not hi_res:
+            return False
+        hi_res_ret = build_retention_series(hi_res, strict_series=RETENTION_SERIES_KEYS)
+        with local_chart_animation_batch(chart):
+            chart.update_data(
+                hi_res_ret,
+                adaptive_binning=getattr(chart, "adaptive_binning", None),
+                transition=True,
+                transition_duration_ms=220,
+            )
+        _adaptive_ret["pre_data"] = new_daily
+        return True
+
+    _adaptive_ret["refresh"] = _refresh_adaptive_ret
+
     if getattr(chart, "zoom_out_limit", None) is not None:
         chart.zoom_out_limit.connect(_leave_adaptive_ret)
 
@@ -252,9 +276,9 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
         cb.setProperty("deepdivestats_font_weight", "700")
         cb.setProperty("deepdivestats_padding_right", 6)
         _apply_checkbox_style(cb)
-        
+
         chart.set_series_visible(key, is_checked)
-        
+
         def on_toggle(state, k=key, wid=widget_def["id"]):
             val = bool(state)
             chart.set_series_visible(k, val)
@@ -263,7 +287,6 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
             WidgetRegistry.update_setting(wid, "visible_series", current)
             widget_def["visible_series"] = current
 
-            
         cb.stateChanged.connect(on_toggle)
         header_lay.addWidget(cb)
         series_checkboxes[key] = cb
@@ -280,6 +303,11 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
     if _loading and wrapped is not None:
         wrapped._is_loading = True
     return wrapped
+
+def _span_key(widget_def):
+    """What the rows of a pinned chart depend on, besides the deck."""
+    return (widget_def.get("time_span"), widget_def.get("custom_days"), widget_def.get("_timespan_token"))
+
 
 def _update_retention(chart, widget_def, deck_id, cache=None, fail_if_not_cached=False, cfg=None):
     show_avg = widget_def.get("show_average", True)
@@ -315,6 +343,28 @@ def _update_retention(chart, widget_def, deck_id, cache=None, fail_if_not_cached
         chart.binning_override = widget_def.get("binning_override", None)
         if hasattr(chart, "_initial_animation_done"):
             chart._initial_animation_done = True
+        adaptive = getattr(chart, '_pinned_adaptive_ret', None)
+        same_rows = (
+            adaptive is not None
+            and adaptive.get("span_key") == _span_key(widget_def)
+            and str((getattr(chart, "_pinned_state", None) or {}).get("deck_id")) == str(deck_id)
+        )
+        if adaptive is not None:
+            adaptive["span_key"] = _span_key(widget_def)
+        if same_rows and adaptive.get("active") and callable(adaptive.get("refresh")):
+            # Same deck, new reviews: the 10-minute view stays (as a normal zoom does).
+            try:
+                if adaptive["refresh"](ret_data):
+                    chart._pinned_raw_hist = new_raw_hist
+                    refresh_parent_chart_header_stats(chart)
+                    return True
+            except Exception:
+                log_swallowed()
+        # Otherwise leave the 10-minute view of the old data first (see _update_activity).
+        if adaptive:
+            adaptive["active"] = False
+            adaptive["pre_data"] = None
+            adaptive["dates"] = None
         chart.update_data(
             ret_data,
             adaptive_binning=adaptive_binning,
@@ -328,10 +378,6 @@ def _update_retention(chart, widget_def, deck_id, cache=None, fail_if_not_cached
         # Refresh adaptive zoom state so handler uses current history after span change
         if hasattr(chart, '_pinned_raw_hist'):
             chart._pinned_raw_hist = new_raw_hist
-            adaptive = getattr(chart, '_pinned_adaptive_ret', None)
-            if adaptive:
-                adaptive["active"] = False
-                adaptive["pre_data"] = None
 
         if not cfg.config.get(Config.DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS, False):
             from ..wrapper import ResizableWrapper

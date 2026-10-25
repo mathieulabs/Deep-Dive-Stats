@@ -147,7 +147,7 @@ class ZoomableMixin:
                 super().resizeEvent(event)
                 self.update_scrollbar_geometry()
     """
-    
+
     def _get_zoom_snap_step(self, span=None):
         """Return index snap step for zoom/pan; >1 when adaptive binning is active."""
         try:
@@ -186,17 +186,14 @@ class ZoomableMixin:
         self._zoom_signals = ZoomableChartSignals()
         self.zoom_changed = self._zoom_signals.zoom_changed
         self.zoom_out_limit = self._zoom_signals.zoom_out_limit
-        
+
         self._full_length = data_length
         self._zoom_start = 0
         self._zoom_end = data_length
         self._is_zoomed = False
-        
+
         self._selecting = False
-        self._selection_start = 0
-        self._selection_end = 0
-        self._hover_idx = -1
-        
+
         self._scrollbar = QScrollBar(Qt.Orientation.Horizontal, self)
         set_qss(self._scrollbar, get_scrollbar_style(bool(get_theme_colors(self).get("is_dark"))))
         self._scrollbar.hide()
@@ -206,26 +203,26 @@ class ZoomableMixin:
         def ignore_wheel(event):
             event.ignore()
         self._scrollbar.wheelEvent = ignore_wheel
-        
+
         self.setMouseTracking(True)
-        
+
     def _on_scrollbar_value_changed(self, value):
         """Handle scrollbar movement to pan chart."""
         if not self._is_zoomed:
             return
-            
+
         visible_range = self._zoom_end - self._zoom_start
         step = self._get_zoom_snap_step(visible_range)
         new_start = self._snap_down(value, step)
         new_end = new_start + visible_range
-        
+
         if new_start < 0:
             new_start = 0
             new_end = visible_range
         if new_end > self._full_length:
             new_end = self._full_length
             new_start = new_end - visible_range
-            
+
         if new_start != self._zoom_start:
             self.set_zoom_range(new_start, new_end)
 
@@ -234,7 +231,7 @@ class ZoomableMixin:
         if hasattr(self, '_scrollbar') and self._scrollbar:
             h = 6 # scrollbar height
             self._scrollbar.setGeometry(0, self.height() - h, self.width(), h)
-            
+
     def set_zoom_range(self, start_idx, end_idx):
         """Set a specific zoom range."""
         zoom_camera.touch(self)
@@ -253,11 +250,11 @@ class ZoomableMixin:
         min_span = max(2, step)
         if end_idx - start_idx < min_span:
             return
-        
+
         self._zoom_start = int(start_idx)
         self._zoom_end = int(end_idx)
         self._is_zoomed = (start_idx != 0 or end_idx != self._full_length)
-        
+
         if hasattr(self, '_scrollbar') and self._scrollbar:
             self._scrollbar.blockSignals(True)
             if self._is_zoomed:
@@ -271,29 +268,29 @@ class ZoomableMixin:
             else:
                 self._scrollbar.hide()
             self._scrollbar.blockSignals(False)
-            
+
         self._zoom_signals.zoom_changed.emit(self._is_zoomed, self._zoom_start, self._zoom_end)
         self.update()
-    
+
     @property
     def is_zoomed(self):
         return self._is_zoomed
-    
+
     def get_zoom_range(self):
         """Returns (start_index, end_index) of current zoom."""
         return (self._zoom_start, self._zoom_end)
-    
+
     def get_visible_data(self, full_data):
         """Slice data to only the visible (zoomed) range."""
         if not self._is_zoomed:
             return full_data
         return full_data[self._zoom_start:self._zoom_end]
-    
+
     def reset_zoom(self):
         """Reset zoom to show all data."""
         self.set_zoom_range(0, self._full_length)
         self._selecting = False
-    
+
     def update_data_length(self, new_length):
         """Update the full data length (call when data changes)."""
         self._full_length = new_length
@@ -301,7 +298,7 @@ class ZoomableMixin:
             self._zoom_end = new_length
         if self._zoom_start >= self._zoom_end:
             ZoomableMixin.reset_zoom(self)
-    
+
     def _x_to_index(self, x, plot_left, plot_width):
         """Convert x pixel position to data index."""
         if plot_width <= 0:
@@ -309,14 +306,14 @@ class ZoomableMixin:
         visible_count = self._zoom_end - self._zoom_start
         if visible_count <= 0:
             return self._zoom_start
-        
+
         relative_x = x - plot_left
         ratio = max(0, min(1, relative_x / plot_width))
         idx = self._zoom_start + int(ratio * visible_count)
         step = self._get_zoom_snap_step(visible_count)
         idx = self._snap_down(idx, step)
         return max(self._zoom_start, min(self._zoom_end - 1, idx))
-    
+
     def handle_wheel_zoom(self, event, plot_left, plot_width):
         """
         Handle wheel event for zooming. Call from wheelEvent.
@@ -324,49 +321,49 @@ class ZoomableMixin:
         """
         if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
             return self.handle_wheel_pan(event)
-        
+
         if not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
             return False
-        
+
         delta = event.angleDelta().y()
         if delta == 0:
             return False
-        
+
         zoom_factor = 0.15  # 15% zoom per scroll step
-        
+
         cursor_x = event.position().x() if hasattr(event, 'position') else event.pos().x()
         cursor_idx = self._x_to_index(cursor_x, plot_left, plot_width)
-        
+
         current_range = self._zoom_end - self._zoom_start
 
         if delta < 0 and current_range >= self._full_length:
             self._zoom_signals.zoom_out_limit.emit()
             event.accept()
             return True
-        
+
         if delta > 0:
             new_range = max(3, int(current_range * (1 - zoom_factor)))
         else:
             new_range = min(self._full_length, max(current_range + 1, int(current_range * (1 + zoom_factor))))
-        
+
         if new_range == current_range:
             return True
-        
+
         cursor_ratio = (cursor_idx - self._zoom_start) / current_range if current_range > 0 else 0.5
         new_start = int(cursor_idx - cursor_ratio * new_range)
         new_end = new_start + new_range
-        
+
         if new_start < 0:
             new_start = 0
             new_end = new_range
         if new_end > self._full_length:
             new_end = self._full_length
             new_start = max(0, new_end - new_range)
-        
+
         self.set_zoom_range(new_start, new_end)
         event.accept()
         return True
-    
+
     def handle_wheel_pan(self, event):
         """
         Handle Shift+Scroll for panning left/right when zoomed.
@@ -374,36 +371,36 @@ class ZoomableMixin:
         """
         if not self._is_zoomed:
             return False
-        
+
         delta = event.angleDelta().y()
         if delta == 0:
             return False
-        
+
         current_range = self._zoom_end - self._zoom_start
         step = self._get_zoom_snap_step(current_range)
         # Pan by 10% of visible range per scroll step
         pan_amount = max(step, int(current_range * 0.1))
         if step > 1:
             pan_amount = max(step, self._snap_down(pan_amount, step))
-        
+
         if delta > 0:
             new_start = self._zoom_start - pan_amount
             new_end = self._zoom_end - pan_amount
         else:
             new_start = self._zoom_start + pan_amount
             new_end = self._zoom_end + pan_amount
-        
+
         if new_start < 0:
             new_start = 0
             new_end = current_range
         if new_end > self._full_length:
             new_end = self._full_length
             new_start = new_end - current_range
-        
+
         self.set_zoom_range(new_start, new_end)
         event.accept()
         return True
-    
+
     def handle_selection_press(self, event, plot_left, plot_width):
         """Handle mouse press for selection zoom. Call from mousePressEvent."""
         if event.button() == Qt.MouseButton.LeftButton:
@@ -416,7 +413,7 @@ class ZoomableMixin:
                 self._selection_end_idx = self._selection_start_idx
                 return True
         return False
-    
+
     def handle_selection_move(self, event, plot_left, plot_width):
         """Handle mouse move for selection zoom. Call from mouseMoveEvent."""
         if self._selecting:
@@ -426,38 +423,38 @@ class ZoomableMixin:
             self.update()
             return True
         return False
-    
+
     def handle_selection_release(self, event, plot_left, plot_width):
         """Handle mouse release for selection zoom. Call from mouseReleaseEvent."""
         if self._selecting and event.button() == Qt.MouseButton.LeftButton:
             self._selecting = False
-            
+
             # With binning, an index stands for a whole bar of `step` rows: the zone ends
             # after the last bar it touches, not one row into it.
             step = self._get_zoom_snap_step(self._zoom_end - self._zoom_start)
             start_idx = min(self._selection_start_idx, self._selection_end_idx)
             end_idx = min(self._full_length, max(self._selection_start_idx, self._selection_end_idx) + step)
-            
+
             if end_idx - start_idx >= 2:
                 with zoom_camera.camera_zoom(self):
                     self.set_zoom_range(start_idx, end_idx)
                 return True
-            
+
             self.update()
         return False
-    
+
     def draw_selection_overlay(self, painter, plot_left, margin_top, plot_width, plot_height):
         """Draw the selection rectangle during drag. Call in paintEvent."""
         if not self._selecting:
             return
-        
+
         x1 = max(plot_left, min(self._selection_start_x, self._selection_end_x))
         x2 = min(plot_left + plot_width, max(self._selection_start_x, self._selection_end_x))
-        
+
         if x2 > x1:
             # Selection highlight: very transparent fill with a solid border
             selection_rect = QRect(int(x1), int(margin_top), int(x2 - x1), int(plot_height))
-            
+
             try:
                 _acc = QColor(get_theme_colors(self).get("accent", QColor(59, 130, 246)))
             except Exception:
@@ -465,7 +462,7 @@ class ZoomableMixin:
             fill_color = QColor(_acc)
             fill_color.setAlpha(20)
             painter.fillRect(selection_rect, fill_color)
-            
+
             # Solid blue border (reset brush to avoid filling with previous brush)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             _acc.setAlpha(200)

@@ -33,10 +33,7 @@ from .....qss import set_qss
 
 
 class StatCardsContainer(QFrame):
-    """
-    A container that manages multiple StatCardWidgets and ensures
-    they all scale their fonts synchronously and uniformly.
-    """
+    """A row of stat cards that share one font size and height."""
 
     def __init__(self, parent=None):
         super().__init__(parent)

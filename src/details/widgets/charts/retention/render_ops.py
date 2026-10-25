@@ -11,6 +11,7 @@ from aqt.qt import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPoint
 from ....animations.easing import bezier01, early_fade
 from ...chart_utils import ChartGeometry, get_theme_colors
 from ...chart_utils.drawing import (
+    chart_style,
     stroke_average_line,
     draw_grid_and_axes,
     draw_right_axis_labels,
@@ -145,6 +146,7 @@ def _draw_cached_chrome(
         )
 
     cache_key = (
+        chart_style(widget),  # line opacity setting (Total / Average lines)
         int(width),
         int(height),
         int(margin_left),
@@ -451,7 +453,6 @@ def paint_event_impl(widget, event):
         max_val=max_val,
         min_val=min_val,
     )
-
 
     labels = []
     n = widget._get_display_n()

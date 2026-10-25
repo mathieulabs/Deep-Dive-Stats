@@ -70,9 +70,7 @@ def ensure_overlay_and_rebuild_mode(manager, web, pinned_conf, deck_id):
         manager._widget_update_signatures = {}
         manager._last_widget_set = tuple(d["id"] for d in WidgetRegistry.get_all())
         manager._last_render_scope_key = target_scope_key
-        manager._last_render_deck_id = deck_id
         return True
-
 
     current_widget_set = tuple(d["id"] for d in WidgetRegistry.get_all())
     last_widget_set = getattr(manager, "_last_widget_set", None)
@@ -82,7 +80,6 @@ def ensure_overlay_and_rebuild_mode(manager, web, pinned_conf, deck_id):
 
     manager._last_widget_set = current_widget_set
     manager._last_render_scope_key = _scope_key(manager, deck_id)
-    manager._last_render_deck_id = deck_id
     return should_full_rebuild
 
 

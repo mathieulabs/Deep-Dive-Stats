@@ -9,13 +9,12 @@ from aqt.qt import (
 
 from .. import Config
 from .. import Period
-from ..theme.icons import get_svg_icon
 from .layout import DeepDiveLayoutMixin
 from .charts import DeepDiveChartsMixin
 from .stats import DeepDiveStatsMixin
 from .controls import DeepDiveControlsMixin
 from .runtime.open_flow import open_deep_dive
-from .runtime.ui_runtime import show_and_animate, toggle_stats_visibility
+from .runtime.ui_runtime import show_and_animate
 from .runtime.zoom_sync import setup_zoom_sync
 from .runtime.widget_settings_runtime import (
     apply_dd_widget_setting_live,
@@ -46,7 +45,6 @@ class DeepDiveManager(QObject, DeepDiveLayoutMixin, DeepDiveChartsMixin, DeepDiv
         self._theme_manager = get_theme_manager()
         self._theme_manager.subscribe(self._on_theme_changed)
         self.addon_config = dialog.addon_config
-        self.last_chart_index = self._get_dd_widget_setting("manager", "chart_index", 0)
         self.grid_mode = True
         self.grid_columns = self.addon_config.config.get(Config.DEEP_DIVE_GRID_COLUMNS, 4)
         self.section_collapse_states = {} # Persist collapse state across view changes
@@ -57,15 +55,14 @@ class DeepDiveManager(QObject, DeepDiveLayoutMixin, DeepDiveChartsMixin, DeepDiv
         self.last_show_cumulative = self._get_dd_widget_setting("manager", "show_cumulative", True)
         self.last_sync_zoom = self._get_dd_widget_setting("manager", "sync_zoom", True)  # Sync zoom across all charts by default
         self.last_pie_sep = self.addon_config.config.get(Config.PIE_CHART_SEPARATE_SUSPENDED, True)
-        self.last_pie_del = self.addon_config.config.get(Config.PIE_CHART_SHOW_DELETED, False)
         self.last_history_data = []
         self.last_history_range = Period.TOTAL
-        
+
         self.last_row_data = None
         self.last_deck_identifier = None
         self.last_period_range = None
         self.last_history_context = None
-        
+
         self.activity_chart = None
         self.stacked_chart = None
         self.retention_chart = None
@@ -79,38 +76,32 @@ class DeepDiveManager(QObject, DeepDiveLayoutMixin, DeepDiveChartsMixin, DeepDiv
         self.difficulty_chart = None
         self.retrievability_chart = None
         self._build_queue_active = False
-        self.persisted_zoom_range = None
         self.last_fsrs_did = "__INIT__"
         self._is_skeleton = True
         self.section_wrappers = {}
-        
+
         self._loading_seq = 0
         self._drag_source_id = None
         # Full rebuilds build real charts hidden, then reveal once at queue completion.
         self._defer_deep_dive_chart_reveal = False
         self._deep_dive_real_view_shown = False
-        # One-shot defer for heavy Future Due refresh after first paint.
-        self._future_due_first_defer_done = False
-        self._future_due_defer_token = 0
+
+    def _dialog_gone(self):
+        from ...widgets.chart_utils.theme import _qt_deleted
+
+        return _qt_deleted(self.dialog)
 
     def _on_theme_changed(self, _source=None):
+        if self._dialog_gone():
+            # Window closed: this manager outlives it until it is collected.
+            self._theme_manager.unsubscribe(self._on_theme_changed)
+            return
         self._init_theme_vars()
         # Defer the per-widget restyle so Qt finishes processing the parent
         # stylesheet change before we call setStyleSheet on individual children.
         QTimer.singleShot(0, self._apply_controls_theme_deferred)
         try:
             self._refresh_all_grid_headers_theme()
-        except Exception:
-            log_swallowed()
-        try:
-            if hasattr(self.dialog, "stats_collapse_btn") and self.dialog.stats_collapse_btn:
-                t_colors = get_theme_colors(self.dialog)
-                text_col = t_colors.get("text_secondary", t_colors.get("text"))
-                icon_hex = text_col.name() if hasattr(text_col, "name") else None
-                is_collapsed = self.addon_config.config.get(Config.DEEP_DIVE_STATS_COLLAPSED, False)
-                self.dialog.stats_collapse_btn.setIcon(
-                    get_svg_icon("chevron-right" if is_collapsed else "chevron-down", color=icon_hex)
-                )
         except Exception:
             log_swallowed()
         try:
@@ -130,6 +121,8 @@ class DeepDiveManager(QObject, DeepDiveLayoutMixin, DeepDiveChartsMixin, DeepDiv
                 continue
 
     def _apply_controls_theme_deferred(self):
+        if self._dialog_gone():
+            return
         try:
             self.apply_deep_dive_theme(self.dialog)
         except Exception:
@@ -182,21 +175,18 @@ class DeepDiveManager(QObject, DeepDiveLayoutMixin, DeepDiveChartsMixin, DeepDiv
         if not title: return ""
         t = re.sub(r'(?i)&nbsp;?', ' ', title)
         t = t.replace('\xa0', ' ')
-        
+
         # Strip leading tree characters, box-drawing characters and ASCII fallbacks like |- or |_, plus Anki tree icons.
         t = re.sub(r'^[▶▼▸▾└─│├┌┐┘┼┬┴\|\-\s]+', '', t)
         t = t.replace('|', '').replace('::', ' // ') # Visual separator
-        
+
         return t.strip()
-
-
 
     def open_deep_dive(self, deck_identifier, title, period_range=None):
         return open_deep_dive(self, deck_identifier, title, period_range)
 
     def _get_dd_widget_setting(self, section_key, setting_key, default=None):
         return get_dd_widget_setting(self, section_key, setting_key, default)
-
 
     def _open_dd_widget_settings(self, section_key, widget):
         return open_dd_widget_settings(self, section_key, widget)
@@ -226,10 +216,6 @@ class DeepDiveManager(QObject, DeepDiveLayoutMixin, DeepDiveChartsMixin, DeepDiv
 
     def _show_and_animate(self):
         return show_and_animate(self)
-
-    def toggle_stats_visibility(self):
-        return toggle_stats_visibility(self)
-
 
     def _setup_zoom_sync(self):
         return setup_zoom_sync(self)

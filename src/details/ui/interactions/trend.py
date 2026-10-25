@@ -51,7 +51,6 @@ def on_trend_toggled(dialog, checked):
                     QTimer.singleShot(1, _process_next)
                     return
 
-
                 def _fetch():
                     return fetch_stats_for_range(
                         range_type=p[1],
@@ -228,25 +227,20 @@ def on_trend_toggled(dialog, checked):
     if dialog.view_mode == "time":
         from ...logic.tabs import populate_time_tab
 
-        repopulated = 0
         repopulated_active = False
         populated = sorted(getattr(dialog, "_time_tabs_populated", set()) or [])
 
         for idx in populated:
             dialog._time_tabs_populated.discard(idx)
-            if populate_time_tab(dialog, idx, do_resize=(idx == current_idx)):
-                repopulated += 1
-                if idx == current_idx:
-                    repopulated_active = True
+            if populate_time_tab(dialog, idx, do_resize=(idx == current_idx)) and idx == current_idx:
+                repopulated_active = True
 
         if not repopulated_active and current_idx >= 0:
             dialog._time_tabs_populated.discard(current_idx)
-            if populate_time_tab(dialog, current_idx, do_resize=True):
-                repopulated += 1
+            populate_time_tab(dialog, current_idx, do_resize=True)
     else:
         from ..deck_view import populate_deck_tab
 
-        repopulated = 0
         repopulated_active = False
         populated = sorted(getattr(dialog, "_deck_tabs_populated", set()) or [])
 
@@ -255,18 +249,12 @@ def on_trend_toggled(dialog, checked):
             before = len(getattr(dialog, "_deck_tabs_populated", set()) or [])
             populate_deck_tab(dialog, idx, do_resize=(idx == current_idx), from_tab_change=True)
             after = len(getattr(dialog, "_deck_tabs_populated", set()) or [])
-            if after > before:
-                repopulated += 1
-                if idx == current_idx:
-                    repopulated_active = True
+            if after > before and idx == current_idx:
+                repopulated_active = True
 
         if not repopulated_active and current_idx >= 0:
             dialog._deck_tabs_populated.discard(current_idx)
-            before = len(getattr(dialog, "_deck_tabs_populated", set()) or [])
             populate_deck_tab(dialog, current_idx, do_resize=True, from_tab_change=True)
-            after = len(getattr(dialog, "_deck_tabs_populated", set()) or [])
-            if after > before:
-                repopulated += 1
 
     if current_idx >= 0:
         dialog.tab_widget.setCurrentIndex(current_idx)

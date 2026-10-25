@@ -130,11 +130,12 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
     clicked_card = _find_clicked_card(container, event, stat_card_cls)
 
     if clicked_card and clicked_card.stat_type:
-        color_action = menu.addAction(f"Change {clicked_card.display_name} Color...")
+        shown_name = str(clicked_card.display_name).replace("&", "&&")  # not a shortcut
+        color_action = menu.addAction(f"Change {shown_name} Color...")
         color_action.setIcon(get_svg_icon("palette", size=16))
         color_action.triggered.connect(clicked_card._pick_color)
 
-        pin_action = menu.addAction(f"Pin {clicked_card.display_name}")
+        pin_action = menu.addAction(f"Pin {shown_name}")
         pin_action.setIcon(get_svg_icon("push-pin", size=16))
         pin_action.triggered.connect(lambda _, c=clicked_card: _pin_card(c))
         menu.addSeparator()

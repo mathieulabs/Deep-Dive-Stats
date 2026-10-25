@@ -51,13 +51,3 @@ def get_theme_effective_is_dark(conf) -> bool:
     if base_mode == ThemePalettes.MODE_LIGHT:
         return False
     return bool(theme_manager.get_night_mode())
-
-
-def is_theme_forcing_dark() -> bool:
-    """Returns True only when details are explicitly forced to dark mode."""
-    try:
-        from ...widgets.chart_utils.theme import get_theme_manager
-
-        return bool(get_theme_manager().is_details_force_dark())
-    except Exception:
-        return False

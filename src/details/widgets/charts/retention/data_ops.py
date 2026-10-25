@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+import math
+
 from .series import SERIES_KEYS
 from ...chart_utils import ChartGeometry
 from ...chart_utils.binning import get_bin_size
@@ -21,8 +23,9 @@ def _range_for_display_data(display_data, visible_series):
                 all_vals.append(float(v))
     if not all_vals:
         return 0.0, 100.0
-    lo = min(all_vals)
-    hi = max(all_vals)
+    # Whole percents: the axis labels are then round numbers, not "0.0" for a 0.03% low.
+    lo = float(math.floor(min(all_vals)))
+    hi = float(math.ceil(max(all_vals)))
     if hi <= lo:
         hi = lo + 1.0
     return lo, hi
@@ -85,7 +88,6 @@ def clear_data_transition_state_impl(widget):
     widget._data_transition_new_series = {}
     widget._data_transition_sample_count = 0
     widget._data_transition_old_labels = []
-    widget._data_transition_new_labels = []
     widget._data_transition_old_display_data = {}
     widget._data_transition_new_display_data = {}
     widget._data_transition_render_cache = {}
@@ -183,7 +185,6 @@ def update_data_impl(widget, new_ret_data, adaptive_binning=None, transition=Fal
         widget._data_transition_new_series = new_series
         widget._data_transition_sample_count = sample_count
         widget._data_transition_old_labels = old_labels
-        widget._data_transition_new_labels = new_labels
         widget._data_transition_old_display_data = old_display_data
         widget._data_transition_new_display_data = new_display_data
         widget._data_transition_render_cache = render_cache
@@ -714,22 +715,7 @@ def current_value_range(widget):
 
 def get_data_range_impl(widget):
     """Returns (min_val, max_val) = exact data range for fit_to_data mode."""
-    display_data = widget._get_display_data() or {}
-    all_vals = []
-    for key in SERIES_KEYS:
-        if not widget.visible_series.get(key, False):
-            continue
-        for item in (display_data.get(key) or []):
-            v = item[1] if isinstance(item, (list, tuple)) else item
-            if v is not None:
-                all_vals.append(float(v))
-    if not all_vals:
-        return 0.0, 100.0
-    lo = min(all_vals)
-    hi = max(all_vals)
-    if hi <= lo:
-        hi = lo + 1.0
-    return lo, hi
+    return _range_for_display_data(widget._get_display_data() or {}, widget.visible_series)
 
 
 def get_stats_text_impl(widget):

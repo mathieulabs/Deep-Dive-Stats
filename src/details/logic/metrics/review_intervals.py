@@ -21,8 +21,8 @@ class ReviewIntervalsDataProvider:
         else:
             did_limit = HistoryProvider._get_did_limit(addon_config, deck_id)
 
-        # We only care about reviews (queue = 2) or day learning (queue = 3)
-        # We filter for ivl > 0 to ignore learning cards with negative sub-day intervals
+        # Review cards (queue 2) and day learning (queue 3). ivl > 0 leaves out learning
+        # cards, whose interval is negative (seconds).
         query = f"""
             SELECT ivl
             FROM cards
@@ -31,15 +31,15 @@ class ReviewIntervalsDataProvider:
             {did_limit}
         """
         rows = mw.col.db.all(query)
-        
+
         distribution = {}
         for (ivl,) in rows:
             distribution[ivl] = distribution.get(ivl, 0) + 1
-            
+
         # Percentiles (p50, p95) for the UI, next to the max interval bounds
         all_ivls = [r[0] for r in rows]
         all_ivls.sort()
-        
+
         p50 = 31
         p95 = 365
         median = 0
@@ -51,9 +51,9 @@ class ReviewIntervalsDataProvider:
             p50 = all_ivls[max(0, -(-n * 50 // 100) - 1)]
             p95 = all_ivls[max(0, -(-n * 95 // 100) - 1)]
             median = p50
-            
+
         total_cards = len(all_ivls)
-        
+
         return {
             "distribution": distribution,
             "total": total_cards,

@@ -8,7 +8,7 @@ class ReorderEngine:
     """
     Central logic for finding target positions and shifting widgets in layouts.
     """
-    
+
     @staticmethod
     def _drag_id_from_widget(widget):
         """Return a stable DnD identifier for both pinned and dashboard cards."""
@@ -27,7 +27,7 @@ class ReorderEngine:
             w = item.widget()
             if w and ReorderEngine._drag_id_from_widget(w) != exclude_id:
                 other_items.append(item)
-        
+
         target_idx = len(other_items)
         for i, item in enumerate(other_items):
             rect = item.geometry()
@@ -39,7 +39,7 @@ class ReorderEngine:
                 if drop_pos.x() < rect.center().x():
                     target_idx = i
                     break
-        
+
         return target_idx + index_offset
 
     @staticmethod
@@ -53,7 +53,7 @@ class ReorderEngine:
             w = item.widget()
             if w and ReorderEngine._drag_id_from_widget(w) != exclude_id:
                 other_items.append(item)
-        
+
         target_idx = len(other_items)
         for i, item in enumerate(other_items):
             rect = item.geometry()
@@ -79,7 +79,7 @@ class ReorderEngine:
                     if w and ReorderEngine._drag_id_from_widget(w) == target_id:
                         source_idx = i
                         break
-        
+
         if source_idx != -1 and source_idx != target_idx:
             layout.removeWidget(widget)
             layout.insertWidget(target_idx, widget)
@@ -121,14 +121,14 @@ class ReorderEngine:
         relative position of other widget types.
         """
         all_pinned = WidgetRegistry.get_all()
-        
+
         new_layout_ids = []
         for i in range(layout.count()):
             w = layout.itemAt(i).widget()
             wid = ReorderEngine._drag_id_from_widget(w)
             if wid:
                 new_layout_ids.append(wid)
-        
+
         if not widget_type_group:
             WidgetRegistry.reorder(new_layout_ids)
             return
@@ -136,15 +136,15 @@ class ReorderEngine:
         if widget_type_group == "deep_dive_chart":
             # Persist order specifically for Deep Dive
             VALID_CHARTS = [
-                "activity", "retention", "heatmap", "future_due", "distribution", 
-                "hourly", "card_counts", "review_intervals", "stability", 
+                "activity", "retention", "heatmap", "future_due", "distribution",
+                "hourly", "card_counts", "review_intervals", "stability",
                 "difficulty", "retrievability", "added"
             ]
             final_order = [wid for wid in new_layout_ids if wid in VALID_CHARTS]
             for vc in VALID_CHARTS:
                 if vc not in final_order:
                     final_order.append(vc)
-            
+
             if manager:
                 from ....ui import Config
                 manager.addon_config.set_value(Config.DEEP_DIVE_CHART_ORDER, final_order)

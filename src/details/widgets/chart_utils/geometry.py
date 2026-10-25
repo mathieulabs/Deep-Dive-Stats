@@ -7,7 +7,7 @@ class ChartGeometry:
     MARGIN_TOP = 10
     MARGIN_BOTTOM = 30
     DEFAULT_MARGIN_RIGHT = 20
-    
+
     STATS_EXTRA_HEIGHT = {
         "future_due": 90,
         "review_intervals": 70,
@@ -21,7 +21,7 @@ class ChartGeometry:
         "card_counts": 0, # Pie charts don't have bottom stats
         "heatmap": 0
     }
-    
+
     @staticmethod
     def wrap_stats_text(stats, plot_w, font_metrics):
         """
@@ -31,14 +31,14 @@ class ChartGeometry:
         """
         if not stats:
             return []
-            
+
         joined_text = " · ".join(stats)
         if font_metrics.horizontalAdvance(joined_text) <= plot_w:
             return [joined_text]
-            
+
         lines = []
         current_line = []
-        
+
         for stat in stats:
             test_line = current_line + [stat]
             test_text = " · ".join(test_line)
@@ -54,7 +54,7 @@ class ChartGeometry:
 
         if current_line:
             lines.append(" · ".join(current_line))
-            
+
         return lines
 
     @staticmethod
@@ -62,15 +62,15 @@ class ChartGeometry:
         """Calculate required bottom margin for stats based on wrapping."""
         if not stats:
             return ChartGeometry.MARGIN_BOTTOM
-            
+
         from aqt.qt import QFontMetrics, QApplication
         font = QApplication.font()
         font.setPixelSize(13)
         actual_fm = QFontMetrics(font)
-            
+
         wrapped_lines = ChartGeometry.wrap_stats_text(stats, plot_w, actual_fm)
         line_count = len(wrapped_lines)
-            
+
         # Base MARGIN_BOTTOM (30) + line height (18 per line) + padding
         # 1 line -> ~63px, 2 lines -> ~81px, 3 lines -> ~99px
         return ChartGeometry.MARGIN_BOTTOM + (line_count * 18) + 15
@@ -85,7 +85,7 @@ class ChartGeometry:
     ):
         if not is_cumulative:
             return ChartGeometry.DEFAULT_MARGIN_RIGHT
-        
+
         max_val = 0
         run_sum = 0
         for v in values:

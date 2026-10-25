@@ -154,7 +154,7 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
         effective_now = now - timedelta(days=1)
     else:
         effective_now = now
-        
+
     # The browsed year is kept for this Anki session only (deck navigation and rebuilds keep it); a new session opens on the current year. A "year" left in old configs is ignored.
     try:
         year = int(_SESSION_YEARS.get(widget_def.get("id"), effective_now.year) or effective_now.year)
@@ -162,7 +162,6 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
         year = effective_now.year
     if cfg is None:
         cfg = _addon_config()
-
 
     chart_ref = [None]
     total_heatmap_data = {}  # deck_id -> total heatmap_data dict
@@ -218,7 +217,7 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
     rounding = cfg.config.get(Config.HEATMAP_ROUNDING, 30)
     intensity_curve = cfg.config.get(Config.HEATMAP_INTENSITY_CURVE, 100)
     multi_hue_intensity = cfg.config.get(Config.HEATMAP_MULTI_HUE_INTENSITY, False)
-    
+
     current_mode = [widget_def.get("heatmap_mode", "year")]
     if isinstance(current_mode[0], bool) or current_mode[0] not in ["year", "365", "continuous"]:
         current_mode[0] = "year"
@@ -271,7 +270,6 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
     is_top = nav_pos.startswith("top_")
     is_left = nav_pos.endswith("_left")
 
-    chart.cont_right_anchor = not is_left
 
     nav_controls = _PinnedHeatmapNavControls(parent)
     nav_controls.setObjectName("heatmap_nav_controls")
@@ -571,7 +569,7 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
         nav_lay.addWidget(btn_next)
 
     show_glass = cfg.config.get(Config.HEATMAP_SHOW_GLASS, False)
-    
+
     if is_top:
         header_widget, header_lay = create_hbox_container(
             parent,
@@ -579,7 +577,7 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
             spacing=8,
             transparent=True,
         )
-        
+
         title_text = pinned_title(widget_def, "ACTIVITY")
         title = QLabel(title_text.upper(), parent=header_widget)
         title.setObjectName("pinned_header")
@@ -608,7 +606,7 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
             margins=(0, 2, 0, 0),
             transparent=True,
         )
-        
+
         if is_left:
             footer_lay.addWidget(nav_controls)
             footer_lay.addStretch()
@@ -616,7 +614,7 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
             footer_lay.addStretch()
             footer_lay.addWidget(nav_controls)
         _align_nav_to_grid(chart, footer_lay, is_left)
-        
+
         container = QWidget(parent)
         set_qss(container, "background: transparent;")
         container_lay = QVBoxLayout(container)
@@ -815,15 +813,15 @@ def _update_heatmap(inner, widget_def, deck_id=None, cache=None, fail_if_not_cac
     chart = inner
     if not hasattr(chart, "update_data"):
         chart = inner.findChild(HeatmapWidget)
-        
+
     if not chart:
         return False
     previous_pinned_deck_id = getattr(chart, "_last_pinned_deck_id", chart.property("pinned_deck_id"))
     chart.setProperty("pinned_deck_id", deck_id)
     chart._force_next_data_transition = previous_pinned_deck_id != deck_id
-    
+
     # widget_def holds the live-edited settings (in the settings context it is the config).
-    
+
     c = widget_def
     _apply_heatmap_runtime_visuals(chart, c)
 
@@ -842,7 +840,7 @@ def _update_heatmap(inner, widget_def, deck_id=None, cache=None, fail_if_not_cac
         if chart.property("nav_pos") != current_nav_pos:
             return False
         chart.setProperty("nav_pos", current_nav_pos)
-        
+
     if Config.HEATMAP_HIDE_TITLE in c:
         hide_title = c.get(Config.HEATMAP_HIDE_TITLE, True)
         parent = chart.parentWidget()
@@ -850,8 +848,6 @@ def _update_heatmap(inner, widget_def, deck_id=None, cache=None, fail_if_not_cac
             header_lbl = parent.findChild(QLabel, "pinned_header")
             if header_lbl:
                 header_lbl.setVisible(not hide_title)
-            if hasattr(parent, "set_label_visible"):
-                 parent.set_label_visible(not hide_title)
 
     now = datetime.now()
     current_view_mode = getattr(chart, "view_mode", "year")
@@ -883,7 +879,6 @@ def _update_heatmap(inner, widget_def, deck_id=None, cache=None, fail_if_not_cac
         max_ids,
     )
 
-
     if cfg is None:
         cfg = _addon_config()
 
@@ -897,11 +892,9 @@ def _update_heatmap(inner, widget_def, deck_id=None, cache=None, fail_if_not_cac
         _ensure_runtime_heatmap_caches(chart, deck_id, max_ids)
         if (not force_runtime_refresh) and getattr(chart, "_last_applied_runtime_refresh_key", None) == applied_refresh_key:
             return True
-        if (not force_runtime_refresh) and getattr(chart, "_last_runtime_refresh_key", None) == runtime_refresh_key:
-            pass
-        else:
+        if force_runtime_refresh or getattr(chart, "_last_runtime_refresh_key", None) != runtime_refresh_key:
             def _fetch_year_data(yr):
-                data, _, source = load_pinned_heatmap_year_data(
+                data, _, _ = load_pinned_heatmap_year_data(
                     deck_id, yr, cfg=cfg,
                     allow_slow_ops=not fail_if_not_cached,
                     total_heatmap_cache=chart._runtime_total_heatmap_cache,
@@ -909,12 +902,6 @@ def _update_heatmap(inner, widget_def, deck_id=None, cache=None, fail_if_not_cac
                     prefer_total_cache=True,
                     missing_default=None,
                 )
-                if data is None:
-                    return None
-                if source == "context_heatmap_data":
-                    return data
-                if source == "context_reviews":
-                    return data
                 return data
 
             new_data, new_end = compose_heatmap_mode_data(
@@ -951,7 +938,6 @@ def _update_heatmap(inner, widget_def, deck_id=None, cache=None, fail_if_not_cac
         year_lbl = inner.findChild(QLabel, "heatmap_year_lbl")
         if year_lbl:
             year_lbl.setText(str(target_year))
-
 
     return True
 

@@ -207,7 +207,6 @@ def reset_zoom_impl(widget):
         widget._data_transition_new_series = new_series
         widget._data_transition_sample_count = sample_count
         widget._data_transition_old_labels = old_labels
-        widget._data_transition_new_labels = new_labels
         widget._data_transition_old_display_data = old_display_data
         widget._data_transition_new_display_data = new_display_data
         widget._data_transition_render_cache = render_cache

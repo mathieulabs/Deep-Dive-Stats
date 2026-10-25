@@ -126,7 +126,7 @@ def build_general_tab(dialog) -> None:
     dialog.binning_scale_reset_btn.setFixedSize(22, 22)
     dialog.binning_scale_reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     dialog.binning_scale_reset_btn.setToolTip("Reset to default (Normal)")
-    set_qss(dialog.binning_scale_reset_btn, 
+    set_qss(dialog.binning_scale_reset_btn,
         "QPushButton { background: transparent; border: none; } "
         "QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }"
     )

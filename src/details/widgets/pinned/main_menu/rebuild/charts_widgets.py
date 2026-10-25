@@ -137,10 +137,6 @@ def rebuild_charts_widgets(
         widget_index=widget_index,
     )
 
-    # Visual-order stagger for animations: sort by (row_num, registry index) so it follows display order.
-    _sorted_by_visual = sorted(enumerate(other_defs), key=lambda x: (int(x[1].get("row_num", 0)), x[0]))
-    _widget_stagger_ms = {d.get("id"): min(idx * 25, 200) for idx, (_, d) in enumerate(_sorted_by_visual)}
-
     with chart_animation_batch(
         manager._overlay,
         sync_update_candidates,
@@ -188,7 +184,6 @@ def rebuild_charts_widgets(
                         manager._trigger_async_widget_update(widget, wdef_norm, deck_id)
 
             if widget:
-                widget._anim_stagger_ms = _widget_stagger_ms.get(wid, 0)
                 signature = manager._widget_signature(wdef_norm, deck_id, max_ids)
                 if created_now:
                     manager._widget_update_signatures[wid] = signature
@@ -221,10 +216,6 @@ def rebuild_charts_widgets(
                                 delay_ms=delay_ms,
                                 allow_blocking=force_defer_heatmap,
                             )
-                            if overview_light_mode:
-                                pass
-                            elif review_return_light_mode:
-                                pass
                     else:
                         sync_ok = WidgetFactory.update(
                             widget,

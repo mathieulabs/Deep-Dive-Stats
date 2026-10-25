@@ -60,93 +60,116 @@ def _same_rect(a, b):
     )
 
 
-def _draw_transition_cells_from_pairs(widget, painter, pairs, tt, include_empty_pairs=False):
-    rounding = float(getattr(widget, "rounding", 0.0)) / 100.0
-    painter.setPen(Qt.PenStyle.NoPen)
+def _premul(color):
+    a = float(color.alpha())
+    return (a, float(color.red()) * a, float(color.green()) * a, float(color.blue()) * a)
 
-    for old_item, new_item in (pairs or []):
+
+def _mix(p1, p2, t):
+    """Colour between two premultiplied colours (same result as the widget's _lerp_color)."""
+    a = p1[0] + (p2[0] - p1[0]) * t
+    if a <= 0.001:
+        return QColor(0, 0, 0, 0)
+    r = (p1[1] + (p2[1] - p1[1]) * t) / a
+    g = (p1[2] + (p2[2] - p1[2]) * t) / a
+    b = (p1[3] + (p2[3] - p1[3]) * t) / a
+    return QColor(
+        max(0, min(255, int(round(r)))),
+        max(0, min(255, int(round(g)))),
+        max(0, min(255, int(round(b)))),
+        max(0, min(255, int(round(a)))),
+    )
+
+
+def _prepared_pairs(widget, pairs, include_empty_pairs):
+    """What each cell pair draws, worked out once per transition: the pairs do not
+    change while it runs, only the progress does."""
+    rounding = float(getattr(widget, "rounding", 0.0)) / 100.0
+    key = (len(pairs), bool(include_empty_pairs), rounding, int(QColor(widget.empty_color).rgba()))
+    cached = getattr(widget, "_prepared_cell_pairs", None)
+    if cached is not None and cached[1] is pairs and cached[0] == key:
+        return cached[2]
+    out = []
+    for old_item, new_item in pairs:
         if old_item and new_item:
             old_rect, old_col = old_item
             new_rect, new_col = new_item
-            old_is_empty = widget._is_empty_cell_color(old_col)
-            new_is_empty = widget._is_empty_cell_color(new_col)
-
-            if old_is_empty and new_is_empty and (not include_empty_pairs):
+            old_empty = widget._is_empty_cell_color(old_col)
+            new_empty = widget._is_empty_cell_color(new_col)
+            if old_empty and new_empty and not include_empty_pairs:
                 continue
-
-            # Only data transitions draw the scaffold under the cells. A mode or window
-            # transition draws every cell itself, so empty cells blend like the rest.
-            if old_is_empty and (not new_is_empty) and (not include_empty_pairs):
-                rect = QRectF(
-                    widget._lerp(old_rect.x(), new_rect.x(), tt),
-                    widget._lerp(old_rect.y(), new_rect.y(), tt),
-                    widget._lerp(old_rect.width(), new_rect.width(), tt),
-                    widget._lerp(old_rect.height(), new_rect.height(), tt),
-                )
-                old_radius = (old_rect.width() / 2.0) * rounding
-                new_radius = (new_rect.width() / 2.0) * rounding
-                radius = widget._lerp(old_radius, new_radius, tt)
-                color = QColor(new_col)
-                color.setAlpha(int(new_col.alpha() * tt))
-                painter.setBrush(color)
-                painter.drawRoundedRect(rect, radius, radius)
-                continue
-
-            if new_is_empty and (not old_is_empty) and (not include_empty_pairs):
-                rect = QRectF(
-                    widget._lerp(old_rect.x(), new_rect.x(), tt),
-                    widget._lerp(old_rect.y(), new_rect.y(), tt),
-                    widget._lerp(old_rect.width(), new_rect.width(), tt),
-                    widget._lerp(old_rect.height(), new_rect.height(), tt),
-                )
-                old_radius = (old_rect.width() / 2.0) * rounding
-                new_radius = (new_rect.width() / 2.0) * rounding
-                radius = widget._lerp(old_radius, new_radius, tt)
-                # The scaffold already draws the empty cell under this one, so fade
-                # the old cell out over it. Blending towards the empty colour drew it
-                # twice and left a darker cell that jumped lighter when the fade ended.
-                color = QColor(old_col)
-                color.setAlpha(int(old_col.alpha() * (1.0 - tt)))
-                painter.setBrush(color)
-                painter.drawRoundedRect(rect, radius, radius)
-                continue
-
-            if _same_rect(old_rect, new_rect):
-                radius = (old_rect.width() / 2.0) * rounding
-                color = widget._lerp_color(old_col, new_col, tt)
-                painter.setBrush(color)
-                painter.drawRoundedRect(old_rect, radius, radius)
+            if old_empty and not new_empty and not include_empty_pairs:
+                kind = "in"  # fades in over the scaffold
+            elif new_empty and not old_empty and not include_empty_pairs:
+                # The scaffold already draws the empty cell under this one, so fade the old
+                # cell out over it. Blending towards the empty colour drew it twice and left
+                # a darker cell that jumped lighter when the fade ended.
+                kind = "out"
             else:
-                rect = QRectF(
-                    widget._lerp(old_rect.x(), new_rect.x(), tt),
-                    widget._lerp(old_rect.y(), new_rect.y(), tt),
-                    widget._lerp(old_rect.width(), new_rect.width(), tt),
-                    widget._lerp(old_rect.height(), new_rect.height(), tt),
-                )
-                old_radius = (old_rect.width() / 2.0) * rounding
-                new_radius = (new_rect.width() / 2.0) * rounding
-                radius = widget._lerp(old_radius, new_radius, tt)
-                color = widget._lerp_color(old_col, new_col, tt)
-                painter.setBrush(color)
-                painter.drawRoundedRect(rect, radius, radius)
+                kind = "mix"
+            out.append((
+                kind,
+                old_rect,
+                (old_rect.x(), old_rect.y(), old_rect.width(), old_rect.height()),
+                (new_rect.x(), new_rect.y(), new_rect.width(), new_rect.height()),
+                (old_rect.width() / 2.0) * rounding,
+                (new_rect.width() / 2.0) * rounding,
+                QColor(old_col),
+                QColor(new_col),
+                _premul(old_col),
+                _premul(new_col),
+                _same_rect(old_rect, new_rect),
+                int(QColor(old_col).rgba()) == int(QColor(new_col).rgba()),
+            ))
         elif old_item:
             old_rect, old_col = old_item
-            if widget._is_empty_cell_color(old_col) and (not include_empty_pairs):
+            if widget._is_empty_cell_color(old_col) and not include_empty_pairs:
                 continue
-            radius = (old_rect.width() / 2.0) * rounding
-            color = QColor(old_col)
-            color.setAlpha(int(old_col.alpha() * (1.0 - tt)))
-            painter.setBrush(color)
-            painter.drawRoundedRect(old_rect, radius, radius)
+            out.append(("old", old_rect, None, None, (old_rect.width() / 2.0) * rounding, 0.0, QColor(old_col), None, None, None, True, True))
         elif new_item:
             new_rect, new_col = new_item
-            if widget._is_empty_cell_color(new_col) and (not include_empty_pairs):
+            if widget._is_empty_cell_color(new_col) and not include_empty_pairs:
                 continue
-            radius = (new_rect.width() / 2.0) * rounding
-            color = QColor(new_col)
-            color.setAlpha(int(new_col.alpha() * tt))
+            out.append(("new", new_rect, None, None, (new_rect.width() / 2.0) * rounding, 0.0, QColor(new_col), None, None, None, True, True))
+    widget._prepared_cell_pairs = (key, pairs, out)
+    return out
+
+
+def _draw_transition_cells_from_pairs(widget, painter, pairs, tt, include_empty_pairs=False):
+    painter.setPen(Qt.PenStyle.NoPen)
+    if not pairs:
+        return
+    for kind, rect0, o, n, r_old, r_new, c_old, c_new, p_old, p_new, same_rect, same_color in _prepared_pairs(
+        widget, pairs, include_empty_pairs
+    ):
+        if kind in ("old", "new"):
+            # A cell only on one side fades out (old) or in (new) where it is.
+            color = QColor(c_old)
+            color.setAlpha(int(c_old.alpha() * ((1.0 - tt) if kind == "old" else tt)))
             painter.setBrush(color)
-            painter.drawRoundedRect(new_rect, radius, radius)
+            painter.drawRoundedRect(rect0, r_old, r_old)
+            continue
+        if kind == "mix" and same_rect:
+            painter.setBrush(c_old if same_color else _mix(p_old, p_new, tt))
+            painter.drawRoundedRect(rect0, r_old, r_old)
+            continue
+        rect = QRectF(
+            o[0] + (n[0] - o[0]) * tt,
+            o[1] + (n[1] - o[1]) * tt,
+            o[2] + (n[2] - o[2]) * tt,
+            o[3] + (n[3] - o[3]) * tt,
+        )
+        radius = r_old + (r_new - r_old) * tt
+        if kind == "in":
+            color = QColor(c_new)
+            color.setAlpha(int(c_new.alpha() * tt))
+        elif kind == "out":
+            color = QColor(c_old)
+            color.setAlpha(int(c_old.alpha() * (1.0 - tt)))
+        else:
+            color = c_old if same_color else _mix(p_old, p_new, tt)
+        painter.setBrush(color)
+        painter.drawRoundedRect(rect, radius, radius)
 
 
 def render_labels_to_pixmap_impl(widget):

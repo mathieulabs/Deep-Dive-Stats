@@ -61,7 +61,6 @@ def get_settings_dialog_style(is_dark, conf=None):
             accent_hover  = palette.get("accent_hover",  accent_hover)
             group_title   = palette.get("text_primary",  group_title)
 
-    
     font_family = "Segoe UI, sans-serif"
 
     return f"""
@@ -88,8 +87,6 @@ def get_settings_dialog_style(is_dark, conf=None):
             font-size: 11px;
             font-style: italic;
         }}
-        
-
 
         /* Groups */
         QGroupBox {{
@@ -247,7 +244,6 @@ def get_settings_dialog_style(is_dark, conf=None):
             border-radius: 4px;
             outline: 0;
         }}
-        
 
         /* List Widget */
         QListWidget {{

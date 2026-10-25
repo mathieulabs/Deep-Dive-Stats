@@ -14,29 +14,28 @@ class AdaptiveStatsWidget(QWidget):
         super().__init__(parent)
         self.stats_text = "  ·  ".join(stats_text_list)
         self.stats_text_list = stats_text_list
-        self.parent_header = parent
-        
+
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
-        
+
         self.label = QLabel(self.stats_text, self)
         self.label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.layout.addWidget(self.label)
-        
+
         self.icon_btn = QPushButton(self)
         self.icon_btn.setFixedSize(20, 20)
         self.icon_btn.hide()
         self.layout.addWidget(self.icon_btn)
-        
+
         self.layout.addStretch()
-        
+
         self.tooltip = TooltipWindow(self)
         self.icon_btn.enterEvent = self._on_enter
         self.icon_btn.leaveEvent = self._on_leave
         self._theme_subscription = subscribe_theme_changed(self._on_theme_changed)
         self._apply_theme()
-        
+
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.setFixedHeight(20)
 
@@ -59,7 +58,7 @@ class AdaptiveStatsWidget(QWidget):
         for line in self.stats_text_list:
             lines.append({"text": line})
         self.tooltip.update_content(lines)
-        
+
         pos = self.icon_btn.mapToGlobal(self.icon_btn.rect().bottomRight())
         self.tooltip.move(pos.x() - self.tooltip.width(), pos.y() + 5)
         self.tooltip.show()
@@ -79,11 +78,11 @@ class AdaptiveStatsWidget(QWidget):
         else:
             text_hex = "#888888"
         hover_bg = "rgba(255,255,255,0.1)" if is_dark else "rgba(0,0,0,0.06)"
-        set_qss(self.label, 
+        set_qss(self.label,
             f"color: {text_hex}; font-size: 11px; background: transparent; border: none;"
         )
         self.icon_btn.setIcon(get_svg_icon("bar-chart-2", size=14, color=text_hex))
-        set_qss(self.icon_btn, 
+        set_qss(self.icon_btn,
             "QPushButton { background: transparent; border: none; } "
             f"QPushButton:hover {{ background: {hover_bg}; border-radius: 4px; }}"
         )
@@ -119,7 +118,7 @@ class AdaptiveStatsWidget(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         full_w = self.sizeHint().width()
-        
+
         if self.width() < full_w:
             self.label.hide()
             self.icon_btn.show()

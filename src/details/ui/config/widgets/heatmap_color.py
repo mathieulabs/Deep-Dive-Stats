@@ -7,7 +7,7 @@ from .....qss import set_qss
 
 
 def update_color_button(dialog) -> None:
-    set_qss(dialog.color_btn, 
+    set_qss(dialog.color_btn,
         f"background-color: {dialog.current_color}; border: 1px solid #888; border-radius: 4px;"
     )
     if hasattr(dialog, "reset_color_btn"):

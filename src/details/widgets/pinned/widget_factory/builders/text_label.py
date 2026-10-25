@@ -27,24 +27,10 @@ for _field, _dd_key, _dash_key in STAT_VALUE_FIELD_BINDINGS:
 
 AVAILABLE_VARS: tuple = tuple(field for field, *_ in STAT_VALUE_FIELD_BINDINGS)
 
-SPAN_TOKENS: dict = {
-    "total": Period.TOTAL,
-    "week": Period.WEEK,
-    "2w": Period.TWO_WEEKS,
-    "month": Period.MONTH,
-    "3m": Period.THREE_MONTHS,
-    "year": Period.YEAR,
-    "today": Period.TODAY,
-    "yesterday": Period.YESTERDAY,
-    "last year": Period.LAST_YEAR,
-    "custom": Period.CUSTOM,
-}
 
 DECK_OVERRIDE_SYMBOL = "@"
-SPECIAL_DECK_TOKENS: tuple = ("current", "all", "deleted")
 
 # A trailing "~" marks a variable whose changes do not fade the text: {reviews~}.
-STATIC_MARKER = "~"
 _TEMPLATE_RE = re.compile(
     r"\{(?P<var>\w+)(?::(?P<span>[^@}|]+?))?(?:@(?P<deck>[^}|]+?))?(?:\|(?P<unit>[^}]+?))?(?P<static>~)?\}"
 )
@@ -128,7 +114,7 @@ def get_available_span_tokens(cfg=None):
     return entries
 
 
-def _legacy_span_specs():
+def _builtin_span_specs():
     return {
         "total": (Period.TOTAL, 7, "relative", "", ""),
         "week": (Period.WEEK, 7, "relative", "", ""),
@@ -152,7 +138,7 @@ def _legacy_span_specs():
 
 
 def _span_lookup(cfg=None):
-    lookup = dict(_legacy_span_specs())
+    lookup = dict(_builtin_span_specs())
     for tab in _tabs_config_from_source(cfg):
         label = str(tab.get("title", "") or "").strip()
         range_val = tab.get("range")
@@ -200,6 +186,9 @@ def get_available_deck_override_tokens():
     return tokens
 
 
+_UNKNOWN_DECK = object()  # an @deck token that matches no deck ("all" resolves to None: all decks)
+
+
 def _resolve_deck_token(deck_token, default_deck_id):
     token = str(deck_token or "").strip()
     if not token:
@@ -221,7 +210,7 @@ def _resolve_deck_token(deck_token, default_deck_id):
                 return int(deck.id)
     except Exception:
         log_swallowed()
-    return None
+    return _UNKNOWN_DECK
 
 
 def _render_runtime_payload(payload, values=None):
@@ -278,8 +267,11 @@ def _build_runtime_payload(
             default_end_date_str=default_end_date_str,
         )
         resolved_deck = _resolve_deck_token(deck_token, deck_id) if deck_token else deck_id
+        if isinstance(resolved_deck, list):
+            # Several decks picked for the widget: the selection is a list, used as a key below.
+            resolved_deck = tuple(resolved_deck)
         raw_matches.append((m, span_spec, resolved_deck))
-        if span_spec is None or (deck_token and resolved_deck is None):
+        if span_spec is None or resolved_deck is _UNKNOWN_DECK:
             continue
         span, days, custom_type, start_date_str, end_date_str = span_spec
         requests_needed.add((resolved_deck, span, days, custom_type, start_date_str, end_date_str))
@@ -290,7 +282,7 @@ def _build_runtime_payload(
     raw_maps: dict = {}
     for resolved_deck, span, days, custom_type, start_date_str, end_date_str in requests_needed:
         raw = _build_stat_values_map(
-            resolved_deck,
+            list(resolved_deck) if isinstance(resolved_deck, tuple) else resolved_deck,
             span,
             days,
             cache=cache,
@@ -312,7 +304,7 @@ def _build_runtime_payload(
         var = m.group("var")
         span_token = m.group("span")
         deck_token = m.group("deck")
-        if span_spec is None or (deck_token and resolved_deck is None):
+        if span_spec is None or resolved_deck is _UNKNOWN_DECK:
             value = m.group(0)
         else:
             span, days, custom_type, start_date_str, end_date_str = span_spec
@@ -323,6 +315,10 @@ def _build_runtime_payload(
                 _conv = _apply_time_unit(var, m.group("unit"), _raw, int(cfg.config.get(Config.STATS_PRECISION, 2)))
                 if _conv is not None:
                     value = _conv
+            if var == "avg_time" and value == "N/A":
+                # No review yet: a sentence like "({avg_time}/card)" reads "(0s/card)", as in
+                # Anki's own line, not "(N/A/card)".
+                value = "0s"
         entries.append(
             {
                 "raw": m.group(0),
@@ -711,7 +707,6 @@ def _build_text_label(widget_def, deck_id, cache=None, parent=None, cfg=None):
         default_end_date_str=end_date_str,
     )
     text = (payload or {}).get("resolved", "") if payload is not None else ""
-
 
     label = _make_text_label_widget(text, parent)
     if hasattr(label, "setResolvedPayload"):

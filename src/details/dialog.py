@@ -43,16 +43,15 @@ class DetailedStatsDialog(QDialog):
 
         # No Qt parent: a child window of mw gets no taskbar button of its own on Windows.
         super().__init__(None)
-        self._anki_parent = parent
         self.addon_config = addon_config
-        
+
         # A Window instead of a Dialog keeps it modeless with its own taskbar entry.
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
         from ..config import dev_label
 
         self.setWindowTitle(dev_label("Deep Dive Stats"))
         self.setWindowIcon(QIcon(LOGO_PNG))
-        
+
         self.tab_stats = {} # {tab_index: stats_dict}
         self.view_mode = self.addon_config.config.get(Config.DETAILS_VIEW_MODE, 'time') # 'time' or 'deck'
         self.expanded_decks = set(self.addon_config.config.get(Config.DETAILS_EXPANDED_DECKS, []))
@@ -70,7 +69,7 @@ class DetailedStatsDialog(QDialog):
         except Exception:
             self.target_deck_id = None
             self.target_deck_name = None
-            
+
         # Target time span: Use previously active period in Deep Dive, or fallback to the current Time view tab's span
         self.target_time_span = self.addon_config.config.get(Config.DETAILS_DEEP_DIVE_PERIOD_RANGE)
         if self.target_time_span is None:
@@ -79,16 +78,15 @@ class DetailedStatsDialog(QDialog):
                 self.target_time_span = tabs_config[self._saved_time_tab].get("range", Period.WEEK)
             else:
                 self.target_time_span = Period.WEEK
-                
+
         self._pending_deep_dive_restore = True
-        
+
         # Override config identifier/range for deep dive open logic with our target
         self.addon_config.config[Config.DETAILS_DEEP_DIVE_IDENTIFIER] = self.target_deck_id
         if getattr(self, 'target_deck_name', None):
              self.addon_config.config[Config.DETAILS_DEEP_DIVE_TITLE] = self.target_deck_name
         self.addon_config.config[Config.DETAILS_DEEP_DIVE_PERIOD_RANGE] = self.target_time_span
 
-        
         # Done before the background warm-up starts: these main-thread collection
         # calls would otherwise wait for a background query.
         # An empty saved list only means "everything closed" once the user has toggled a folder.
@@ -101,16 +99,13 @@ class DetailedStatsDialog(QDialog):
                     parts = full_name.split("::")
                     for i in range(1, len(parts)):
                         self.expanded_decks.add("::".join(parts[:i]))
-        
+
         self.deep_dive_manager = DeepDiveManager(self)
         self.expanded_header_controls = None
         self.load_generation = 0 # Track active load request to abort stale timers/tasks
         from .logic.data import warm_time_view_static_bundle_async
-        warm_time_view_static_bundle_async(
-            self.addon_config.config.get(Config.EXCLUDED_DECKS, []),
-            generation_key="dialog_init",
-        )
-        
+        warm_time_view_static_bundle_async(self.addon_config.config.get(Config.EXCLUDED_DECKS, []))
+
         self.setup_ui()
         self.deep_dive_manager.warm_up()
 
@@ -118,21 +113,21 @@ class DetailedStatsDialog(QDialog):
 
         self._sort_col = 1
         self._sort_order = Qt.SortOrder.DescendingOrder
-        
+
         if self.view_mode == 'deck':
             self.load_deck_view()
         else:
             self.load_tabs()
-            
+
         screen = mw.screen()
         if not screen:
             screen = mw.app.primaryScreen()
         geom = screen.availableGeometry()
-        
+
         target_w = int(geom.width() * 0.85)
         target_h = int(geom.height() * 0.85)
         self.resize(target_w, target_h)
-        
+
         # Substantial minimum size but capped by screen to avoid overflow
         min_w = min(850, geom.width() - 40)
         min_h = min(600, geom.height() - 40)
@@ -140,7 +135,7 @@ class DetailedStatsDialog(QDialog):
         # Reserve the final splitter space before first paint to avoid the top dashboard
         # temporarily expanding into the deep-dive/table area.
         self.apply_layout_state(animated=False)
-        
+
         from .logic.history_cache import GlobalHistoryCache
         GlobalHistoryCache.init_async()
 
@@ -151,7 +146,7 @@ class DetailedStatsDialog(QDialog):
     def _on_live_cache_updated(self):
         from .ui.dialog.live_refresh import on_cache_updated
         on_cache_updated(self)
-            
+
     def setup_ui(self):
         setup_dialog_ui(self)
 
@@ -185,13 +180,12 @@ class DetailedStatsDialog(QDialog):
     def on_deep_dive_closed(self):
         return on_deep_dive_closed_impl(self)
 
-
     def switch_layout(self, state):
         return switch_layout_impl(self, state)
 
     def apply_layout_state(self, state=None, update_sizes=True, animated=True):
         return apply_layout_state_impl(self, state=state, update_sizes=update_sizes, animated=animated)
-        
+
     def _clear_layout(self, layout):
         """Recursively clear a layout and delete all widgets."""
         if layout is not None:
@@ -202,8 +196,6 @@ class DetailedStatsDialog(QDialog):
                 elif item.layout():
                     self._clear_layout(item.layout())
             layout.deleteLater()
-
-
 
     def resizeEvent(self, event):
         return resize_event_impl(self, event)
@@ -250,8 +242,6 @@ class DetailedStatsDialog(QDialog):
         """Auto-resize columns and window width to fit content."""
         return auto_resize_window(self, table, resize_window)
 
-
-    
     def open_settings(self, start_tab=None):
         return open_settings_impl(self, start_tab=start_tab)
 
@@ -264,13 +254,11 @@ class DetailedStatsDialog(QDialog):
     def toggle_view(self):
         return toggle_view_impl(self)
 
-
     def _repopulate_current_table(self):
         return repopulate_current_table_impl(self)
 
     def on_header_clicked(self, table, col_idx):
         return on_header_clicked_impl(self, table, col_idx)
-
 
     def on_cell_double_clicked(self, row, col):
         on_cell_double_clicked(self, row, col)

@@ -18,6 +18,7 @@ from .const import CURRENT_VERSION, Config
 _FILE_CONFIG_CACHE: dict[str, tuple] = {}
 _NORMALIZED_CONFIG_CACHE: dict[str, tuple] = {}
 _PEEK_CACHE: dict[str, tuple] = {}
+_PEEK_RECHECK_S = 0.5
 _PATH_CACHE: dict = {}
 # Config managers that are kept alive (open windows). See reload_live_managers().
 _LIVE_MANAGERS: weakref.WeakSet = weakref.WeakSet()
@@ -127,7 +128,6 @@ class ConfigManager:
 
         self.config = self._read_config()
         _LIVE_MANAGERS.add(self)
-
 
     def write_config(self):
         """Save the current values."""
@@ -268,19 +268,25 @@ def read_config_dict():
     paths = _PATH_CACHE.get(profile_name)
     if paths is not None:
         path = paths[1]
+        entry = _PEEK_CACHE.get(path)
+        if entry is not None and time.monotonic() - entry[2] < _PEEK_RECHECK_S:
+            # Painting asks for config values many times per frame (number format,
+            # theme). Saves from this add-on drop the entry, so only a change made
+            # outside it waits for the next check.
+            return entry[1]
         try:
             st = os.stat(path)
             sig = (st.st_mtime_ns, st.st_size)
         except OSError:
             sig = None
-        entry = _PEEK_CACHE.get(path)
         if sig is not None and entry is not None and entry[0] == sig:
+            _PEEK_CACHE[path] = (sig, entry[1], time.monotonic())
             return entry[1]
     mgr = ConfigManager(_mw)
     path = mgr._config_path
     try:
         st = os.stat(path)
-        _PEEK_CACHE[path] = ((st.st_mtime_ns, st.st_size), mgr.config)
+        _PEEK_CACHE[path] = ((st.st_mtime_ns, st.st_size), mgr.config, time.monotonic())
     except OSError:
         pass
     return mgr.config

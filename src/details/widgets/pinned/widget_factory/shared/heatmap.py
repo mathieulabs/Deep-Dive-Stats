@@ -95,13 +95,15 @@ def load_pinned_heatmap_year_data(
 ):
     config = cfg or _addon_config()
     end = get_heatmap_year_end(target_year)
-    cache_key = (deck_id, target_year) if year_data_cache is not None else None
+    # Several decks picked for the widget come as a list, which cannot be a dict key.
+    deck_key = tuple(deck_id) if isinstance(deck_id, list) else deck_id
+    cache_key = (deck_key, target_year) if year_data_cache is not None else None
 
     if cache_key is not None and cache_key in year_data_cache:
         return year_data_cache[cache_key], end, "year_cache"
 
     if prefer_total_cache and total_heatmap_cache is not None:
-        if deck_id not in total_heatmap_cache:
+        if deck_key not in total_heatmap_cache:
             total_ctx = get_pinned_context(
                 deck_id,
                 Period.TOTAL,
@@ -109,9 +111,9 @@ def load_pinned_heatmap_year_data(
                 allow_slow_ops=allow_slow_ops,
             )
             if isinstance(total_ctx, dict) and "heatmap_data" in total_ctx:
-                total_heatmap_cache[deck_id] = total_ctx["heatmap_data"]
+                total_heatmap_cache[deck_key] = total_ctx["heatmap_data"]
 
-        data = slice_heatmap_year_data(total_heatmap_cache.get(deck_id), target_year)
+        data = slice_heatmap_year_data(total_heatmap_cache.get(deck_key), target_year)
         if data is not None:
             if cache_key is not None:
                 year_data_cache[cache_key] = data

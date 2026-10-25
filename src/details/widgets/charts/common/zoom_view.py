@@ -104,8 +104,41 @@ def cumulative_range(zv, cumulative_values):
     return base, top
 
 
+def _height_at(pts, top, x):
+    """Height (0 to 1) of the line pts at x, flat past its ends."""
+    if not pts:
+        return 0.0
+    if x <= pts[0][0]:
+        return pts[0][1] / top
+    for (x0, v0), (x1, v1) in zip(pts, pts[1:]):
+        if x <= x1:
+            f = (x - x0) / (x1 - x0) if x1 > x0 else 1.0
+            return (v0 + (v1 - v0) * f) / top
+    return pts[-1][1] / top
+
+
+def _blended_points(zv, layers, plot_left, plot_w):
+    """One line mixed from the lines of several bin sizes, weighted by their share."""
+    lines = []
+    for offset, view, values, share in layers:
+        sub = dict(zv, offset=offset, view=view, cum_values=values, cum_blend=None)
+        pts, top = cumulative_points(sub, values, plot_left, plot_w)
+        lines.append((pts, max(1e-9, top), max(0.0, float(share))))
+    total = sum(w for _p, _t, w in lines) or 1.0
+    top = math.exp(sum(w * math.log(t) for _p, t, w in lines) / total)
+    lo, hi = plot_left - 2.0, plot_left + plot_w + 2.0
+    xs = sorted({x for pts, _t, _w in lines for x, _v in pts if lo <= x <= hi} | {lo, hi})
+    out = []
+    for x in xs:
+        h = sum(w * _height_at(pts, t, x) for pts, t, w in lines) / total
+        out.append((x, h * top))
+    return out, top
+
+
 def cumulative_points(zv, cumulative_values, plot_left, plot_w):
     """[(x, value from 0 to top)] for the running total line, and top."""
+    if zv.get("cum_blend"):
+        return _blended_points(zv, zv["cum_blend"], plot_left, plot_w)
     if zv.get("cum_values") is not None:
         # Given by the animation: the real running total (the bars are rescaled).
         cumulative_values = zv["cum_values"]

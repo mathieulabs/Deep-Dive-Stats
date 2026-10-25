@@ -49,6 +49,33 @@ class RefreshMixin:
 
         future.add_done_callback(_done)
 
+    def refresh_card_states(self, callback=None):
+        """Light refresh after an operation that only changed card states (suspend, bury,
+        reschedule, forget...): the review history is the same, so only the card counts,
+        due dates, intervals and FSRS charts are read again, from the cards table.
+        A full rebuild here would read the whole revlog for nothing."""
+        if not self.is_initialized or self._is_refreshing or getattr(self, "_is_initializing", False):
+            self.refresh_incremental(callback=callback, force_full=True)
+            return
+        from . import GlobalHistoryCache
+
+        def worker():
+            with self._lock:
+                GlobalHistoryCache._refresh_snapshot_charts(self.cache, self.hier_map)
+            return GlobalHistoryCache._populate_fsrs_cache()
+
+        def on_done(future):
+            try:
+                future.result()
+                self._apply_fsrs_cache(future)
+            except Exception:
+                log_swallowed()
+            self._emit_context_updated_coalesced()
+            if callback:
+                callback()
+
+        mw.taskman.run_in_background(worker, on_done=on_done)
+
     def refresh_incremental(self, callback=None, force_full=False, warmup_deck_ids=None, skip_warmup=False, max_rev_hint=None):
         """Fetches and merges ONLY new reviews since last sync.
         If force_full is True, it fetches the entire history (used for undos).
@@ -99,7 +126,7 @@ class RefreshMixin:
                 self._queued_callbacks = []
             if not hasattr(self, "_queued_warmup_targets"):
                 self._queued_warmup_targets = set()
-                
+
             with self._lock:
                 if self._is_refreshing:
                     if callback and callback not in self._queued_callbacks:
@@ -108,7 +135,7 @@ class RefreshMixin:
                         for t in warmup_deck_ids:
                             self._queued_warmup_targets.add(t)
                     return
-                
+
                 col = getattr(mw, "col", None)
                 if col is None or getattr(col, "db", None) is None:
                     if callback:
@@ -142,10 +169,10 @@ class RefreshMixin:
                 else:
                     current_max = col.db.scalar("select max(id) from revlog") or 0
                     current_max_card = col.db.scalar("select max(id) from cards") or 0
-                
+
                 start_rev_id = self.last_max_rev_id
                 start_card_id = self.last_max_card_id
-                
+
                 if not used_rev_hint and not force_full and current_max == start_rev_id and current_max_card == start_card_id:
                     # Coalesce bursts of identical no-delta checks (startup/render storms)
                     # to keep logs and main-thread work minimal.
@@ -161,7 +188,7 @@ class RefreshMixin:
                         return
                     self._last_no_delta_key = no_delta_key
                     self._last_no_delta_ts = now_ts
-                    if callback: 
+                    if callback:
                         queue_ui_callback(
                             callback,
                             delay_ms=0,
@@ -169,14 +196,14 @@ class RefreshMixin:
                             reason="history_cache.refresh_incremental.skip_no_delta",
                         )
                     return
-                
+
                 rev_delta = current_max - start_rev_id
                 card_delta = current_max_card - start_card_id
                 if force_full:
                     log_info(f"Delta: FULL forced. rev_id: {current_max}, card_id: {current_max_card}", tag="CACHE")
                 elif rev_delta != 0 or card_delta != 0:
                     log_debug(f"Delta detected: rev_id +{rev_delta}, card_id +{card_delta}", tag="CACHE")
-                
+
                 is_undo_rev = current_max < start_rev_id and not force_full and not used_rev_hint
                 is_undo_card = current_max_card < start_card_id and not force_full
                 is_undo = is_undo_rev or is_undo_card
@@ -210,9 +237,7 @@ class RefreshMixin:
                     except Exception:
                         # Best-effort optimization only; never block refresh on this.
                         dirty_deck_ids = set()
-                elif not force_full and not is_undo:
-                    pass
-                    
+
                 self._is_refreshing = True
                 _set_refreshing_here = True
                 type_str = "UNDO (2-DAY)" if is_undo else ("FULL" if force_full else "DELTA")
@@ -220,7 +245,7 @@ class RefreshMixin:
 
             # Pre-fetch the hierarchy on the main thread (or from cache) to avoid a 140ms stall in the background
             hier_data = self._get_hierarchy_context()
-            
+
             def worker():
                 _w_start = time.perf_counter()
                 log_debug("Background DB worker STARTED.", tag="CACHE")
@@ -250,7 +275,7 @@ class RefreshMixin:
                     fsrs_leaf, fsrs_dirty = {}, None
                 else:
                     dirty_dids = None  # always full scan for correctness (partial breaks parent aggregates)
-                    fsrs_leaf, fsrs_dirty = GlobalHistoryCache._populate_fsrs_cache(self.cache, dirty_dids=dirty_dids)
+                    fsrs_leaf, fsrs_dirty = GlobalHistoryCache._populate_fsrs_cache(dirty_dids=dirty_dids)
 
                 # Small deltas merge here in the background thread. Large ones (over 220
                 # decks) merge on the main thread so the priority split in on_done runs first.
@@ -346,8 +371,6 @@ class RefreshMixin:
                                     stale = [k for k in list(self.cache.keys()) if k not in delta_map]
                                     for k in stale:
                                         self.cache.pop(k, None)
-                                    if stale:
-                                        pass
                                 else:
                                     self._merge_delta(delta_map, is_undo=was_undo)
                             # Update the ids under the same lock as the data, so a background save never
@@ -415,8 +438,6 @@ class RefreshMixin:
                                 budget_ms=10,
                                 priority_deck_ids=priority_targets,
                             )
-                    else:
-                        pass
 
                     def _snap_job():
                         _s_start = time.perf_counter()
@@ -444,7 +465,7 @@ class RefreshMixin:
 
                     _callbacks_state["done"] = True
                     _run_waiting_callbacks()
-                    
+
                     self._emit_context_updated_coalesced()
 
                     if deferred_delta_map:

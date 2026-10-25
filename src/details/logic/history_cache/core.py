@@ -29,11 +29,11 @@ class GlobalHistoryCacheCore:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = object.__new__(cls)
-            
+
             # Use a proxy for signals to avoid QObject singleton inheritance issues
             cls._instance.signals = cls._SignalProxy()
             cls._instance.signals.invoke_on_main.connect(lambda callback: callback())
-            
+
             cls._instance.cache = {}  # {deck_id: {range_type: context}}
             cls._instance.hier_map = {}  # {parent_did: [leaf_did, ...]}, kept for FSRS aggregation
             cls._instance.is_initialized = False
@@ -50,8 +50,6 @@ class GlobalHistoryCacheCore:
             cls._instance._deferred_warmup_in_progress = False
             cls._instance._deferred_warmup_priority = []
             cls._instance._hier_cache_data = None
-            cls._instance._hier_cache_count = 0
-            cls._instance._hier_cache_time = 0.0
             cls._instance._hier_cache_invalidated = False
             cls._instance._hier_prewarm_scheduled = False
             cls._instance._context_update_pending = False
@@ -63,7 +61,7 @@ class GlobalHistoryCacheCore:
                 max_workers=1,
                 thread_name_prefix="ThreadPoolExecutor-review_refresh",
             )
-            
+
             # Background rollover/sync poller (every 60s)
             cls._instance._poll_timer = QTimer(cls._instance.signals)
             cls._instance._poll_timer.timeout.connect(cls._instance._check_incremental_update)
@@ -71,12 +69,12 @@ class GlobalHistoryCacheCore:
             cls._instance._context_update_timer = QTimer(cls._instance.signals)
             cls._instance._context_update_timer.setSingleShot(True)
             cls._instance._context_update_timer.timeout.connect(cls._instance._flush_context_updated)
-            
+
             from aqt import gui_hooks
             gui_hooks.profile_did_open.append(cls._instance._on_profile_switch)
             # A .colpkg import reloads the collection without reopening the profile.
             gui_hooks.collection_did_load.append(cls._instance._on_collection_loaded)
-            
+
         return cls._instance
 
     @staticmethod

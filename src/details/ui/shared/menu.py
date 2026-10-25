@@ -11,10 +11,10 @@ class StyledMenu(QMenu):
             super().__init__(title_or_parent, parent)
         else:
             super().__init__(title_or_parent)
-        
+
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
-        
+
         self._apply_theme_style()
 
     def addMenu(self, *args):
@@ -22,7 +22,7 @@ class StyledMenu(QMenu):
         if len(args) > 0 and isinstance(args[-1], str):
             title = args[-1]
             icon = args[0] if len(args) > 1 else None
-            
+
             # Submenus are compact: they usually have no icons
             sub = StyledMenu(title, self, is_submenu=True)
             # Propagate theme context hints to submenus.
@@ -32,10 +32,10 @@ class StyledMenu(QMenu):
                     sub.setProperty(key, val)
             if icon:
                 sub.setIcon(icon)
-            
-            super().addMenu(sub) 
+
+            super().addMenu(sub)
             return sub
-            
+
         return super().addMenu(*args)
 
     def _resolve_theme_context(self):
@@ -47,7 +47,7 @@ class StyledMenu(QMenu):
             context=self._resolve_theme_context(),
             is_submenu=self.is_submenu,
         )
-        
+
     def mouseReleaseEvent(self, event):
         action = self.actionAt(event.pos())
         if action and action.isCheckable():

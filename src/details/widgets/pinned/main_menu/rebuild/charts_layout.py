@@ -83,9 +83,6 @@ def prepare_charts_layout(
     else:
         overview_sync_budget = 999
 
-    if overview_light_mode or review_return_light_mode:
-        pass
-
     return charts_exist, widget_index, overview_sync_budget
 
 

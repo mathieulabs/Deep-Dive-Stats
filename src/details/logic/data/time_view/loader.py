@@ -39,7 +39,7 @@ def _add_day_stats(totals, range_type, custom_days, custom_type, start_date_str,
 
 
 def load_stats_data(range_type, excluded_dids, spark_precision, show_trends,
-                   week_start, custom_days=7, custom_type="relative", 
+                   week_start, custom_days=7, custom_type="relative",
                    start_date_str="", end_date_str=""):
     """
     Main orchestration function for loading all statistics data for Time View.
@@ -48,25 +48,25 @@ def load_stats_data(range_type, excluded_dids, spark_precision, show_trends,
     start_ms, end_ms, prev_start_ms, prev_end_ms = get_time_range_ms(
         range_type, week_start, custom_days, custom_type, start_date_str, end_date_str, show_trends
     )
-    
+
     from ...logger import log_debug
-    
+
     did_limit = excluded_decks_clause(excluded_dids)
-    
+
     from ...history_cache import GlobalHistoryCache
     ghc = GlobalHistoryCache()
     if ghc.is_initialized:
         from ..transforms import adapter_from_cache
         log_debug(f"[LOADER] Attempting cache adapter for range={range_type}", tag="LOADER")
         cache_data = adapter_from_cache(
-            ghc, range_type, spark_precision, 
-            start_ms=start_ms, end_ms=end_ms, 
+            ghc, range_type, spark_precision,
+            start_ms=start_ms, end_ms=end_ms,
             excluded_dids=excluded_dids
         )
         if cache_data:
             results, prev_stats_map, activity_map, retention_maps, bin_labels, bin_count = cache_data
-            static_bundle, static_cache_hit = get_time_view_static_bundle(excluded_dids)
-            
+            static_bundle, _cache_hit = get_time_view_static_bundle(excluded_dids)
+
             if show_trends and range_type != Period.TOTAL:
                 log_debug(f"[LOADER] Cache trend lookup: {prev_start_ms} to {prev_end_ms}", tag="LOADER")
                 prev_cache = adapter_from_cache(
@@ -82,22 +82,14 @@ def load_stats_data(range_type, excluded_dids, spark_precision, show_trends,
             remaining_new_map = static_bundle["remaining_new_map"]
             streak_map = static_bundle["streak_map"]
             deck_name_maps = static_bundle["deck_name_maps"]
-            
+
             flattened_results, tree_data = process_deck_tree(
                 results, prev_stats_map, activity_map, retention_maps, deck_limits, remaining_new_map, bin_labels, bin_count, show_trends,
                 streak_map=streak_map, deck_name_maps=deck_name_maps
             )
-            
-            total_activity = [0] * bin_count
-            for did, act in activity_map.items():
-                # Only aggregate raw decks and deleted cards (None).
-                # String keys in results/activity_map would be pre-aggregated folders.
-                if did is not None and not isinstance(did, int): continue
-                for i in range(min(bin_count, len(act))): 
-                    total_activity[i] += act[i]
-                    
+
             totals = calculate_totals(
-                results, prev_stats_map, deck_limits, remaining_new_map, total_activity, bin_labels, retention_maps, bin_count
+                results, prev_stats_map, deck_limits, remaining_new_map, bin_labels, retention_maps, bin_count
             )
             range_ctx = ghc.get_context(
                 None, range_type,
@@ -117,29 +109,22 @@ def load_stats_data(range_type, excluded_dids, spark_precision, show_trends,
                 "meta": {"bin_labels": bin_labels, "bin_count": bin_count}
             }
 
-
     log_debug(f"[LOADER] SQL FALLBACK for range={range_type}", tag="LOADER")
-    static_bundle, static_cache_hit = get_time_view_static_bundle(excluded_dids)
+    static_bundle, _cache_hit = get_time_view_static_bundle(excluded_dids)
     results, prev_stats_map, activity_map, retention_maps, deck_limits, remaining_new_map, bin_labels, bin_count, start_ms, end_ms = fetch_data(
         start_ms, end_ms, prev_start_ms, prev_end_ms, did_limit, range_type, spark_precision, show_trends, precomputed_static=static_bundle
     )
-    
+
     streak_map = static_bundle["streak_map"]
-            
+
     # Deck name maps are built here from mw.col, which is safe to read from background threads.
     flattened_results, tree_data = process_deck_tree(
         results, prev_stats_map, activity_map, retention_maps, deck_limits, remaining_new_map, bin_labels, bin_count, show_trends,
         streak_map=streak_map, deck_name_maps=static_bundle["deck_name_maps"]
     )
-    
-    # We need total activity across all decks (sum of activity_map)
-    total_activity = [0] * bin_count
-    for did in activity_map:
-        for i in range(bin_count):
-            total_activity[i] += activity_map[did][i]
-            
+
     totals = calculate_totals(
-        results, prev_stats_map, deck_limits, remaining_new_map, total_activity, bin_labels, retention_maps, bin_count
+        results, prev_stats_map, deck_limits, remaining_new_map, bin_labels, retention_maps, bin_count
     )
 
     offset_ms = get_rollover_offset_ms()
@@ -155,7 +140,7 @@ def load_stats_data(range_type, excluded_dids, spark_precision, show_trends,
     """
     total_active_days = mw.col.db.scalar(total_active_days_query) or 0
     totals["active_days"] = total_active_days
-    
+
     g_current, g_longest = streak_map.get("collection", (0, 0))
     totals["streak_current"] = g_current
     totals["streak_longest"] = g_longest
@@ -165,7 +150,7 @@ def load_stats_data(range_type, excluded_dids, spark_precision, show_trends,
         "totals": totals,
         "tree_data": tree_data,
         "range_info": {
-            "start_ms": start_ms, 
+            "start_ms": start_ms,
             "end_ms": end_ms
         },
         "meta": {

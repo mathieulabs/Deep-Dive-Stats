@@ -255,7 +255,7 @@ def build_colors_tab(dialog) -> None:
 
     reset_btn = QPushButton("Reset Colors to Default")
     reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    set_qss(reset_btn, 
+    set_qss(reset_btn,
         """
         QPushButton {
             background: rgba(244, 67, 54, 0.15);

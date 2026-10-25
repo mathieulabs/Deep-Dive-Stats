@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 
 from aqt import gui_hooks, mw
-from aqt.qt import QAction
+from aqt.qt import QAction, QTimer
 
 from .config import ConfigManager, dev_label
 from .qss import set_qss
@@ -40,7 +40,7 @@ def register_hooks():
         f"{platform.system()} {platform.release()} ===",
         tag="STARTUP"
     )
-    
+
     gui_hooks.webview_did_receive_js_message.append(on_webview_message)
     gui_hooks.sync_did_finish.append(on_sync_did_finish)
     gui_hooks.top_toolbar_did_init_links.append(on_top_toolbar_did_init_links)
@@ -54,12 +54,13 @@ def register_hooks():
     gui_hooks.profile_will_close.append(_discard_parked_dialog)
     gui_hooks.profile_did_open.append(_seed_rollover)
     gui_hooks.operation_did_execute.append(_on_operation_for_rollover)
+    gui_hooks.theme_did_change.append(_on_anki_theme_change)
 
     from .config import pinned_widgets_disabled
     if not pinned_widgets_disabled():
         from .details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
         MainMenuWidgetManager.instance().register_hooks()
-    
+
     add_toolbar_action()
     gui_hooks.profile_did_open.append(apply_shortcut)
     apply_shortcut()
@@ -97,12 +98,12 @@ def add_toolbar_action():
             return
     except Exception:
         log_swallowed()
-    
+
     action = QAction(dev_label("Deep Dive"), mw)
     action.setToolTip(dev_label("Deep Dive Stats"))
-    
+
     menu = QMenu(mw)
-    
+
     open_action = menu.addAction("Open Deep Dive")
     open_action.triggered.connect(on_show_details)
     mw._deep_dive_open_action = open_action
@@ -181,9 +182,9 @@ def add_toolbar_action():
 
     settings_action = menu.addAction("Settings")
     settings_action.triggered.connect(on_open_settings)
-    
+
     menu.addSeparator()
-    
+
     def on_clear_cache():
         from .details.logic import log_info
         log_info("User triggered Clear Cache.", tag="CACHE")
@@ -199,7 +200,7 @@ def add_toolbar_action():
 
     clear_action = menu.addAction("Clear Cache")
     clear_action.triggered.connect(on_clear_cache)
-    
+
     def on_view_logs():
         import os
         from .details.logic import DeepDiveLogger
@@ -207,7 +208,7 @@ def add_toolbar_action():
         from aqt.qt import (QDialog, QVBoxLayout, QHBoxLayout, QTextEdit,
                             QPushButton, QLabel, QApplication, QMessageBox,
                             QSize, Qt, QTimer)
-        
+
         DeepDiveLogger.flush()
         log_dir = DeepDiveLogger._get_log_dir()
         log_file = os.path.join(log_dir, "debug.log")
@@ -225,9 +226,9 @@ def add_toolbar_action():
         dlg = QDialog(mw)
         dlg.setWindowTitle("Deep Dive Debug Logs")
         dlg.resize(900, 600)
-        
+
         layout = QVBoxLayout(dlg)
-        
+
         path_row = QHBoxLayout()
         path_icon = QLabel()
         path_icon.setPixmap(get_svg_icon("file-text", color="#808080", size=14).pixmap(14, 14))
@@ -250,7 +251,7 @@ def add_toolbar_action():
         path_row.addWidget(copy_path_btn)
         path_row.addStretch()
         layout.addLayout(path_row)
-        
+
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
         text_edit.setPlainText(content)
@@ -259,9 +260,9 @@ def add_toolbar_action():
         from aqt.qt import QTimer as _QT
         _QT.singleShot(0, lambda: text_edit.verticalScrollBar().setValue(
             text_edit.verticalScrollBar().maximum()))
-        
+
         btn_row = QHBoxLayout()
-        
+
         copy_btn = QPushButton(" Copy All")
         copy_btn.setIcon(get_svg_icon("copy", size=16, context_ref=dlg))
         def do_copy():
@@ -270,17 +271,17 @@ def add_toolbar_action():
             copy_btn.setIcon(get_svg_icon("check", size=16, context_ref=dlg))
         copy_btn.clicked.connect(do_copy)
         btn_row.addWidget(copy_btn)
-        
+
         report_btn = QPushButton(" Report a Bug")
         report_btn.setIcon(get_svg_icon("bug", size=16, context_ref=dlg))
         report_btn.clicked.connect(open_bug_report)
         btn_row.addWidget(report_btn)
 
         btn_row.addStretch()
-        
+
         clear_cache_btn = QPushButton(" Clear Cache")
         clear_cache_btn.setIcon(get_svg_icon("trash", color="#ffffff", size=16))
-        set_qss(clear_cache_btn, 
+        set_qss(clear_cache_btn,
             "QPushButton { background-color: #c0392b; color: white; font-weight: bold; "
             "border-radius: 4px; padding: 4px 12px; }"
             "QPushButton:hover { background-color: #e74c3c; }"
@@ -302,7 +303,7 @@ def add_toolbar_action():
 
         clear_logs_btn = QPushButton(" Clear Logs")
         clear_logs_btn.setIcon(get_svg_icon("eraser", color="#ffffff", size=16))
-        set_qss(clear_logs_btn, 
+        set_qss(clear_logs_btn,
             "QPushButton { background-color: #7f8c8d; color: white; font-weight: bold; "
             "border-radius: 4px; padding: 4px 12px; }"
             "QPushButton:hover { background-color: #95a5a6; }"
@@ -323,36 +324,36 @@ def add_toolbar_action():
                 clear_logs_btn.setEnabled(False)
         clear_logs_btn.clicked.connect(do_clear_logs)
         btn_row.addWidget(clear_logs_btn)
-        
+
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(dlg.accept)
         btn_row.addWidget(close_btn)
-        
+
         layout.addLayout(btn_row)
         dlg.exec()
-    
+
     view_logs_action = menu.addAction("View Debug Logs")
     view_logs_action.triggered.connect(on_view_logs)
 
     report_action = menu.addAction("Report a Bug")
     report_action.triggered.connect(open_bug_report)
-    
+
     action.setMenu(menu)
     mw._deep_dive_menu = menu
-    
+
     if hasattr(mw.form, 'menubar'):
         mw.form.menubar.addAction(action)
-    
+
     if hasattr(mw.form, 'mainToolBar'):
         mw.form.mainToolBar.addAction(action)
-        
+
         from aqt.qt import QToolButton
         button = mw.form.mainToolBar.widgetForAction(action)
         if isinstance(button, QToolButton):
             from aqt.qt import Qt
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
             button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-    
+
     mw._deep_dive_action = action
 
 
@@ -462,6 +463,32 @@ def _deep_dive_reuse_signature():
         return (id(col), col.mod, col.sched.today, col.decks.selected(), theme_sig, tabs_sig)
     except Exception:
         return None
+
+
+def _on_anki_theme_change():
+    """Anki switched between light and dark (by hand, or following the system): restyle an
+    open Stats window. Without this only its cards followed and the charts kept the old theme."""
+
+    def _restyle():
+        dlg = _current_dialog
+        if dlg is None:
+            return
+        try:
+            if not dlg.isVisible():
+                return
+            from .details.widgets.chart_utils.theme import sync_theme_manager_from_config, theme_already_synced
+
+            conf = dlg.addon_config.config
+            if not theme_already_synced(conf):
+                sync_theme_manager_from_config(conf, emit=True, source="anki_theme_change")
+            dlg.refresh_styles()
+        except RuntimeError:
+            pass  # window already deleted
+        except Exception:
+            log_swallowed()
+
+    # After Anki has finished applying its own palette.
+    QTimer.singleShot(0, _restyle)
 
 
 def _discard_parked_dialog(*_args):
@@ -639,9 +666,9 @@ def on_show_details():
         conf_manager = ConfigManager(mw)
         _current_dialog = DetailedStatsDialog(conf_manager, mw)
         _current_dialog._deepdivestats_built_night_mode = _anki_night_mode()
-        
+
         _current_dialog.finished.connect(_on_dialog_finished)
-        
+
         _current_dialog.show()
     except Exception as e:
         try:
@@ -660,10 +687,6 @@ def on_show_details():
 
 def _on_dialog_finished(result):
     global _current_dialog
-    try:
-        pass
-    except Exception:
-        log_swallowed()
     try:
         from .details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
         if MainMenuWidgetManager.instance_exists():
@@ -736,10 +759,10 @@ def on_top_toolbar_did_init_links(links: list, toolbar):
     toolbar_style_text = getattr(Config, "TOOLBAR_STYLE_TEXT", "text")
     toolbar_style_none = getattr(Config, "TOOLBAR_STYLE_NONE", "none")
     button_style = conf_manager.config.get(toolbar_style_key, toolbar_style_logo)
-    
+
     if button_style == toolbar_style_none or not conf_manager.config.get(Config.SHOW_TOP_TOOLBAR_BUTTON, True):
         return
-    
+
     if button_style == toolbar_style_text:
         import html as _html
 
@@ -764,7 +787,7 @@ def on_top_toolbar_did_init_links(links: list, toolbar):
         f'title="{dev_label("Deep Dive Stats")}" style="color: inherit; text-decoration: none; display: inline-flex; align-items: center; padding: 0 10px; {extra_style}">'
         f'{content_html}</a>'
     )
-    
+
     # Try to insert between "Stats" and "Sync" (links are usually [Decks, Add, Browse, Stats, Sync]).
     if len(links) >= 1:
         links.insert(-1, html)

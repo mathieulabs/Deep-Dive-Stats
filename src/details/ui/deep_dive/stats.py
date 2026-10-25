@@ -17,7 +17,7 @@ class DeepDiveStatsMixin:
         if not tab_stats:
             return None
         results = tab_stats.get("results", [])
-        
+
         row_data = None
         if self.dialog.view_mode == 'time':
             for r in results:
@@ -38,12 +38,12 @@ class DeepDiveStatsMixin:
                     break
             if not row_data and (title in ["Total", "Collection"] or title.upper() == "TOTAL" or deck_identifier in ["0", 0]):
                 row_data = next((r for r in results if r.get("is_total_row")), None)
-        
+
         if not row_data and (deck_identifier in ["[[TOTAL]]", "0", 0] or title == "Collection"):
             row_data = next((r for r in results if r.get("is_total_row")), None)
             if not row_data:
                 row_data = {"is_total_row": True, "did": None, "title": "Collection"}
-            
+
         return row_data
 
     def _merged_row_data(self, deck_ids):
@@ -94,27 +94,27 @@ class DeepDiveStatsMixin:
             target_did = -1
         if target_did is None and self.dialog.view_mode != 'time':
              target_did = tab_config.get("deck_id")
-            
+
         if period_range is not None:
              history_range = int(period_range)
         else:
              history_range = tab_config.get("range", Period.TOTAL)
 
         is_deleted = row_data.get("is_deleted", False) or is_deleted_tab
-        
+
         added_sync = self._get_dd_widget_setting("added", "sync_zoom", False)
-        
+
         custom_days = tab_config.get("custom_days", 7)
         custom_type = tab_config.get("custom_type", "relative")
         start_date_str = tab_config.get("start_date", "")
         end_date_str = tab_config.get("end_date", "")
-        
+
         return target_did, history_range, is_deleted, added_sync, custom_days, custom_type, start_date_str, end_date_str
 
     def _fetch_history_bg(self, target_did, history_range, is_deleted, added_sync=False, custom_days=7, custom_type="relative", start_date_str="", end_date_str=""):
         """Fetch history data and full context (safe to run on background thread - pure SQL)."""
         widget_settings = self.addon_config.config.get(Config.DEEP_DIVE_WIDGET_SETTINGS, {})
-        
+
         if isinstance(target_did, list):
             from ...widgets.pinned.widget_factory.utils import PinnedDataManager
 
@@ -143,14 +143,14 @@ class DeepDiveStatsMixin:
         reviews = row_data.get("reviews", row_data.get("total_reviews", 0))
         time_ms = row_data.get("time_ms", row_data.get("total_time_ms", 0))
         time_hours = time_ms / (1000 * 3600)
-        
+
         pass_young = row_data.get("pass_young", 0)
         rev_young = row_data.get("rev_young", 0)
         pass_mat = row_data.get("pass_mat", 0)
         rev_mat = row_data.get("rev_mat", 0)
-        
+
         prec = self.dialog.addon_config.config.get(Config.STATS_PRECISION, 2)
-        
+
         if not hasattr(self, 'time_card'):
             self.time_card = self.dialog.card_time
             self.rev_card = self.dialog.card_reviews
@@ -159,7 +159,7 @@ class DeepDiveStatsMixin:
             self.ret_mat_card = self.dialog.card_ret_mat
             self.streak_card = self.dialog.card_streak
             self.active_days_card = self.dialog.card_active_days
-            
+
             # Titles stay visible in the Deep Dive view
             for card in [self.time_card, self.rev_card, self.ret_all_card, self.ret_young_card, self.ret_mat_card, self.streak_card, self.active_days_card]:
                 card.set_title_visible(True)
@@ -214,13 +214,13 @@ class DeepDiveStatsMixin:
             prec=prec,
         )
         apply_dashboard_stat_values(self.dialog, stat_values, refresh=False)
-        
+
         available_width = self.dialog.width()
         if available_width > 0:
              self.dialog.stats_container.update_layout(available_width)
-             
+
         return None
-    
+
     def _update_stats_from_history(self, history_slice, part=None):
         return update_stats_from_history(self, history_slice, part)
 

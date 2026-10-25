@@ -6,6 +6,7 @@ from .....utils import excluded_days_clause
 import time
 from aqt import mw
 from .empty_deck import did_limit_has_no_cards
+from .revlog_slices import scan_slices, sliced_all
 from ... import REVLOG_RESCHED, sql_id_list, get_rollover_offset_ms
 
 _streak_cache = {}  # key -> (timestamp, result)
@@ -107,17 +108,20 @@ def get_deck_streaks(deck_id, start_ms=0, end_ms=None, excluded_dids=None):
         from .....utils import excluded_not_in_clause
         did_limit = excluded_not_in_clause(excluded_dids)
 
-    query = f"""
-        SELECT DISTINCT CAST(((CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) - {start_of_day_offset}) / 86400000 AS INT)
-        FROM revlog
-        LEFT JOIN cards ON revlog.cid = cards.id
-        WHERE revlog.type < {REVLOG_RESCHED}
-        AND (CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) >= {start_ms}
-        AND (CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) < {end_ms}
-        {did_limit} {excluded_days_clause()}
-        ORDER BY 1 DESC
-    """
-    days = [] if did_limit_has_no_cards(did_limit) else mw.col.db.list(query)
+    if did_limit_has_no_cards(did_limit):
+        days = []
+    else:
+        slices = scan_slices(start_ms, end_ms)
+        rows = sliced_all(lambda part: f"""
+            SELECT DISTINCT CAST(((CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) - {start_of_day_offset}) / 86400000 AS INT)
+            FROM revlog
+            LEFT JOIN cards ON revlog.cid = cards.id
+            WHERE revlog.type < {REVLOG_RESCHED}
+            AND (CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) >= {start_ms}
+            AND (CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) < {end_ms}
+            {did_limit} {excluded_days_clause()} {part}
+        """, slices, 1)
+        days = sorted((r[0] for r in rows), reverse=True)
     result = _compute_streaks_from_days(days, end_ms)
 
     _streak_cache[key] = (now, result)
@@ -140,17 +144,17 @@ def get_all_deck_streaks(did_limit=""):
     end_ms = int(now * 1000)
     start_of_day_offset = get_rollover_offset_ms()
 
-    query = f"""
+    slices = scan_slices()
+    rows = sliced_all(lambda part: f"""
         SELECT (CASE WHEN cards.odid > 0 THEN cards.odid ELSE cards.did END),
                CAST(((CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) - {start_of_day_offset}) / 86400000 AS INT) as day_idx
         FROM revlog
         LEFT JOIN cards ON revlog.cid = cards.id
         WHERE revlog.type < {REVLOG_RESCHED}
-        {did_limit} {excluded_days_clause()}
+        {did_limit} {excluded_days_clause()} {part}
         GROUP BY (CASE WHEN cards.odid > 0 THEN cards.odid ELSE cards.did END), day_idx
-        ORDER BY (CASE WHEN cards.odid > 0 THEN cards.odid ELSE cards.did END), day_idx DESC
-    """
-    rows = mw.col.db.all(query)
+    """, slices, 2)
+    rows.sort(key=lambda r: (r[0] is None, r[0] or 0, -r[1]))
 
     from collections import defaultdict
     did_days = defaultdict(list)
@@ -159,7 +163,7 @@ def get_all_deck_streaks(did_limit=""):
 
     streak_map = {}
     for did, days in did_days.items():
-        # days are already DESC from ORDER BY
+        # days are newest first (sorted above)
         streak_map[did] = _compute_streaks_from_days(days, end_ms)
 
     # Also compute collection-wide streak (all days merged) under "collection" key

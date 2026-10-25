@@ -59,28 +59,28 @@ class HTMLDelegate(QStyledItemDelegate):
             if len(cache) > 1500:
                 cache.clear()
             cache[key] = doc
-        
+
         painter.save()
         painter.setClipRect(options.rect)
-        
+
         options.text = "" # Don't let base DrawControl draw text
         # The tinted selection was already painted above; keep the style from
         # painting its own opaque highlight on top of it.
         options.state &= ~QStyle.StateFlag.State_Selected
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, options, painter, options.widget)
-        
+
         painter.translate(options.rect.left(), options.rect.top())
-        
+
         content_height = doc.size().height()
         dy = (options.rect.height() - content_height) / 2
         if dy < 0: dy = 0
-        
+
         painter.translate(0, dy)
-        
+
         painter.setPen(options.palette.text().color())
 
         doc.drawContents(painter)
-        
+
         painter.restore()
 
     def _elide_html(self, html, font, width):
@@ -88,13 +88,13 @@ class HTMLDelegate(QStyledItemDelegate):
         doc = QTextDocument()
         doc.setDefaultFont(font)
         doc.setHtml(html)
-        
+
         if doc.idealWidth() <= width:
             return html
-            
+
         import re
         parts = re.split(r'(<[^>]+>)', html)
-        
+
         # In decks: <span...>prefix</span>iconName
         for i in range(len(parts)-1, -1, -1):
             p = parts[i]
@@ -108,15 +108,15 @@ class HTMLDelegate(QStyledItemDelegate):
                         return "".join(parts)
                 parts[i] = "..."
                 break
-        
+
         return html
 
     def sizeHint(self, option, index):
         options = QStyleOptionViewItem(option)
         self.initStyleOption(options, index)
-        
+
         doc = QTextDocument()
         doc.setHtml(options.text)
         doc.setDefaultFont(options.font)
-        
+
         return doc.size().toSize()

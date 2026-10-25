@@ -30,8 +30,6 @@ def persist_widget_settings(dialog: "WidgetSettingsDialog") -> None:
 def _persist_pinned_widget_settings(dialog: "WidgetSettingsDialog") -> None:
     manager = ConfigManager(mw)
     cfg = dict(manager.config)
-    if dialog.type == "text_label":
-        pass
 
     if not dialog.is_unlinked:
         # Keep the live pinned widget registry from the config manager.
@@ -82,18 +80,11 @@ def _persist_pinned_widget_settings(dialog: "WidgetSettingsDialog") -> None:
                     widget[key] = dialog.local_config[key]
 
         pinned[i] = widget
-        if dialog.type == "text_label":
-            pass
         break
-
-    if dialog.type == "text_label" and not found:
-        pass
 
     cfg[Config.PINNED_WIDGETS] = pinned
     manager.config = cfg
     manager.write_config()
-    if dialog.type == "text_label":
-        pass
 
     from ....widgets.pinned.main_menu.manager import MainMenuWidgetManager
 
@@ -103,8 +94,6 @@ def _persist_pinned_widget_settings(dialog: "WidgetSettingsDialog") -> None:
             mgr._mark_config_dirty()
         if hasattr(mgr, "_get_config_manager"):
             mgr._get_config_manager(force_refresh=True)
-        if dialog.type == "text_label":
-            pass
         if found and title_toggled:
             try:
                 old_widget = mgr._active_widgets.pop(dialog.widget_id, None)

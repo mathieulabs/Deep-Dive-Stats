@@ -112,6 +112,11 @@ def legend_items(widget):
         if li == idxs[-1]:
             text += "+"
         items.append((levels[li], text))
+    # With few reviews several swatches round to the same number ("1, 1, 2"): only the
+    # last of them, the color those cells really get, keeps the number.
+    for i in range(1, len(items) - 1):
+        if items[i][1] == items[i + 1][1].rstrip("+"):
+            items[i] = (items[i][0], "")
     widget._legend_cache = (key, items)
     _animate_legend_change(widget, previous, items)
     return items

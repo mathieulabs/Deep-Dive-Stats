@@ -124,17 +124,17 @@ def draw_grid_and_axes(
     text_col = axis_text_color(t_colors, widget=widget)
     grid_col = t_colors["grid"]
     show_grid = chart_axes_style(widget)[0]
-    
+
     avail_h = height - margin_top - margin_bottom
-    
+
     font = painter.font()
     font.setPointSize(9)
     painter.setFont(font)
-    
+
     for i in range(grid_lines + 1):
         y_ratio = i / grid_lines
         y_pos = margin_top + (avail_h * (1 - y_ratio))
-        
+
         if draw_lines and (i == 0 or show_grid):  # "Grid lines" off keeps only the baseline
             painter.setPen(_grid_pen(grid_col, baseline=(i == 0)))
             y_line = int(y_pos) + 0.5  # crisp 1px line
@@ -150,10 +150,9 @@ def draw_grid_and_axes(
             label_text = fmt_num(int(val)) if val >= 10 else fmt_num(val)
         if i == 0 and val == 0: label_text = "0"
 
-        
         label_rect = QRect(0, int(y_pos) - 10, int(margin_left - 8), 20)
         painter.drawText(label_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, label_text)
-        
+
     # Right Y-Axis labels (cumulative): draw once after grid/left-axis pass.
     if max_cumulative is not None:
         draw_right_axis_labels(
@@ -184,20 +183,20 @@ def draw_right_axis_labels(
 ):
     """Draw only the right-axis labels (totals). Called last to make sure they are on top."""
     if max_cumulative is None: return
-    
+
     t_colors = get_theme_colors(widget)
     # Secondary (cumulative) scale: one step quieter than the left axis.
     text_col = axis_text_color(t_colors, 0.8, widget=widget)
     avail_h = height - margin_top - margin_bottom
-    
+
     font = painter.font()
     font.setPointSize(9)
     painter.setFont(font)
-    
+
     for i in range(grid_lines + 1):
         y_ratio = i / grid_lines
         y_pos = margin_top + (avail_h * (1 - y_ratio))
-        
+
         val_cum = max_cumulative * y_ratio
         if callable(value_formatter):
             label_text = str(value_formatter(val_cum))
@@ -227,23 +226,23 @@ def _draw_x_axis_labels_core(
 
     avail_w = width - margin_left - margin_right
     n = len(labels)
-    
+
     # Start and end labels: their rects are used later for the overlap check.
     start_rect = QRect(int(margin_left), int(height - margin_bottom), 200, 20)
     end_rect = QRect(int(width - margin_right - 200), int(height - margin_bottom), 200, 20)
-    
+
     painter.drawText(start_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, str(labels[0]))
-    
+
     painter.drawText(end_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, str(labels[-1]))
-    
+
     # Real bounding boxes for overlap check (approximate width based on text length)
     fm = painter.fontMetrics()
     start_w = fm.horizontalAdvance(str(labels[0]))
     end_w = fm.horizontalAdvance(str(labels[-1]))
-    
+
     start_box = QRect(int(margin_left), int(height - margin_bottom), int(start_w + 15), 20)
     end_box = QRect(int(width - margin_right - end_w - 15), int(height - margin_bottom), int(end_w + 15), 20)
-    
+
     if n > 2:
         target_count = max(1, width // 120)
         if target_count > 2:
@@ -251,13 +250,13 @@ def _draw_x_axis_labels_core(
             if step > 0:
                 for i in range(step, n - step//2, step):
                     if i >= n - 1: break
-                    
+
                     x_center = margin_left + (i * (avail_w / (n - 1 if n > 1 else 1)))
                     label_str = str(labels[i])
                     label_w = fm.horizontalAdvance(label_str)
-                    
+
                     label_box = QRect(int(x_center - label_w/2 - 5), int(height - margin_bottom), int(label_w + 10), 20)
-                    
+
                     if label_box.intersects(start_box) or label_box.intersects(end_box):
                         continue
 
@@ -437,26 +436,26 @@ def draw_rich_stats_text(painter: QPainter, rect: QRectF, text: str, align: Qt.A
 
     sep = " · "
     segments = text.split(sep)
-    
+
     normal_font = painter.font()
     normal_font.setBold(False)
     bold_font = painter.font()
     bold_font.setBold(True)
-    
+
     fm_normal = painter.fontMetrics()
     fm_bold = QFontMetrics(bold_font)
-    
+
     draw_parts = [] # List of (text, is_bold, width)
     total_w = 0
-    
+
     for i, seg in enumerate(segments):
         if ":" in seg:
             label, value = seg.split(":", 1)
             label += ":"
-            
+
             l_w = fm_bold.horizontalAdvance(label)
             v_w = fm_normal.horizontalAdvance(value)
-            
+
             draw_parts.append((label, True, l_w))
             draw_parts.append((value, False, v_w))
             total_w += l_w + v_w
@@ -464,7 +463,7 @@ def draw_rich_stats_text(painter: QPainter, rect: QRectF, text: str, align: Qt.A
             w = fm_normal.horizontalAdvance(seg)
             draw_parts.append((seg, False, w))
             total_w += w
-            
+
         if i < len(segments) - 1:
             sep_w = fm_normal.horizontalAdvance(sep)
             draw_parts.append((sep, False, sep_w))
@@ -475,9 +474,9 @@ def draw_rich_stats_text(painter: QPainter, rect: QRectF, text: str, align: Qt.A
         x += (rect.width() - total_w) / 2
     elif align & Qt.AlignmentFlag.AlignRight:
         x += rect.width() - total_w
-        
+
     y = rect.y() + (rect.height() + fm_normal.ascent() - fm_normal.descent()) / 2
-    
+
     current_x = x
     for p_text, is_bold, p_w in draw_parts:
         painter.setFont(bold_font if is_bold else normal_font)

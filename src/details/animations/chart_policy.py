@@ -452,17 +452,63 @@ def visible_chart_count(widget):
     if cached is not None and cached[0] is root:
         return cached[1]
 
-    seen = set()
-    count = 0
-    for candidate in [root] + root.findChildren(QWidget):
-        cid = id(candidate)
-        if cid in seen:
-            continue
-        seen.add(cid)
-        if _is_chart_candidate(candidate, root):
-            count += 1
+    count = _count_chart_candidates(root)
     _VISIBLE_COUNT_CACHE[id(root)] = (root, count)
     _schedule_visible_count_cache_clear()
+    return count
+
+
+def _count_chart_candidates(root):
+    """Same count as calling _is_chart_candidate on every widget of the window, in one
+    pass over the tree instead of one findChildren per widget (that took tens of ms on
+    each zoom reset). The children of a widget follow it in findChildren order, so its
+    first chart is the first chart before the end of its block."""
+    order = []
+    pos = {}
+    for w in [root] + root.findChildren(QWidget):
+        if id(w) not in pos:
+            pos[id(w)] = len(order)
+            order.append(w)
+    n = len(order)
+    end = [i + 1 for i in range(n)]
+    for i in range(n - 1, 0, -1):
+        p = order[i].parent()
+        while p is not None and id(p) not in pos:
+            p = p.parent()
+        if p is not None:
+            a = pos[id(p)]
+            if end[i] > end[a]:
+                end[a] = end[i]
+    is_target = [bool(getattr(w, "_is_chart_anim_target", False)) for w in order]
+    next_target = [n] * (n + 1)
+    for i in range(n - 1, -1, -1):
+        next_target[i] = i if is_target[i] else next_target[i + 1]
+
+    def first_inside(i):
+        j = next_target[i]
+        return order[j] if j < end[i] else None
+
+    good = {}
+    count = 0
+    for i, w in enumerate(order):
+        if is_target[i]:
+            target = w
+        else:
+            target = None
+            body = getattr(w, "body_widget", None)
+            if isinstance(body, QWidget):
+                b = pos.get(id(body))
+                target = first_inside(b) if b is not None else normalize_chart_animation_target(body)
+            if target is None:
+                target = first_inside(i)
+        if target is None:
+            continue
+        ok = good.get(id(target))
+        if ok is None:
+            ok = _chart_has_animation_work(target) and chart_visible_fraction(target, root) >= MIN_VISIBLE_CHART_FRACTION
+            good[id(target)] = ok
+        if ok:
+            count += 1
     return count
 
 

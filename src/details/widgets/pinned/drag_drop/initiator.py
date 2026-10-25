@@ -33,7 +33,7 @@ class DragInitiator:
     """
     Handles the boilerplate logic for starting a drag operation on a widget.
     """
-    
+
     @staticmethod
     def maybe_start_drag(widget, event, start_pos, mime_type, widget_id):
         """
@@ -47,14 +47,14 @@ class DragInitiator:
 
         drag = QDrag(widget)
         mime_data = QMimeData()
-        
+
         mime_data.setData(mime_type, widget_id.encode())
         drag.setMimeData(mime_data)
-        
+
         pixmap = widget.grab()
         drag.setPixmap(pixmap)
         drag.setHotSpot(event.pos())
-        
+
         result = drag.exec(Qt.DropAction.MoveAction)
         _end_chart_drag(mime_type, result == Qt.DropAction.MoveAction)
         return True

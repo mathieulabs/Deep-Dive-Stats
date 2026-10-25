@@ -242,41 +242,41 @@ class TooltipWindow(_ShowOnlyWhenActiveMixin, QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         cols = _resolve_tooltip_colors(self.parentWidget() or self)
-        
+
         fm_normal = painter.fontMetrics()
         font_bold = painter.font()
         font_bold.setBold(True)
         fm_bold = QFontMetrics(font_bold)
-        
+
         max_w = 0
         box_h = 10
-        
+
         for line in self.lines:
             use_fm = fm_bold if (line.get("header") or line.get("bold")) else fm_normal
-            
+
             tw_left = use_fm.horizontalAdvance(line["text"])
             if line.get("color"): tw_left += 15
             tw_right = use_fm.horizontalAdvance(line.get("value", ""))
-            
+
             gap = 40
             total_w = tw_left + (gap if line.get("value") else 0) + tw_right
             if total_w > max_w: max_w = total_w
             box_h += use_fm.height() + 4
-        
+
         tw = max_w + 30
         th = box_h
-        
+
         self.resize(tw, th)
-        
+
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         painter.setBrush(cols["bg"])
         pen = QPen(cols["border"], 0.8)
         pen.setCosmetic(True)
         painter.setPen(pen)
         painter.drawRoundedRect(rect, 10, 10)
-        
+
         y_text = 5
-        
+
         for line in self.lines:
             if line.get("header"):
                 font = painter.font()
@@ -304,11 +304,11 @@ class TooltipWindow(_ShowOnlyWhenActiveMixin, QWidget):
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.drawRoundedRect(QRectF(x_text, y_text + 4, 8, 8), 4, 4)
                     x_text += 15
-                
+
                 painter.setPen(cols["text_secondary"])
                 text_rect = QRectF(x_text, y_text, tw - 20 - (x_text - 10), fm_normal.height())
                 painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, line["text"])
-                
+
                 if line.get("value"):
                     painter.drawText(QRectF(10, y_text, tw - 20, fm_normal.height()), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, line["value"])
 
@@ -364,27 +364,27 @@ class FloatingAvgLabel(_ShowOnlyWhenActiveMixin, QWidget):
         self.bg_color = cols["bg"]
         self.border_color = cols["border"]
         self.text_color = QColor(text_color) if text_color else cols["text_primary"]
-        
+
         fm = QFontMetrics(self.font())
         tw = fm.horizontalAdvance(self.text)
         self.resize(tw + 8, 20)
         self.update()
-        
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
+
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        
+
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(self.bg_color)
         painter.drawRoundedRect(rect, 6, 6)
-        
+
         pen = QPen(self.border_color, 0.8)
         pen.setCosmetic(True)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect, 6, 6)
-        
+
         painter.setPen(self.text_color)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter, self.text)

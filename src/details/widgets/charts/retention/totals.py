@@ -20,6 +20,5 @@ def bind_totals(chart, checkboxes):
             except RuntimeError:
                 return
 
-    chart._refresh_totals = refresh
     chart.totals_changed.connect(refresh)
     refresh()

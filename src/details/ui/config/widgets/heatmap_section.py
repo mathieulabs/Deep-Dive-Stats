@@ -118,7 +118,7 @@ def setup_heatmap_settings(dialog) -> None:
     dialog.reset_color_btn.setIcon(get_svg_icon("rotate-ccw", size=14, context_ref=dialog))
     dialog.reset_color_btn.setFixedSize(24, 24)
     dialog.reset_color_btn.setToolTip("Reset to Default")
-    set_qss(dialog.reset_color_btn, 
+    set_qss(dialog.reset_color_btn,
         "QPushButton { background: transparent; border: none; } "
         "QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }"
     )

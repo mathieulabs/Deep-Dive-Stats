@@ -7,12 +7,12 @@ from .color_utils import hex_to_rgba
 
 def get_main_dialog_style(is_dark, palette=None):
     font_family = "Segoe UI, sans-serif"
-    
+
     if is_dark or palette is not None:
         if not palette:
             # Native dark mode: Anki-like colors
             palette = ThemePalettes.ANKI_LIKE_PALETTE.copy()
-            
+
         bg_root = palette["bg_root"]
         bg_surface = palette["bg_surface"]
         bg_element = palette["bg_element"]
@@ -31,7 +31,7 @@ def get_main_dialog_style(is_dark, palette=None):
         sb_handle_hover = hex_to_rgba(accent, 0.42 if is_dark else 0.28)
         sb_handle_pressed = hex_to_rgba(accent_hover, 0.58 if is_dark else 0.38)
         sb_handle_border = hex_to_rgba(border_strong, 0.65 if is_dark else 0.75)
-        
+
         return f"""
             QDialog {{
                 background-color: {bg_root};
@@ -258,8 +258,7 @@ def get_main_dialog_style(is_dark, palette=None):
                 border: none;
                 border-bottom: 1px solid {border_strong};
             }}
-            
-            
+
             /* Scrollbar */
             QScrollBar:vertical {{
                 background: transparent;
@@ -442,7 +441,7 @@ def get_main_dialog_style(is_dark, palette=None):
                 border: none;
             }}
             
-            /* Buttons - Enhanced with gradients */
+            /* Buttons */
             QPushButton {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
@@ -647,8 +646,7 @@ def get_main_dialog_style(is_dark, palette=None):
                 border: none;
                 border-bottom: 2px solid {border_subtle};
             }}
-            
-            
+
             /* Scrollbar */
             QScrollBar:vertical {{
                 background: transparent;

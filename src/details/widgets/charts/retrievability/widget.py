@@ -6,7 +6,6 @@ from ..fsrs_base.percent import FSRSPercentChartBase
 
 class RetrievabilityChartWidget(FSRSPercentChartBase):
     chart_title = "Retrievability"
-    chart_bottom_text_lines = 3
 
     def get_stats_text(self):
         return get_stats_text_impl(self)

@@ -18,7 +18,7 @@ class StorageMixin:
         if self._save_timer:
             self._save_timer.stop()
             self._save_timer = None
-            
+
         from aqt.qt import QTimer
         self._save_timer = QTimer()
         self._save_timer.setSingleShot(True)
@@ -111,16 +111,16 @@ class StorageMixin:
         if not os.path.exists(load_path):
             self._log(f"Cache file not found at {self.cache_file}")
             return False
-            
+
         try:
             _load_start = time.time()
             with open(load_path, "rb") as f:
                 data = pickle.load(f)
-                
+
             if not isinstance(data, dict) or data.get("version", 0) < 14:
                 self._log("Cache file validation failed or old version. Forcing rebuild.")
                 return False
-                
+
             if data.get("excluded", []) != exclusion_signature():
                 self._log("Excluded decks changed since the cache was saved. Forcing rebuild.")
                 return False
@@ -152,13 +152,13 @@ class StorageMixin:
         """Deletes all cache files and resets in-memory state."""
         instance = GlobalHistoryCache()
         target_dir = instance.target_dir
-        
+
         instance.cache = {}
         instance.hier_map = {}
         instance.last_max_rev_id = 0
         instance.last_max_card_id = 0
         instance.is_initialized = False
-        
+
         try:
             import os
             for filename in os.listdir(target_dir):
@@ -171,7 +171,7 @@ class StorageMixin:
             instance._log("All cache files cleared successfully.")
         except Exception as e:
             instance._log(f"Error clearing cache files: {e}")
-            
+
         GlobalHistoryCache.init_async(callback=callback)
 
 

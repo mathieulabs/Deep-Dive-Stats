@@ -32,7 +32,7 @@ def _build_distribution(widget_def, deck_id, cache=None, parent=None, cfg=None):
     )
 
     display_label = pinned_title(widget_def, "DISTRIBUTION").upper()
-    return _wrap(chart, display_label, 
+    return _wrap(chart, display_label,
                  widget_id=widget_def["id"],
                  saved_w=widget_def.get("width"),
                  saved_h=widget_def.get("height"),

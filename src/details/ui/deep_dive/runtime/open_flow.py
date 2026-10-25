@@ -6,17 +6,13 @@ import time
 from aqt import mw
 from aqt.qt import QLabel
 
-from ... import Config
 from ....logic.data.context_payloads import context_stats
 from ....logic.logger import log_swallowed
 
 
 def open_deep_dive(manager, deck_identifier, title, period_range=None):
     """Open the statistics dashboard for a deck or period."""
-    manager._perf_start_time = time.time()
-
     manager._init_theme_vars()
-    manager.last_scroll_value = manager.dialog.expanded_scroll.verticalScrollBar().value()
 
     is_same_layout_mode = True
     if hasattr(manager, "last_viewed_grid_mode"):
@@ -52,8 +48,6 @@ def open_deep_dive(manager, deck_identifier, title, period_range=None):
         tabs_config = get_tabs_config(manager.addon_config)
         for tab_conf in tabs_config:
             if tab_conf.get("range") == period_range:
-                if period_range == Period.CUSTOM:
-                    pass
                 span_label = tab_conf.get("title", "")
                 break
         if not span_label:
@@ -67,11 +61,6 @@ def open_deep_dive(manager, deck_identifier, title, period_range=None):
         display_title = deck_name.upper()
 
     manager.dialog.expanded_title.setText(display_title)
-
-    if deck_identifier == "Deleted Cards" or "DELETED CARDS" in display_title:
-        manager.last_pie_del = True
-    else:
-        manager.last_pie_del = manager.addon_config.config.get(Config.PIE_CHART_SHOW_DELETED, False)
 
     row_data = manager._find_row_data(deck_identifier, title, period_range)
     if not row_data:
@@ -136,7 +125,6 @@ def open_deep_dive(manager, deck_identifier, title, period_range=None):
     manager._dd_range_last_day = range_last_day(
         history_range, custom_days, custom_type, start_date_str, end_date_str
     )
-
 
     if is_deleted:
         cache_did = -1
@@ -217,7 +205,6 @@ def open_deep_dive(manager, deck_identifier, title, period_range=None):
         manager.dialog.stats_container.setVisible(True)
         manager.dialog.update_dashboard_visibility()
         return
-
 
     replace_skeleton_with_real = bool(needs_full_rebuild)
     if needs_full_rebuild:

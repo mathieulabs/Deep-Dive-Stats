@@ -65,7 +65,7 @@ def _theme_vars(widget_or_context=None):
     bg_col = QColor(bg_hex)
     bg_alpha = 150 if is_dark else 215
     bg_card = f"rgba({bg_col.red()}, {bg_col.green()}, {bg_col.blue()}, {bg_alpha})"
-        
+
     return {
         "is_dark": is_dark,
         "text_primary": text_primary_hex,
@@ -208,7 +208,7 @@ def _get_max_ids(allow_db=True):
     now = time.time()
     if not allow_db or now - _last_max_ids_cache["time"] < 1.0:  # 1s cache or skip DB
         return _last_max_ids_cache["rev_id"], _last_max_ids_cache["card_id"]
-    
+
     try:
         prev_rev = _last_max_ids_cache["rev_id"]
         prev_card = _last_max_ids_cache["card_id"]
@@ -497,21 +497,21 @@ class PinnedDataManager:
         # Keep widget path cache-only (no implicit incremental refresh) while still
         # refreshing max ids from DB when slow ops are allowed, so post-review keys rotate.
         max_ids = _get_max_ids(allow_db=allow_slow_ops)
-        
+
         from ....logic import log_debug
-        
+
         key = (deck_id, int(range_type), int(custom_days) if custom_days is not None else 0, custom_type, start_date_str, end_date_str, max_ids)
-        
+
         ctx = PinnedDataManager._context_cache.get(key)
-        if ctx: 
+        if ctx:
             log_debug(f"[PINNED] Local cache HIT for {deck_id} / {range_type} (custom_days={custom_days})", tag="PINNED")
             return ctx
-        
+
         from ....logic.history_cache import GlobalHistoryCache
         log_debug(f"[PINNED] GlobalHistoryCache.get_context: deck={deck_id}, range={range_type}, allow_slow={allow_slow_ops}", tag="PINNED")
         global_ctx = GlobalHistoryCache.get_context(
-            deck_id, range_type, cfg=cfg, 
-            custom_days=custom_days, custom_type=custom_type, 
+            deck_id, range_type, cfg=cfg,
+            custom_days=custom_days, custom_type=custom_type,
             start_date_str=start_date_str, end_date_str=end_date_str,
             allow_sync_check=False,
             allow_slow_ops=allow_slow_ops
@@ -523,7 +523,7 @@ class PinnedDataManager:
                 global_ctx = enrich_deleted_context(global_ctx)
             PinnedDataManager._context_cache[key] = global_ctx
             return global_ctx
-            
+
         log_debug(f"[PINNED] get_context MISS for {deck_id} / {range_type} (allow_slow={allow_slow_ops})", tag="PINNED")
         return None
 
@@ -536,7 +536,7 @@ class PinnedDataManager:
     def fetch_context_async(deck_id, range_type, callback, cfg=None, custom_days=7, custom_type="relative", start_date_str="", end_date_str=""):
         max_ids = _get_max_ids()
         key = (deck_id, int(range_type), int(custom_days) if custom_days is not None else 0, custom_type, start_date_str, end_date_str, max_ids)
-        
+
         ctx = PinnedDataManager._context_cache.get(key)
         if ctx:
             callback(ctx)
@@ -560,10 +560,10 @@ class PinnedDataManager:
         if key in PinnedDataManager._pending_fetches:
             PinnedDataManager._pending_fetches[key].append(callback)
             return
-            
+
         log_debug(f"> [PINNED] Calling fetch_context_async: deck={deck_id}, range={range_type}", tag="PINNED")
         PinnedDataManager._pending_fetches[key] = [callback]
-        
+
         def worker(passed_cfg=cfg):
             return fetch_pinned_context_data(
                 deck_id,
@@ -574,7 +574,7 @@ class PinnedDataManager:
                 start_date_str=start_date_str,
                 end_date_str=end_date_str,
             )
-        
+
         def on_done(future):
             try:
                 ctx = future.result()
@@ -587,7 +587,7 @@ class PinnedDataManager:
                         log_swallowed()
                 return
             PinnedDataManager._context_cache[key] = ctx
-            
+
             callbacks = PinnedDataManager._pending_fetches.pop(key, [])
             for cb in callbacks:
                 try:
@@ -648,8 +648,8 @@ def _history(deck_id, range_type=None, cache=None, fail_if_not_cached=False, his
 
     # With fail_if_not_cached, no slow O(N) slicing on the main thread
     ctx = get_pinned_context(
-        deck_id, range_type, cfg=cfg, 
-        custom_days=custom_days, custom_type=custom_type, 
+        deck_id, range_type, cfg=cfg,
+        custom_days=custom_days, custom_type=custom_type,
         start_date_str=start_date_str, end_date_str=end_date_str,
         fail_if_not_cached=fail_if_not_cached,
     )
@@ -659,7 +659,7 @@ def _history(deck_id, range_type=None, cache=None, fail_if_not_cached=False, his
     cache_key = (deck_id, int(range_type), max_ids, history_type)
     if cache is not None and cache_key in cache:
         return cache[cache_key]
-    
+
     if fail_if_not_cached:
         return None
 
@@ -670,7 +670,7 @@ def _history(deck_id, range_type=None, cache=None, fail_if_not_cached=False, his
          is_large_range = True
     elif isinstance(range_type, int) and range_type > 14: # Custom day count > 2 weeks
          is_large_range = True
-         
+
     if is_large_range:
         return get_default_history_payload(history_type)
 
@@ -692,9 +692,9 @@ def _history(deck_id, range_type=None, cache=None, fail_if_not_cached=False, his
             deck_id=deck_id,
             range_type=range_type,
         )
-    
+
     if cache is not None:
          cache[cache_key] = data
-         
+
     return data
 

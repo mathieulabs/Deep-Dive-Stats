@@ -85,13 +85,13 @@ def load_tabs(dialog, prefer_cached=False):
             stash_deck_tabs_for_restore(dialog)
         except Exception:
             log_swallowed()
-    
+
     dialog._tab_widget_view_kind = "time"
     dialog.tab_widget.clear()
     dialog._time_tab_payloads = {}
     dialog._time_tab_params = {}
     dialog._time_tabs_populated = set()
-    
+
     tabs_data = get_tabs_config(dialog.addon_config)
     dialog._time_view_cache = {
         "complete": False,
@@ -103,10 +103,10 @@ def load_tabs(dialog, prefer_cached=False):
         "selected_index": 0,
         "time_tabs_populated": [],
     }
-    
+
     week_start = dialog.addon_config.config.get(Config.WEEK_START, 0)
     dialog._time_view_cache["week_start"] = week_start
-    
+
     # Calculate active_index for loading priority (Selection happens at the end)
     active_index = 0
     target_span = getattr(dialog, 'target_time_span', None)
@@ -121,14 +121,11 @@ def load_tabs(dialog, prefer_cached=False):
         active_index = saved_idx
 
     from ..data import warm_time_view_static_bundle_async
-    warm_time_view_static_bundle_async(
-        dialog.addon_config.config.get(Config.EXCLUDED_DECKS, []),
-        generation_key=gen,
-    )
-    
+    warm_time_view_static_bundle_async(dialog.addon_config.config.get(Config.EXCLUDED_DECKS, []))
+
     pending_skeletons = [] # list of (tab_config, original_i)
     pending_data = [] # list of params
-    
+
     for i, tab_config in enumerate(tabs_data):
         if not tab_config.get("enabled", True):
             continue
@@ -163,19 +160,19 @@ def load_tabs(dialog, prefer_cached=False):
                 from aqt.qt import QTimer
                 QTimer.singleShot(20, process_next_tab)
                 return
-        
+
         loader_busy[0] = True
-        
+
         current_idx = dialog.tab_widget.currentIndex()
         for i, p_item in enumerate(dialog._tab_fetch_queue):
             if p_item[26] == current_idx:
                 p_item = dialog._tab_fetch_queue.pop(i)
                 dialog._tab_fetch_queue.insert(0, p_item)
                 break
-                
+
         next_params = dialog._tab_fetch_queue.pop(0)
         p = next_params
-        
+
         def on_tab_done(future):
             if dialog.load_generation != gen: return
             from ...widgets.stats_cards import build_dashboard_stat_values, build_total_row_entry
@@ -184,15 +181,15 @@ def load_tabs(dialog, prefer_cached=False):
                 dialog._time_tab_payloads[p[26]] = data
                 if getattr(dialog, "_time_view_cache", None):
                     dialog._time_view_cache["payloads"] = dict(dialog._time_tab_payloads)
-                
+
                 totals = data["totals"]
-                
+
                 prec = dialog.addon_config.config.get(Config.STATS_PRECISION, 2)
-                
+
                 total_row_entry = build_total_row_entry(totals)
-                
+
                 results_with_total = data["results"] + [total_row_entry]
-                
+
                 stat_values = build_dashboard_stat_values(
                     totals,
                     use_decimal=p[3],
@@ -223,30 +220,28 @@ def load_tabs(dialog, prefer_cached=False):
                     "show_active_days": p[22],
                     "show_forecast": p[23],
                 }
-                
+
                 dialog.tab_stats[p[26]] = dash_stats
                 getattr(dialog, "_refresh_drawer_bar", lambda: None)()
                 if getattr(dialog, "_time_view_cache", None):
                     dialog._time_view_cache["tab_stats"] = dict(dialog.tab_stats)
                     dialog._time_view_cache["time_tabs_populated"] = list(getattr(dialog, "_time_tabs_populated", set()) or [])
-                
+
                 if p[26] == dialog.tab_widget.currentIndex():
                     populate_time_tab(dialog, p[26], do_resize=False)
                     dialog.on_tab_changed(p[26])
                     from ...ui.details_dialog import auto_resize_window
                     auto_resize_window(dialog, p[0], resize_window=False)
-                else:
-                    pass
-                    
+
                 target_did = getattr(dialog, 'target_deck_id', None)
                 if target_did is not None:
                      table_widget = p[0]
                      if table_widget is None:
                          return
-                     
+
                      all_decks = mw.col.decks.all_names_and_ids()
                      target_name = next((d.name for d in all_decks if d.id == target_did), None)
-                     
+
                      if target_name:
                          parts = target_name.split("::")
                          has_new_expansion = False
@@ -255,7 +250,7 @@ def load_tabs(dialog, prefer_cached=False):
                               if parent_path not in dialog.expanded_decks:
                                    dialog.expanded_decks.add(parent_path)
                                    has_new_expansion = True
-                                   
+
                          if has_new_expansion:
                               from ...ui.deck_view.visibility import persist_expanded_decks
                               persist_expanded_decks(dialog)
@@ -264,11 +259,11 @@ def load_tabs(dialog, prefer_cached=False):
                                   if not r_item: continue
                                   r_path = r_item.data(Qt.ItemDataRole.UserRole)
                                   if not r_path: continue
-                                  
+
                                   curr_text = r_item.text()
                                   if r_path in dialog.expanded_decks and "▸" in curr_text:
                                        r_item.setText(curr_text.replace("▸", "▾", 1))
-                                  
+
                                   r_parts = r_path.split("::")
                                   ancestors = ["::".join(r_parts[:x]) for x in range(1, len(r_parts))]
                                   should_hide = False
@@ -277,7 +272,7 @@ def load_tabs(dialog, prefer_cached=False):
                                             should_hide = True
                                             break
                                   table_widget.setRowHidden(r, should_hide)
-                                  
+
                      target_row_found = False
                      for r in range(table_widget.rowCount()):
                           item = table_widget.item(r, 0)
@@ -287,7 +282,7 @@ def load_tabs(dialog, prefer_cached=False):
                                    table_widget.selectRow(r)
                                    target_row_found = True
                                    break
-                               
+
                      # Fallback: Select parent if nested folder not listed literally
                      if not target_row_found and target_name:
                           parts = target_name.split("::")
@@ -301,7 +296,7 @@ def load_tabs(dialog, prefer_cached=False):
                                          break
                                if target_row_found:
                                     break
-                
+
             except Exception as e:
                 log_error(f"Error loading background tab: {e}")
                 log_swallowed()
@@ -314,11 +309,11 @@ def load_tabs(dialog, prefer_cached=False):
         from ..data import fetch_stats_for_range
         def bg_worker():
             return fetch_stats_for_range(
-                range_type=p[1], week_start=p[2], custom_days=p[13], custom_type=p[14], 
+                range_type=p[1], week_start=p[2], custom_days=p[13], custom_type=p[14],
                 start_date=p[15], end_date=p[16], pin_top=True,
                 spark_precision=p[20]
             )
-            
+
         mw.taskman.run_in_background(bg_worker, on_tab_done)
 
     prev_updates_enabled = dialog.tab_widget.updatesEnabled()
@@ -328,11 +323,11 @@ def load_tabs(dialog, prefer_cached=False):
     dialog.tab_widget.tabBar().setUpdatesEnabled(False)
     try:
         # Build all skeleton tabs immediately
-        for _pos, (tab_config, orig_i) in enumerate(pending_skeletons):
+        for _pos, (tab_config, _orig) in enumerate(pending_skeletons):
             if dialog.load_generation != gen: return
-            
+
             is_active = (_pos == active_index)
-            
+
             title = tab_config.get("title", "Stats")
             range_type = tab_config.get("range", Period.WEEK)
             use_decimal = tab_config.get("use_decimal", True)
@@ -356,14 +351,14 @@ def load_tabs(dialog, prefer_cached=False):
             show_retention_sparkline = dialog.addon_config.config.get(Config.RETENTION_SPARKLINE, False)
             show_active_days = tab_config.get("show_active_days", True)
             show_forecast = tab_config.get("show_forecast", True)
-            
+
             tab = QWidget(dialog.tab_widget)
             tab_layout = QVBoxLayout(tab)
             tab_layout.setContentsMargins(0, 0, 0, 0)
-            
+
             tab_index = dialog.tab_widget.count()
             dialog.tab_widget.addTab(tab, title)
-            
+
             params = [None, range_type, week_start, use_decimal, hrs_unit, min_unit,
                     show_time, show_reviews, show_retention, show_retention_young, show_retention_mature, show_avg_time,
                     show_counts, custom_days, custom_type, start_date_str, end_date_str,
@@ -374,7 +369,7 @@ def load_tabs(dialog, prefer_cached=False):
 
             if is_active:
                 _ensure_time_tab_table(dialog, tab_index)
-            
+
             if is_active:
                 dialog._tab_fetch_queue.insert(0, params)
             else:
@@ -390,16 +385,16 @@ def load_tabs(dialog, prefer_cached=False):
     saved_idx = getattr(dialog, '_saved_time_tab', 0)
 
     found_target = False
-    for i, (tab_config, orig_i) in enumerate(pending_skeletons):
+    for i, (tab_config, _orig) in enumerate(pending_skeletons):
         r = tab_config.get("range")
         if target_span is not None and str(r) == str(target_span):
             best_index = i
             found_target = True
             break
-            
+
     if not found_target and 0 <= saved_idx < dialog.tab_widget.count():
         best_index = saved_idx
-        
+
     dialog.tab_widget.setCurrentIndex(best_index)
     try:
         from ...ui.time_spans import install_time_tab_features
@@ -408,12 +403,10 @@ def load_tabs(dialog, prefer_cached=False):
     except Exception:
         log_swallowed()
 
-    
     if not data_loading_started[0] and not loader_busy[0]:
         data_loading_started[0] = True
         process_next_tab()
-    
-    
+
     buttons_action = getattr(dialog, '_visual_actions', {}).get(Config.SHOW_BUTTONS_DIST_VISUAL)
     if buttons_action is not None:
         buttons_action.blockSignals(True)
@@ -424,7 +417,7 @@ def prioritize_time_tab(dialog, index):
     """Move a specific tab to the front of the streaming fetch queue."""
     if not hasattr(dialog, '_tab_fetch_queue') or not dialog._tab_fetch_queue:
         return
-        
+
     for i, p_item in enumerate(dialog._tab_fetch_queue):
         if p_item[26] == index:
             target = dialog._tab_fetch_queue.pop(i)

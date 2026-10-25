@@ -30,7 +30,6 @@ class FSRSBaseChart(ChartAnimationMixin, QWidget):
         super().__init__(parent)
         self.adaptive_binning = adaptive_binning
         self.binning_override = None
-        self.binning_toggled_callback = None
         self.data_dict = data_dict
         self.title = title
         self.data_dict = self._normalize_data_dict(self.data_dict)
@@ -39,7 +38,6 @@ class FSRSBaseChart(ChartAnimationMixin, QWidget):
 
         self.max_val = max([v for _, v in self.data_list]) if self.data_list else 1
         self.total_cards = sum([v for _, v in self.data_list])
-        self.bottom_text_lines = 2
         self.show_stats = True
         self.show_cumulative_axis = True
 
@@ -59,7 +57,6 @@ class FSRSBaseChart(ChartAnimationMixin, QWidget):
         self._transition_new_max = 1.0
         self._anim_draw_values = []
         self._anim_draw_ratios = []
-        self._anim_axis_max = 1.0
         self.chart_opacity_pct = 100
         self._non_cumulative_margin_right = 8
         self._scaffold_cache_key = None

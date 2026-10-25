@@ -40,11 +40,10 @@ def update_stats_from_history(self, history_slice, part=None):
 
     if getattr(self, "_dd_refresh_in_progress", False):
         return
-    
-    
+
     if want("cards"):
         prec = self.dialog.addon_config.config.get(Config.STATS_PRECISION, 2)
-    
+
         current_streak_text = None
         if hasattr(self, "streak_card") and self.streak_card and hasattr(self.streak_card, "shown_value"):
             current_streak_text = self.streak_card.shown_value()
@@ -77,7 +76,7 @@ def update_stats_from_history(self, history_slice, part=None):
                     for w in item.widget().findChildren(GroupedBarWidget):
                         dist_chart = w
                         break
-    
+
         if dist_chart and hasattr(dist_chart, 'update_data'):
             new_dist = {
                 "learning": [0, 0, 0, 0],
@@ -119,7 +118,7 @@ def update_stats_from_history(self, history_slice, part=None):
                     for w in item.widget().findChildren(HeatmapWidget):
                         heatmap_chart = w
                         break
-    
+
         if heatmap_chart:
             old_heatmap_data = getattr(heatmap_chart, "data", {}) or {}
             new_heatmap_data, _ = build_heatmap_data(history_slice)
@@ -139,7 +138,7 @@ def update_stats_from_history(self, history_slice, part=None):
                 # The heatmap is updated once below, together with its window, so days
                 # entering or leaving the zoomed range fade instead of popping.
                 heatmap_applied = False
-            
+
                 if history_slice:
                     latest_entry = history_slice[-1]
                     try:
@@ -177,7 +176,7 @@ def update_stats_from_history(self, history_slice, part=None):
                         pass
                 if not heatmap_applied:
                     heatmap_chart.update_data(new_heatmap_data)
-                    
+
             except (RuntimeError, AttributeError):
                 # Silently handle UI sync issues during transitions
                 pass
@@ -195,12 +194,12 @@ def update_stats_from_history(self, history_slice, part=None):
                     for w in item.widget().findChildren(HourlyBreakdownChart):
                         hourly_chart = w
                         break
-    
+
         if hourly_chart and hasattr(hourly_chart, 'update_data'):
             try:
                 # Aggregate hourly data from the history_slice cache, which holds pre-computed hourly distributions per day/bin.
                 aggregated_hourly = {h: {"total": 0, "correct": 0} for h in range(24)}
-            
+
                 for h_bin in history_slice:
                     b_hourly = h_bin.get("hourly")
                     if b_hourly:
@@ -221,17 +220,10 @@ def update_stats_from_history(self, history_slice, part=None):
                                     aggregated_hourly[h]["correct"] += h_bin.get("passed", 0)
                             except (IndexError, ValueError):
                                 pass
-            
+
                 hourly_chart.update_data(aggregated_hourly)
             except Exception as e:
                 log_error(f"Failed to update hourly chart from cache on zoom: {e}")
-
-    # Update Future Due and Review Intervals if in adaptive view
-    # (These normally rely on PinnedDataManager/Cache which might not follow sub-day zoom)
-    is_adaptive = " " in history_slice[0].get("date", "") if history_slice else False
-    if is_adaptive:
-        # Future Due and Review Intervals deal with future data or non-temporal distributions, so they cannot be sliced from history_slice; just refresh them so they stay visible.
-        pass
 
 def update_dashboard_visibility(self):
     """Update visibility of stat cards (delegated to main dialog)."""

@@ -9,7 +9,7 @@ class NoWheelFilter(QObject):
     """
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Type.Wheel:
-            # Ignore the event so it doesn't reach the widget, 
+            # Ignore the event so it doesn't reach the widget,
             # allowing it to propagate up to the scroll area.
             event.ignore()
             return True

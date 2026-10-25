@@ -10,7 +10,6 @@ class RuntimeState:
     pending_updates: set[tuple[Any, ...]] = field(default_factory=set)
     initial_rebuild_queued: bool = False
     widget_update_signatures: dict[Any, Any] = field(default_factory=dict)
-    refresh_after_review: bool = False
     review_return_seq: int = 0
     review_return_t0: float | None = None
     skip_next_silent_refresh: bool = False
@@ -25,13 +24,11 @@ class RuntimeState:
     last_browser_rebuild_ts: float = 0.0
     last_op_callback_rebuild_ts: float = 0.0
     pending_deferred_widget_updates: set[tuple[Any, ...]] = field(default_factory=set)
-    overview_prefetch_hot: bool = False
     pending_browser_refresh: bool = False
     pending_partial_refresh_payload: Any = None
     external_refresh_suspensions: set[str] = field(default_factory=set)
     pending_refresh_while_suspended: bool = False
     pending_refresh_clear_cache: bool = False
-    last_chart_probe_sig: Any = None
     last_chart_reflow_sig: Any = None
     chart_reflow_epoch: int = 0
     fade_anims: dict[Any, Any] = field(default_factory=dict)
@@ -45,7 +42,6 @@ class RuntimeState:
 class OverlayState:
     last_geom: tuple[int, int, int, int, float] | None = None
     last_resize_signature: Any = None
-    pending_height: int = 0
     last_drag_move_time: float = 0.0
     last_h: float = -1.0
     last_zoom: float | None = None

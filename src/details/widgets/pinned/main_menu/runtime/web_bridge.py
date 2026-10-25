@@ -10,8 +10,6 @@ from .....logic.logger import log_swallowed
 
 
 def on_webview_did_inject_style(manager, webview):
-    if manager._is_deck_browser:
-        pass
 
     try:
         url = webview.page().url()
@@ -255,7 +253,6 @@ def event_filter(manager, obj, event, super_event_filter):
                     event.ignore()
                     return True
                 manager._drag_source_id = source_id
-                manager._drag_chart_box_id = box_id
                 boxes_attr = "_text_boxes" if box_kind == "text" else "_chart_boxes"
                 rows_attr = "_text_masonry_rows" if box_kind == "text" else "_chart_masonry_rows"
                 box = getattr(manager, boxes_attr, {}).get(box_id) if isinstance(getattr(manager, boxes_attr, None), dict) else None
@@ -309,7 +306,6 @@ def event_filter(manager, obj, event, super_event_filter):
                         for _, ml_anim in box.get("rows", []):
                             ml_anim.set_animate_moves(False)
                 manager._drag_source_id = None
-                manager._drag_chart_box_id = None
                 return True
 
     if event.type() in (QEvent.Type.Resize, QEvent.Type.Move, QEvent.Type.Show):

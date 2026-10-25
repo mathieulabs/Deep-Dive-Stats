@@ -10,13 +10,11 @@ from .settings_dialog_qss import get_settings_dialog_style
 from .theme_mode import (
     get_theme_base_mode,
     get_theme_effective_is_dark,
-    is_theme_forcing_dark,
 )
 
 __all__ = [
     "get_theme_base_mode",
     "get_theme_effective_is_dark",
-    "is_theme_forcing_dark",
     "get_theme_palette",
     "hex_to_rgba",
     "get_main_dialog_style",

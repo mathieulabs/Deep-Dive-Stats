@@ -60,8 +60,6 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
     breakdown_data = source["breakdown_data"]
     _raw_hist = source["raw_hist"]
     _loading = bool(source["history_is_none"])
-    if _loading:
-        pass
     metric_mode = "time" if bool(widget_def.get("show_time_axis", False)) else "reviews"
     if breakdown_data is not None:
         breakdown_data = attach_breakdown_totals(breakdown_data, _raw_hist)
@@ -104,10 +102,10 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
     show_avg = widget_def.get("show_average", True)
     show_total = widget_def.get("show_cumulative", True)
     avg_on_active = widget_def.get("avg_on_active_days", True)
-    
+
     normal_chart.set_average_mode(show_avg, avg_on_active)
     normal_chart.set_cumulative_mode(show_total)
-    
+
     stack.addWidget(normal_chart)
 
     breakdown_chart = None
@@ -115,7 +113,7 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
         from ..utils import _addon_config
         if cfg is None:
             cfg = _addon_config()
-            
+
         colors = {
             "mature": get_color(cfg.config, Config.COLOR_MATURE, "pinned"),
             "young": get_color(cfg.config, Config.COLOR_YOUNG, "pinned"),
@@ -123,15 +121,15 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
             "learn": get_color(cfg.config, Config.COLOR_LEARN, "pinned"),
             "cram": get_color(cfg.config, Config.COLOR_CRAM, "pinned"),
         }
-        
+
         series_config = [
             {"key": "mature", "label": "Mature", "color": colors["mature"]},
             {"key": "young", "label": "Young", "color": colors["young"]},
             {"key": "relearn", "label": "Relearning", "color": colors["relearn"]},
-            {"key": "learn", "label": "Learning", "color": colors["learn"]}, 
+            {"key": "learn", "label": "Learning", "color": colors["learn"]},
             {"key": "cram", "label": "Filtered", "color": colors["cram"]}
         ]
-        
+
         _hidden_types = normalize_hidden_types(widget_def.get("hidden_review_types"))
         _all_series = list(series_config)
         series_config = [s for s in series_config if s["key"] not in _hidden_types]
@@ -156,7 +154,7 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
         stack.addWidget(breakdown_chart)
     except Exception:
         log_swallowed()
-    
+
     # Page 2: one dot per review, used when zoomed on a few hours.
     dots_chart = None
     if breakdown_chart is not None:
@@ -196,8 +194,8 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
         header_lay,
         retain_size_when_hidden=True,
     )
-    
-    _adaptive = {"active": False, "pre_normal": None, "pre_breakdown": None, "align_right": True, "dates": None, "rows": None}
+
+    _adaptive = {"active": False, "pre_normal": None, "pre_breakdown": None, "align_right": True, "dates": None, "rows": None, "span_key": _span_key(widget_def)}
     for _c in (normal_chart, breakdown_chart):
         if _c:
             _c._adaptive_state = _adaptive
@@ -208,12 +206,10 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
     normal_chart._hidden_review_types = normalize_hidden_types(widget_def.get("hidden_review_types"))
     normal_chart._pinned_adaptive = _adaptive
     normal_chart._metric_source_breakdown = breakdown_data
-    normal_chart._last_time_span = span
     normal_chart._last_timespan_token = widget_def.get("_timespan_token", 0)
     normal_chart._last_deck_id = deck_id
     if breakdown_chart:
         breakdown_chart._metric_source_breakdown = breakdown_data
-        breakdown_chart._last_time_span = span
         breakdown_chart._last_timespan_token = widget_def.get("_timespan_token", 0)
         breakdown_chart._last_deck_id = deck_id
 
@@ -384,6 +380,7 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
                                        override_end_ms=end_ms, override_bin_ms=600000)
             if not hi_res:
                 return
+            _adaptive["fetch"] = (start_ms, end_ms)
             _rows_unfiltered = hi_res
             hi_res = filter_activity_types(hi_res, getattr(normal_chart, "_hidden_review_types", ()))
             hi_res_breakdown = build_breakdown_rows(hi_res, count_key_style="plain")
@@ -500,10 +497,45 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
 
     _adaptive["leave"] = _leave_adaptive
 
+    def _refresh_adaptive(new_source):
+        """Same deck and time span, new reviews: stay in the 10-minute view, with fresh rows.
+        new_source (daily breakdown rows) is what the reset button goes back to."""
+        bounds = _adaptive.get("fetch")
+        if not _adaptive["active"] or not bounds or not new_source:
+            return False
+        hi_res = HistoryProvider.fetch_history(
+            cfg, _state.get("deck_id", deck_id),
+            override_start_ms=bounds[0], override_end_ms=bounds[1], override_bin_ms=600000,
+        )
+        if not hi_res:
+            return False
+        rows_unfiltered = hi_res
+        hi_res = filter_activity_types(hi_res, getattr(normal_chart, "_hidden_review_types", ()))
+        hi_res_breakdown = attach_breakdown_totals(build_breakdown_rows(hi_res, count_key_style="plain"), hi_res)
+        mode = getattr(normal_chart, "value_mode", metric_mode)
+        metric_hi_res = convert_breakdown_metric_rows(hi_res_breakdown, mode, count_key_style="plain")
+        hi_res_activity = build_activity_series_from_breakdown(metric_hi_res, count_key_style="plain")
+        candidates = [c for c in (normal_chart, breakdown_chart) if c]
+        with local_chart_animation_batch(normal_chart, candidates=candidates):
+            normal_chart.update_data(hi_res_activity, adaptive_binning=getattr(normal_chart, "adaptive_binning", None))
+            normal_chart._metric_source_breakdown = hi_res_breakdown
+            if breakdown_chart:
+                breakdown_chart.update_data(metric_hi_res, adaptive_binning=getattr(breakdown_chart, "adaptive_binning", None))
+                breakdown_chart._metric_source_breakdown = hi_res_breakdown
+        # The reset button rebuilds the daily rows from pre_source, in the mode shown then.
+        _adaptive["pre_source"] = new_source
+        _adaptive["pre_normal"] = []
+        _adaptive["pre_breakdown"] = [] if breakdown_chart else None
+        _adaptive["rows"] = rows_unfiltered
+        _schedule_dots()
+        return True
+
+    _adaptive["refresh"] = _refresh_adaptive
+
     for _c in (normal_chart, breakdown_chart):
         if _c is not None and getattr(_c, "zoom_out_limit", None) is not None:
             _c.zoom_out_limit.connect(_leave_adaptive)
-    
+
     def sync_zoom(source_chart, other_chart):
         def _sync(is_zoomed, start, end):
             # Only between charts showing the same rows. During a data update the first chart
@@ -565,7 +597,7 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
             _schedule_dots()
 
         cb.toggled.connect(_on_breakdown_toggled)
-        cb.toggled.connect(lambda c, wid=widget_def["id"]: 
+        cb.toggled.connect(lambda c, wid=widget_def["id"]:
                            WidgetRegistry.update_setting(wid, "show_breakdown", c))
         header_lay.addWidget(cb)
 
@@ -604,14 +636,19 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
     header_lay.addWidget(cb_time)
 
     stack.setObjectName("activity_stack")
-    wrapped = _wrap(stack, None, header_widget=header_widget, 
-                    widget_id=widget_def["id"], 
-                    saved_w=widget_def.get("width"), 
+    wrapped = _wrap(stack, None, header_widget=header_widget,
+                    widget_id=widget_def["id"],
+                    saved_w=widget_def.get("width"),
                     saved_h=widget_def.get("height"),
                     parent=parent)
     if _loading and wrapped is not None:
         wrapped._is_loading = True
     return wrapped
+
+def _span_key(widget_def):
+    """What the rows of a pinned chart depend on, besides the deck."""
+    return (widget_def.get("time_span"), widget_def.get("custom_days"), widget_def.get("_timespan_token"))
+
 
 def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=False, cfg=None):
     from aqt.qt import QStackedWidget
@@ -655,13 +692,47 @@ def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=
         metric_breakdown_data = breakdown_data
 
     normal_chart = stack.widget(0)
+    adaptive = getattr(normal_chart, '_pinned_adaptive', None)
+    same_rows = (
+        adaptive is not None
+        and adaptive.get("span_key") == _span_key(widget_def)
+        and str((getattr(normal_chart, "_pinned_state", None) or {}).get("deck_id")) == str(deck_id)
+        and normalize_hidden_types(widget_def.get("hidden_review_types")) == getattr(normal_chart, "_hidden_review_types", None)
+    )
+    if adaptive is not None:
+        adaptive["span_key"] = _span_key(widget_def)
+    if (
+        same_rows
+        and adaptive.get("active")
+        and callable(adaptive.get("refresh"))
+        and getattr(normal_chart, "value_mode", metric_mode) == metric_mode
+    ):
+        # Same deck, new reviews: the 10-minute view stays (as a normal zoom does).
+        try:
+            if adaptive["refresh"](breakdown_data):
+                normal_chart._pinned_raw_hist = new_raw_hist
+                refresh_parent_chart_header_stats(normal_chart)
+                return True
+        except Exception:
+            log_swallowed()
+    # Otherwise the 10-minute view belongs to the old data: leave it before the new data goes
+    # in, so the zoom reset done by update_data() is not taken for a zoom inside it.
+    if adaptive:
+        adaptive["active"] = False
+        adaptive["pre_normal"] = None
+        adaptive["pre_breakdown"] = None
+        adaptive["align_right"] = True
+        adaptive["rows"] = None
+        adaptive["dates"] = None
+        adaptive.pop("pre_source", None)
+        adaptive.pop("pre_zoom", None)
     if hasattr(normal_chart, "update_data"):
         normal_chart._chart_owner = "pinned_activity"
         if cfg is None:
              from ..utils import _addon_config
              cfg = _addon_config()
         adaptive_binning = cfg.config.get(ADAPTIVE_CHART_BINNING, True)
-        
+
         span_token = widget_def.get("_timespan_token", 0)
         transition_meta = get_timespan_transition_meta(
             getattr(normal_chart, "_last_timespan_token", span_token),
@@ -686,15 +757,14 @@ def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=
             adaptive_binning=adaptive_binning,
             transition_mode="timespan" if use_timespan_transition else None,
         )
-        normal_chart._last_time_span = span
         normal_chart._last_timespan_token = span_token
         normal_chart._last_deck_id = deck_id
         normal_chart._metric_source_breakdown = breakdown_data
-        
+
         wrapper = stack.parentWidget()
         if wrapper:
             refresh_parent_chart_header_stats(normal_chart)
-        
+
     breakdown_chart = stack.widget(1)
     _hidden_now = normalize_hidden_types(widget_def.get("hidden_review_types"))
     try:
@@ -724,11 +794,11 @@ def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=
         breakdown_chart.set_average_mode(show_avg, avg_on_active)
         breakdown_chart.set_cumulative_mode(show_total)
         breakdown_chart.set_value_mode(metric_mode)
-        
+
         if cfg is None:
              from ..utils import _addon_config
              cfg = _addon_config()
-             
+
         colors = {
             "mature": get_color(cfg.config, Config.COLOR_MATURE, "pinned"),
             "young": get_color(cfg.config, Config.COLOR_YOUNG, "pinned"),
@@ -736,12 +806,12 @@ def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=
             "learn": get_color(cfg.config, Config.COLOR_LEARN, "pinned"),
             "cram": get_color(cfg.config, Config.COLOR_CRAM, "pinned"),
         }
-        
+
         series_config = [
             {"key": "mature", "label": "Mature", "color": colors["mature"]},
             {"key": "young", "label": "Young", "color": colors["young"]},
             {"key": "relearn", "label": "Relearning", "color": colors["relearn"]},
-            {"key": "learn", "label": "Learning", "color": colors["learn"]}, 
+            {"key": "learn", "label": "Learning", "color": colors["learn"]},
             {"key": "cram", "label": "Filtered", "color": colors["cram"]}
         ]
         breakdown_chart._all_series_config = list(series_config)
@@ -751,28 +821,18 @@ def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=
             adaptive_binning=adaptive_binning,
             transition_mode="timespan" if use_timespan_transition_b else None,
         )
-        breakdown_chart._last_time_span = span
         breakdown_chart._last_timespan_token = span_token_b
         breakdown_chart._last_deck_id = deck_id
         breakdown_chart._metric_source_breakdown = breakdown_data
-        
+
     # Refresh adaptive zoom state so handler uses current history after span change
     if hasattr(normal_chart, '_pinned_state'):
         normal_chart._pinned_state["deck_id"] = deck_id
-    
+
     if hasattr(normal_chart, '_pinned_raw_hist'):
         normal_chart._pinned_raw_hist = new_raw_hist
-        adaptive = getattr(normal_chart, '_pinned_adaptive', None)
-        if adaptive:
-            adaptive["active"] = False
-            adaptive["pre_normal"] = None
-            adaptive["pre_breakdown"] = None
-            adaptive["align_right"] = True
-            adaptive["rows"] = None
-            adaptive.pop("pre_source", None)
-            adaptive.pop("pre_zoom", None)
-            if stack.currentIndex() == 2:
-                stack.setCurrentIndex(1 if (widget_def.get("show_breakdown", True) and stack.widget(1) is not None) else 0)
+        if adaptive and stack.currentIndex() == 2:
+            stack.setCurrentIndex(1 if (widget_def.get("show_breakdown", True) and stack.widget(1) is not None) else 0)
 
     if "show_breakdown" in widget_def:
         show_breakdown = widget_def["show_breakdown"]

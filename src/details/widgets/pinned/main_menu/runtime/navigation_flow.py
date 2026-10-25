@@ -124,7 +124,6 @@ def on_state_did_change(manager, new_state, old_state):
             except Exception:
                 manager._current_deck_id = None
 
-        manager._refresh_after_review = False
         manager._schedule_rebuild(manager._current_deck_id, force=True)
 
         def _deferred_prewarm():
@@ -158,7 +157,6 @@ def on_state_did_change(manager, new_state, old_state):
                         try:
                             from ....charts.heatmap import HeatmapWidget
 
-                            forced_heatmaps = 0
                             for widget in list(getattr(manager, "_active_widgets", {}).values()):
                                 if widget is None:
                                     continue
@@ -168,9 +166,6 @@ def on_state_did_change(manager, new_state, old_state):
                                 chart._force_runtime_refresh_once = True
                                 chart._last_runtime_refresh_key = None
                                 chart._last_applied_runtime_refresh_key = None
-                                forced_heatmaps += 1
-                            if forced_heatmaps:
-                                pass
                         except Exception:
                             log_swallowed()
                         try:
@@ -273,9 +268,7 @@ def on_deck_browser_will_render(manager, _browser, content):
 
     manager._inject_placeholder(content, is_browser=True)
 
-    if duplicate_browser_burst:
-        pass
-    else:
+    if not duplicate_browser_burst:
         manager._schedule_rebuild(None, force=pending_browser_refresh, after_page_load=True)
         manager._last_browser_rebuild_ts = now_ts
         manager._pending_browser_refresh = False
@@ -283,7 +276,6 @@ def on_deck_browser_will_render(manager, _browser, content):
 
 def on_overview_will_render(manager, overview, content):
     manager._is_deck_browser = False
-    manager._overview_prefetch_hot = False
     try:
         did = overview.mw.col.decks.selected()
     except Exception:
@@ -294,20 +286,16 @@ def on_overview_will_render(manager, overview, content):
     duplicate_overview_burst = did == last_did and (now_ts - float(last_ts or 0.0)) < 0.25
 
     if did is not None and not duplicate_overview_burst:
+        # Pulls the deck's contexts from the history cache now, so the widgets built
+        # next find them ready.
         from ...context_access import get_pinned_contexts
         from ...widget_factory.utils import Period
 
         cm = manager._get_config_manager()
-        contexts = get_pinned_contexts(did, (Period.TOTAL, Period.YEAR, Period.LAST_YEAR), cfg=cm, allow_slow_ops=False)
-        c_total = contexts.get(Period.TOTAL)
-        c_year = contexts.get(Period.YEAR)
-        c_last_year = contexts.get(Period.LAST_YEAR)
-        manager._overview_prefetch_hot = bool(c_total) and (bool(c_year) or bool(c_last_year))
+        get_pinned_contexts(did, (Period.TOTAL, Period.YEAR, Period.LAST_YEAR), cfg=cm, allow_slow_ops=False)
 
     manager._inject_placeholder(content, is_browser=False)
-    if duplicate_overview_burst:
-        pass
-    else:
+    if not duplicate_overview_burst:
         manager._schedule_rebuild(did, after_page_load=True)
         manager._last_overview_rebuild_sig = (did, now_ts)
 

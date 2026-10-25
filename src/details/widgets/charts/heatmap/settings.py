@@ -24,7 +24,6 @@ def set_end_date_impl(widget, date):
         # set_view_mode(), so refresh the "new" side here.
         _retarget_mode_transition(widget)
         widget._mode_transition_new_labels_pixmap = widget._render_labels_to_pixmap()
-        widget._mode_transition_new_scaffold_pixmap = widget._render_scaffold_to_pixmap()
     widget.update()
 
 
@@ -40,7 +39,6 @@ def _retarget_mode_transition(widget):
     new_cells = widget._mode_transition_new_cells or {}
     keys = set(old_cells.keys()) | set(new_cells.keys())
     widget._mode_transition_cell_pairs = [(old_cells.get(key), new_cells.get(key)) for key in keys]
-    widget._mode_transition_draw_ops = None
 
 
 def update_data_impl(widget, new_data):
@@ -127,8 +125,6 @@ def update_data_impl(widget, new_data):
         (widget._transition_old_cells.get(key), widget._transition_new_cells.get(key))
         for key in keys
     ]
-    widget._transition_draw_ops = None
-    widget._transition_old_pixmap = widget._render_to_pixmap(widget._transition_old_data)
     widget._transition_new_pixmap = widget._render_to_pixmap(widget._transition_new_data)
     # The fade only repaints a few hundred cells, so it keeps running with many charts on screen (the usual 6-chart limit would make the cells jump on a busy page).
     if chart_animations_allowed(widget, max_visible_charts=24):
@@ -291,7 +287,6 @@ def set_metric_impl(widget, metric):
     widget._data_transition_anim.stop()
     widget._clear_data_transition_state()
     widget._pixmap_cache = None
-    widget._transition_old_pixmap = None
     widget._transition_new_pixmap = None
     widget.update()
 
@@ -316,7 +311,6 @@ def set_view_mode_impl(widget, mode):
     widget._mode_transition_anim.stop()
     old_cells = widget._build_current_cell_visuals(widget.data)
     widget._mode_transition_old_labels_pixmap = widget._render_labels_to_pixmap()
-    widget._mode_transition_old_scaffold_pixmap = widget._render_scaffold_to_pixmap()
 
     widget.view_mode = mode
     widget._suppress_next_transition = False
@@ -331,7 +325,6 @@ def set_view_mode_impl(widget, mode):
     widget.setMinimumHeight(h)
     new_cells = widget._build_current_cell_visuals(widget.data)
     widget._mode_transition_new_labels_pixmap = widget._render_labels_to_pixmap()
-    widget._mode_transition_new_scaffold_pixmap = widget._render_scaffold_to_pixmap()
 
     widget._mode_transition_old_cells = old_cells
     widget._mode_transition_new_cells = new_cells
@@ -340,7 +333,6 @@ def set_view_mode_impl(widget, mode):
         (old_cells.get(key), new_cells.get(key))
         for key in keys
     ]
-    widget._mode_transition_draw_ops = None
     widget._mode_transition_active = True
     widget._mode_transition_progress = 0.0
     if chart_animations_allowed(widget):
@@ -449,11 +441,8 @@ def set_hidden_legend_steps_impl(widget, steps):
     widget._mode_transition_new_cells = new_cells
     widget._mode_transition_old_labels_pixmap = old_labels
     widget._mode_transition_new_labels_pixmap = widget._render_labels_to_pixmap()
-    widget._mode_transition_old_scaffold_pixmap = None
-    widget._mode_transition_new_scaffold_pixmap = widget._render_scaffold_to_pixmap()
     keys = set(old_cells.keys()) | set(new_cells.keys())
     widget._mode_transition_cell_pairs = [(old_cells.get(k), new_cells.get(k)) for k in keys]
-    widget._mode_transition_draw_ops = None
     widget._mode_transition_active = True
     widget._mode_transition_progress = 0.0
     if chart_animations_allowed(widget):
@@ -517,11 +506,8 @@ def transition_to_impl(widget, new_data, end_date):
     widget._mode_transition_new_cells = new_cells
     widget._mode_transition_old_labels_pixmap = old_labels
     widget._mode_transition_new_labels_pixmap = widget._render_labels_to_pixmap()
-    widget._mode_transition_old_scaffold_pixmap = None
-    widget._mode_transition_new_scaffold_pixmap = widget._render_scaffold_to_pixmap()
     keys = set(old_cells.keys()) | set(new_cells.keys())
     widget._mode_transition_cell_pairs = [(old_cells.get(k), new_cells.get(k)) for k in keys]
-    widget._mode_transition_draw_ops = None
     widget._mode_transition_active = True
     widget._mode_transition_progress = 0.0
     if chart_animations_allowed(widget):

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from ..shared import QTimer, Period, datetime, mw, time, timedelta
+from ..shared import QTimer, Period, datetime, mw, timedelta
 from ...data.transforms.activity_series import build_activity_series, build_breakdown_rows
 from ...data.transforms.retention_series import build_retention_series
 from ...refresh import queue_ui_callback
@@ -10,8 +10,6 @@ from ...logger import log_swallowed
 def invalidate_hierarchy_context(cache, reason="unknown"):
 
     cache._hier_cache_invalidated = True
-    cache._hier_cache_time = 0.0
-    cache._hier_cache_count = 0
     cache._hier_cache_data = None
 
 
@@ -126,16 +124,22 @@ def _db_review_counts():
     from ..exclusion import excluded_dids
     from .....utils import excluded_days_clause
 
+    from ...data.core.revlog_slices import revlog_slices as _revlog_slices, sliced_all as _sliced_all
+
     _start, end_ms, _, _ = get_time_range_ms(Period.TOTAL, week_start=0)
     id_ms = "(CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END)"
-    rows = mw.col.db.all(
-        f"""
+    # In slices, like the cache build, so the collection is never held for long. The "+"
+    # keeps "id > 0" from being used as the scan range, which would read past each slice.
+    rows = _sliced_all(
+        lambda part: f"""
         SELECT COALESCE((CASE WHEN cards.odid > 0 THEN cards.odid ELSE cards.did END), -1), COUNT(*)
         FROM revlog LEFT JOIN cards ON revlog.cid = cards.id
-        WHERE revlog.type < 4 AND revlog.id > 0 AND {id_ms} < {int(end_ms)}
-        {excluded_days_clause()}
+        WHERE revlog.type < 4 AND +revlog.id > 0 AND {id_ms} < {int(end_ms)}
+        {excluded_days_clause()} {part}
         GROUP BY 1
-        """
+        """,
+        _revlog_slices(),
+        1,
     )
     per_deck = {int(did): int(cnt or 0) for did, cnt in rows}
     excluded = excluded_dids()
@@ -430,10 +434,6 @@ def check_incremental_update(cache, force_fingerprint=False):
                 elif curr_fp != prev_fp:
                     cache._last_db_fingerprint = curr_fp
                     cache.refresh_incremental(force_full=True)
-                else:
-                    pass
-        else:
-            pass
     except Exception:
         log_swallowed()
 
@@ -445,7 +445,6 @@ def get_hierarchy_context(cache):
         return cached_data
 
     all_decks = mw.col.decks.all_names_and_ids()
-    deck_count = len(all_decks)
     all_decks_info = {d.id: d.name for d in all_decks}
 
     hier_map = {}
@@ -468,8 +467,6 @@ def get_hierarchy_context(cache):
 
     hier_map[-1] = [-1]
 
-    cache._hier_cache_time = time.time()
-    cache._hier_cache_count = deck_count
     cache._hier_cache_invalidated = False
     cache._hier_cache_data = (hier_map, all_decks_info)
     return cache._hier_cache_data

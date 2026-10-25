@@ -60,24 +60,24 @@ from .....config import ConfigManager, set_live_config_override
 
 class WidgetSettingsDialog(QDialog):
     """A focused dialog for configuring a specific pinned or deep dive widget."""
-    
+
     def __init__(self, widget_def, parent=None, global_config=None, local_config=None, theme_config=None):
         super().__init__(parent)
         self.widget_def = widget_def
         self.widget_id = widget_def.get("id")
         self.type = widget_def.get("type")
-        
+
         if global_config is not None:
              self.global_config = global_config
         else:
              self.global_config = ConfigManager(mw).config
-             
+
         # Local config defaults to the widget definition
         self.local_config = local_config if local_config is not None else self.widget_def
-        
+
         self.is_unlinked = self.local_config.get("use_custom_style", False)
         self.is_grid = widget_def.get("is_grid", False)
-        
+
         self.addon_config = self.local_config if self.is_unlinked else self.global_config
 
         # Theme source can differ from style source (e.g. Deep Dive grid widget settings
@@ -118,7 +118,7 @@ class WidgetSettingsDialog(QDialog):
                 self.theme_config = get_context_theme_config(parent, self.theme_config)
             except Exception:
                 log_swallowed()
-        
+
         self.is_dashboard_context = False
         if hasattr(parent, "is_pinned") and not parent.is_pinned:
             self.is_dashboard_context = True
@@ -132,7 +132,7 @@ class WidgetSettingsDialog(QDialog):
 
         # Pinned mode when global_config holds Pinned_Widgets. The dashboard context stays isolated from pinned persistence.
         self.is_pinned_mode = ("Pinned_Widgets" in self.global_config) and not self.is_dashboard_context
-        
+
         # Charts re-read their colours from the config while this dialog is
         # open; let them see the unsaved edits (see read_config_dict).
         if isinstance(self.global_config, dict):
@@ -141,20 +141,20 @@ class WidgetSettingsDialog(QDialog):
         self._backup_global = copy.deepcopy(self.global_config)
         self._backup_local = copy.deepcopy(self.local_config)
         self._backup_unlinked = self.is_unlinked
-        
+
         # Debounce timer for live updates
         self.update_timer = QTimer(self)
         self.update_timer.setSingleShot(True)
         self.update_timer.timeout.connect(self.apply_live_changes)
-        
+
         self.setWindowTitle(f"Configure Widget: {self.type.replace('_', ' ').title()}")
-        
+
         apply_standard_dialog_sizing(self, min_width=500)
-        
+
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
-        
+
         self.scroll = QScrollArea(self)
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -165,7 +165,7 @@ class WidgetSettingsDialog(QDialog):
         self.content_layout.setSpacing(15)
         self.scroll.setWidget(self.scroll_content)
         self.main_layout.addWidget(self.scroll)
-        
+
         self.unlink_cb = QCheckBox("Unlink settings (Separate from other widgets)")
         self.unlink_cb.setChecked(self.is_unlinked)
         self.unlink_cb.toggled.connect(self.toggle_unlink)
@@ -173,17 +173,17 @@ class WidgetSettingsDialog(QDialog):
         if self.type == "heatmap":
             self.unlink_cb.setVisible(False)
         self.content_layout.addWidget(self.unlink_cb)
-        
+
         if self.type != "text_label":
             group_gen = QGroupBox("General")
             layout_gen = QFormLayout(group_gen)
-            
+
             label_row = QHBoxLayout()
             self.label_edit = QLineEdit(widget_def.get("label", ""))
             self.label_edit.setPlaceholderText("Empty = no title")
             self.label_edit.textChanged.connect(self._update_reset_button_visibility)
             label_row.addWidget(self.label_edit)
-            
+
             self.reset_label_btn = QPushButton()
             self.reset_label_btn.setIcon(get_svg_icon("rotate-ccw", size=14, context_ref=self))
             self.reset_label_btn.setFixedSize(24, 24)
@@ -191,9 +191,9 @@ class WidgetSettingsDialog(QDialog):
             set_qss(self.reset_label_btn, "QPushButton { background: transparent; border: none; } QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }")
             self.reset_label_btn.clicked.connect(self._reset_label)
             label_row.addWidget(self.reset_label_btn)
-            
+
             layout_gen.addRow("Display Label:", label_row)
-            
+
             if self.type == "stat_card" and not self.is_dashboard_context:
                  self.stat_key_combo = QComboBox()
                  found_keys = []
@@ -202,12 +202,12 @@ class WidgetSettingsDialog(QDialog):
                          label = get_stat_card_default_title(k)
                          self.stat_key_combo.addItem(label, k)
                          found_keys.append(k)
-                 
+
                  current_key = widget_def.get("stat_key")
                  idx = self.stat_key_combo.findData(current_key)
                  if idx >= 0:
                      self.stat_key_combo.setCurrentIndex(idx)
-                 
+
                  self.stat_key_combo.currentIndexChanged.connect(self._update_reset_button_visibility)
                  layout_gen.addRow("Metric:", self.stat_key_combo)
 
@@ -232,7 +232,7 @@ class WidgetSettingsDialog(QDialog):
             self._update_reset_button_visibility()
 
             self.content_layout.addWidget(group_gen)
-        
+
         if self.type == "text_label":
             self._setup_text_label_settings()
         elif self.type == "stat_card":
@@ -241,11 +241,11 @@ class WidgetSettingsDialog(QDialog):
             self._setup_heatmap_settings()
         else:
             self._setup_chart_settings()
-            
+
         self.bottom_area = QWidget(self)
         bottom_area_layout = QVBoxLayout(self.bottom_area)
         bottom_area_layout.setContentsMargins(20, 10, 20, 20)
-        
+
         btn_layout = QHBoxLayout()
 
         if self.type not in ("stat_card", "text_label"):
@@ -268,15 +268,15 @@ class WidgetSettingsDialog(QDialog):
         btn_layout.addWidget(self.ok_btn)
         bottom_area_layout.addLayout(btn_layout)
         self.main_layout.addWidget(self.bottom_area)
-        
+
         self.refresh_styles()
         self._install_wheel_filters()
         self._connect_live_updates()
-        
+
         # Manual resize: content + footer + padding. Process events first so size hints are up to date.
         from aqt.qt import QCoreApplication
         QCoreApplication.processEvents()
-        
+
         content_h = self.scroll_content.sizeHint().height()
         content_w = max(
             self.scroll_content.sizeHint().width(),
@@ -286,7 +286,7 @@ class WidgetSettingsDialog(QDialog):
         footer_h = self.bottom_area.sizeHint().height()
         total_h = content_h + footer_h + 10 # small buffer
         total_w = content_w + 56 # scroll area + dialog margins
-        
+
         final_h = clamp_dialog_height(self.maximumHeight(), total_h)
         final_w = clamp_dialog_width(total_w, min_width=500)
         self.resize(final_w, final_h)
@@ -300,13 +300,13 @@ class WidgetSettingsDialog(QDialog):
         """Restore original config state and refresh UI before closing."""
         self.global_config.clear()
         self.global_config.update(self._backup_global)
-        
+
         self.local_config.clear()
         self.local_config.update(self._backup_local)
-        
+
         self.is_unlinked = self._backup_unlinked
         self.addon_config = self.local_config if self.is_unlinked else self.global_config
-        
+
         # Refresh the UI widgets to the restored config first, so apply_live_changes does not read the modified values.
         try:
             self.refresh_ui_values()
@@ -335,7 +335,7 @@ class WidgetSettingsDialog(QDialog):
         for cb in self.findChildren(QCheckBox):
             if cb == self.unlink_cb: continue # Managed separately
             cb.stateChanged.connect(_live_handler(cb))
-        
+
         def _debounced_handler(control):
             def _changed(*_args):
                 self._trigger_live_update(control)
@@ -343,7 +343,7 @@ class WidgetSettingsDialog(QDialog):
 
         for slider in self.findChildren(QSlider):
             slider.valueChanged.connect(_debounced_handler(slider))
-            
+
         # Combo boxes apply directly, no debounce needed
         def _pending_only(w):
             p = w.parentWidget()
@@ -354,7 +354,7 @@ class WidgetSettingsDialog(QDialog):
             if _pending_only(combo): continue
 
             combo.currentIndexChanged.connect(_live_handler(combo))
-            
+
         for spin in self.findChildren(QSpinBox):
             if _pending_only(spin): continue
             spin.valueChanged.connect(_debounced_handler(spin))
@@ -388,7 +388,7 @@ class WidgetSettingsDialog(QDialog):
     def toggle_unlink(self, checked):
         """Switch between Global and Local config context."""
         self.is_unlinked = checked
-        
+
         if self.is_unlinked:
             self.addon_config = self.local_config
             # Copy current global values to local where missing, for a smooth transition.
@@ -397,15 +397,15 @@ class WidgetSettingsDialog(QDialog):
                     self.local_config[k] = v
         else:
             self.addon_config = self.global_config
-            
+
         self.refresh_ui_values()
-        
+
         self.apply_live_changes()
 
     def refresh_ui_values(self):
         """Reload UI values from the current self.addon_config."""
         conf = self.addon_config
-        
+
         def set_val(obj, method, val):
             obj.blockSignals(True)
             getattr(obj, method)(val)
@@ -443,10 +443,10 @@ class WidgetSettingsDialog(QDialog):
             if hasattr(self, "tinted_future_cb"): set_val(self.tinted_future_cb, "setChecked", conf.get(Config.HEATMAP_TINTED_FUTURE, False))
             if hasattr(self, "rounding_slider"): set_val(self.rounding_slider, "setValue", conf.get(Config.HEATMAP_ROUNDING, 20))
             if hasattr(self, "monday_first_cb"): set_val(self.monday_first_cb, "setChecked", conf.get(Config.HEATMAP_MONDAY_FIRST, False))
-            
+
             self.current_color = self._get_effective_heatmap_color()
             self._update_color_button()
-            
+
             if hasattr(self, "opacity_slider"): set_val(self.opacity_slider, "setValue", conf.get(Config.HEATMAP_EMPTY_OPACITY, 15))
             if hasattr(self, "filled_opacity_slider"): set_val(self.filled_opacity_slider, "setValue", conf.get(Config.HEATMAP_FILLED_OPACITY, 100))
             if hasattr(self, "vibrance_slider"): set_val(self.vibrance_slider, "setValue", conf.get(Config.HEATMAP_VIBRANCE, 100))
@@ -556,7 +556,7 @@ class WidgetSettingsDialog(QDialog):
     def apply_live_changes(self):
         """Update the live config object and trigger a style refresh on pinned widgets."""
         conf = self.addon_config
-        
+
         if self.type == "text_label":
             apply_text_label_live_changes(self, conf)
         elif self.type == "stat_card":
@@ -572,13 +572,13 @@ class WidgetSettingsDialog(QDialog):
 
         from ....widgets.pinned.main_menu.manager import MainMenuWidgetManager
         from ....widgets.pinned.widget_factory.factory import WidgetFactory
-        
+
         class DummyCM:
             def __init__(self, c): self.config = c
             def get(self, k, d=None): return self.config.get(k, d)
-        
+
         dm = DummyCM(conf)
-        
+
         target = self.parent()
         if target and isinstance(target, QWidget):
             if self.type != "stat_card":
@@ -590,14 +590,14 @@ class WidgetSettingsDialog(QDialog):
                     _txt = (self.label_edit.text() or "").strip()
                     _hdr.setText(_txt.upper())
                     _hdr.setVisible(bool(_txt))
-            
-            # Merge styling config with the widget's own instance definition 
+
+            # Merge styling config with the widget's own instance definition
             # to preserve properties like time_span, show_average, etc.
             merged_def = {**self.widget_def, **conf}
             if self.type == "heatmap" and self._is_pinned_separate_theme_mode():
                 # Avoid feeding stale global Heatmap_Color into live pinned updates.
                 merged_def[Config.HEATMAP_COLOR] = self.current_color
-            
+
             if self.type == "stat_card":
                 scale_key = self._get_key(Config.FACECARDS_SCALE, Config.DASHBOARD_SCALE)
                 if hasattr(target, "set_scale"):
@@ -760,7 +760,7 @@ class WidgetSettingsDialog(QDialog):
         if self.is_pinned_mode and not self.is_unlinked:
             if MainMenuWidgetManager.instance_exists():
                 MainMenuWidgetManager.instance().update_styles(config_manager=dm)
-        
+
         # Deep Dive mode: global_config is the Deep Dive style dictionary.
         is_deep_dive_mode = bool(self.is_grid) or any(k in self.global_config for k in DEEP_DIVE_STYLE_MARKER_KEYS)
         inplace_only = bool(getattr(self, "_pending_inplace", False))
@@ -775,7 +775,7 @@ class WidgetSettingsDialog(QDialog):
 
     def save_and_close(self):
         self.local_config["use_custom_style"] = self.is_unlinked
-        
+
         if hasattr(self, "label_edit"):
             self.local_config["label"] = self.label_edit.text()
         if self.type == "stat_card" and hasattr(self, "stat_key_combo"):
@@ -788,9 +788,6 @@ class WidgetSettingsDialog(QDialog):
             if _bk in self.widget_def:
                 self.local_config[_bk] = self.widget_def[_bk]
 
-        if self.type == "text_label":
-            pass
-
         # Final sync of config values (live updates already applied them).
         try:
             self.apply_live_changes()
@@ -799,9 +796,6 @@ class WidgetSettingsDialog(QDialog):
 
         persist_widget_settings(self)
 
-        if self.type == "text_label":
-            pass
-        
         self.accept()
 
     def _setup_text_label_settings(self):
@@ -831,7 +825,6 @@ class WidgetSettingsDialog(QDialog):
 
     def _setup_heatmap_settings(self):
         setup_heatmap_settings(self)
-
 
     def _update_color_button(self):
         update_color_button(self)

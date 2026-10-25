@@ -63,8 +63,6 @@ class PieChartWidget(ChartAnimationMixin, QWidget):
         self.labels = dict(PIE_CHART_LABELS)
         self.order = list(PIE_CHART_ORDER)
         self.chart_opacity_pct = 100
-        self._legend_cache_key = None
-        self._legend_cache_pixmap = None
         self._slice_base_color_cache_key = None
         self._slice_base_color_cache = None
         self._layout_updates_suspended = True

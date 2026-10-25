@@ -10,10 +10,6 @@ from .....logic.logger import log_swallowed
 
 
 def compute_rebuild_modes(manager, deck_id):
-    try:
-        manager._layout_gap_logged = False
-    except Exception:
-        log_swallowed()
     non_blocking_update = bool(getattr(manager, "_force_non_blocking_rebuild", False))
     overview_light_mode = bool(mw.state == "overview")
     review_return_light_mode = bool(

@@ -14,28 +14,28 @@ class SortableTableWidgetItem(QTableWidgetItem):
     def __lt__(self, other):
         if not isinstance(other, QTableWidgetItem):
             return super().__lt__(other)
-        
+
         is_self_total = self.data(Qt.ItemDataRole.UserRole) == "[[TOTAL]]"
         is_other_total = other.data(Qt.ItemDataRole.UserRole) == "[[TOTAL]]"
-        
+
         if is_self_total or is_other_total:
             table = self.tableWidget()
             if table:
                 order = table.horizontalHeader().sortIndicatorOrder()
                 is_asc = (order == Qt.SortOrder.AscendingOrder)
                 pin_top = SortableTableWidgetItem.PIN_TOP
-                
+
                 if is_self_total:
                     return is_asc if pin_top else not is_asc
                 if is_other_total:
                     return not is_asc if pin_top else is_asc
             else:
-                if is_self_total: return False 
+                if is_self_total: return False
                 if is_other_total: return True
-            
+
         sv = self.sort_value
         ov = getattr(other, 'sort_value', other.text())
-        
+
         try:
             return float(sv) < float(ov)
         except (ValueError, TypeError):

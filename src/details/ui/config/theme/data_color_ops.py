@@ -60,7 +60,7 @@ def reset_colors_to_default(
         save_global_config(key, default_hex)
         for storage_key, btn in color_buttons.items():
             if storage_key.startswith(key):
-                set_qss(btn, 
+                set_qss(btn,
                     f"background-color: {default_hex}; border: 1px solid rgba(128,128,128,0.45); border-radius: 4px;"
                 )
         for storage_key, hl in hex_labels.items():

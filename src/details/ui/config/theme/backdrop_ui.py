@@ -133,7 +133,6 @@ class _GlowColorButton(QPushButton):
         super().__init__(parent)
         self._stats = stats_dialog
         self._key = key  # "color1" / "color2"
-        self._title = title
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumWidth(150)
         self.setToolTip("Click to pick a color. 'Auto' uses your theme's accent color.")

@@ -68,9 +68,6 @@ def create_activity_chart_view(manager, activity_data, history_oldest_first):
         )
         normal_chart._color_config_key = Config.COLOR_BAR
         normal_chart.binning_override = binning_override
-        normal_chart.binning_toggled_callback = (
-            lambda val: manager._update_dd_widget_setting("activity", "binning_override", val, refresh=False)
-        )
         normal_chart._chart_owner = "deep_dive_activity"
         normal_chart._relative_height_transition = True
         normal_chart.show_hover_marker = False
@@ -111,9 +108,6 @@ def create_activity_chart_view(manager, activity_data, history_oldest_first):
             adaptive_binning=adaptive,
         )
         stacked_chart.binning_override = binning_override
-        stacked_chart.binning_toggled_callback = (
-            lambda val: manager._update_dd_widget_setting("activity", "binning_override", val, refresh=False)
-        )
         stacked_chart._chart_owner = "deep_dive_activity"
         stacked_chart._relative_height_transition = True
         stacked_chart.set_value_mode(metric_mode)
@@ -275,9 +269,6 @@ def create_retention_chart_view(manager, retention_data):
             adaptive_binning=adaptive,
         )
         chart.binning_override = binning_override
-        chart.binning_toggled_callback = (
-            lambda val: manager._update_dd_widget_setting("retention", "binning_override", val, refresh=False)
-        )
         if hasattr(chart, "set_average_mode"):
             chart.set_average_mode(show_avg, avg_on_active)
         if hasattr(chart, "set_cumulative_mode"):

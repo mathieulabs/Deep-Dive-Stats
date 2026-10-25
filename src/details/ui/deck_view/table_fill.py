@@ -7,6 +7,7 @@ from ...logic.logger import log_swallowed
 from ...widgets import SegmentedBarWidget
 from ...widgets.chart_utils.formatting import fmt_num, stats_precision
 from ..table import add_table_item
+from ...logic.data.core.forecast import forecast_days
 from ..table.retention_visual import retention_bar, retention_visual_on
 from ....qss import set_qss
 
@@ -64,7 +65,6 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
         is_collection = deck_id == "collection"
         is_deleted_tab = deck_id == deleted_tab_did
         results = []
-        time_trend_nonempty = 0
         buttons_row_required_max = 0
 
         for row, data in enumerate(stats_list):
@@ -128,8 +128,6 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
 
             if show_time:
                 time_trend = get_trend_html(time_ms / 3600000, prev_time_ms / 3600000)
-                if time_trend:
-                    time_trend_nonempty += 1
                 time_text = f"{format_hours(time_ms/3600000, use_decimal=use_decimal, hrs_text=hrs_unit, min_text=min_unit)}{time_trend}"
                 it = add_data_item(row, col, time_text, row_color, bold=is_total_row, sort_value=time_ms)
                 it.setData(Qt.ItemDataRole.UserRole, range_type)
@@ -261,19 +259,16 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
 
             if show_forecast:
                 if is_total_row:
-                    m_days = data.get("max_days")
-                    if m_days is not None:
-                        days_left = int(m_days)
-                        f_text = _days_text(days_left)
-                        tooltip = f"Slowest component bottleneck | Rem: {remaining_new}"
-                    elif limit > 0:
-                        remaining_new_val = remaining_new if remaining_new is not None else 0
-                        days_left = int(remaining_new_val / limit)
-                        f_text = _days_text(days_left)
-                        tooltip = f"Theory: {limit} new/day | Rem: {remaining_new_val}"
+                    if is_deleted_tab:
+                        days_left = None
                     else:
+                        days_left = forecast_days(limit, data.get("max_days"), remaining_new)
+                    if days_left is None:
                         f_text = "-"
-                        tooltip = f"New cards disabled | Rem: {remaining_new}"
+                        tooltip = f"New cards off | New cards left: {remaining_new}"
+                    else:
+                        f_text = _days_text(days_left)
+                        tooltip = f"Slowest deck | New cards left: {remaining_new}"
                     add_data_item(row, col, f_text, row_color, tooltip=tooltip, bold=True)
                 else:
                     add_data_item(row, col, "-", row_color, sort_value=0)
@@ -305,38 +300,46 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
 
         table.setVerticalHeaderLabels(["" for _ in range(table.rowCount())])
 
+        # Same values as the time view: every dashboard card gets one, not only the few
+        # that were filled here (Time/Card, per-day and card-state cards stayed N/A).
+        from ...widgets.stats_cards import build_dashboard_stat_values, deck_state_from_context
+
+        totals = {}
+        total_data = next((r for r in results if r["range_type"] == Period.TOTAL), None)
+        if total_data:
+            totals = {
+                "time": total_data["time_ms"] / 3600000,
+                "rev": total_data["reviews"],
+                "pass": total_data["passed"],
+                "pass_young": total_data["pass_young"],
+                "rev_young": total_data["rev_young"],
+                "pass_mat": total_data["pass_mat"],
+                "rev_mat": total_data["rev_mat"],
+                "again": total_data["again"],
+                "active_days": total_data["active_days"],
+                "streak_current": total_data.get("streak_current", 0),
+                "longest_streak": total_data.get("streak_longest", 0),
+            }
+        if not is_deleted_tab:
+            try:
+                from ...widgets.pinned.context_access import get_pinned_context
+
+                ctx = get_pinned_context(
+                    None if is_collection else deck_id, Period.TOTAL,
+                    cfg=dialog.addon_config, fail_if_not_cached=True,
+                )
+                if ctx:
+                    totals.update(deck_state_from_context(ctx))
+            except Exception:
+                log_swallowed()
         dash_stats = {
-            "total_time": "0h",
-            "reviews": "0",
-            "ret_all": "N/A",
-            "ret_young": "N/A",
-            "ret_mat": "N/A",
-            "streak": "0",
-            "active_days": "0",
-            "longest_streak": "N/A",
-            "ret_true": "N/A",
-            "rev_young": "0",
-            "rev_mature": "0",
-            "again": "0",
+            **build_dashboard_stat_values(
+                totals, use_decimal=use_decimal, hrs_unit=hrs_unit, min_unit=min_unit, prec=stats_precision(),
+            ),
             "results": results,
             "did": None if (is_collection or is_deleted_tab) else deck_id,
             "is_collection": is_collection,
         }
-        total_data = next((r for r in results if r["range_type"] == Period.TOTAL), None)
-        if total_data:
-            dash_stats["total_time"] = format_hours(total_data["time_ms"] / 3600000, use_decimal=use_decimal, hrs_text=hrs_unit, min_text=min_unit)
-            dash_stats["reviews"] = fmt_num(total_data["reviews"])
-            dash_stats["ret_all"] = f"{total_data['passed'] / total_data['reviews'] * 100:.{stats_precision()}f}%" if total_data["reviews"] > 0 else "N/A"
-            dash_stats["ret_young"] = f"{total_data['pass_young'] / total_data['rev_young'] * 100:.{stats_precision()}f}%" if total_data["rev_young"] > 0 else "N/A"
-            dash_stats["ret_mat"] = f"{total_data['pass_mat'] / total_data['rev_mat'] * 100:.{stats_precision()}f}%" if total_data["rev_mat"] > 0 else "N/A"
-            dash_stats["active_days"] = fmt_num(total_data["active_days"])
-            dash_stats["streak"] = fmt_num(total_data.get("streak_current", 0))
-            dash_stats["longest_streak"] = fmt_num(total_data.get("streak_longest", 0))
-            true_rev = total_data["rev_young"] + total_data["rev_mat"]
-            dash_stats["ret_true"] = f"{(total_data['pass_young'] + total_data['pass_mat']) / true_rev * 100:.{stats_precision()}f}%" if true_rev > 0 else "N/A"
-            dash_stats["rev_young"] = fmt_num(total_data["rev_young"])
-            dash_stats["rev_mature"] = fmt_num(total_data["rev_mat"])
-            dash_stats["again"] = fmt_num(total_data["again"])
 
         dialog.tab_stats[tab_index] = dash_stats
         getattr(dialog, "_refresh_drawer_bar", lambda: None)()

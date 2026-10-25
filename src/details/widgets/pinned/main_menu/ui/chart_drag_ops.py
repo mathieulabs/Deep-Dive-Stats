@@ -47,7 +47,6 @@ def end_chart_drag(manager, accepted):
     or out-of-box drop leaves the live order changed, so rebuild from the saved order."""
     drag_id = getattr(manager, "_drag_source_id", None)
     manager._drag_source_id = None
-    manager._drag_chart_box_id = None
     manager._set_chart_rows_animate_moves(False)
     if not accepted and drag_id:
         manager.refresh(clear_cache=False)

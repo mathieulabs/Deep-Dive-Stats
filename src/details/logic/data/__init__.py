@@ -9,7 +9,7 @@ from .context_payloads import get_context_history_payload, get_default_history_p
 from .transforms import process_deck_tree, calculate_totals
 from .time_view.loader import load_stats_data
 from .section_fetchers import fetch_section_data
-from .stats import fetch_deck_stats, fetch_all_decks_stats
+from .stats import fetch_deck_stats
 from .time_view.snapshot import fetch_stats_for_range
 from .time_view.static import (
     get_time_view_static_bundle,
@@ -30,7 +30,6 @@ __all__ = [
     "load_stats_data",
     "fetch_section_data",
     "fetch_deck_stats",
-    "fetch_all_decks_stats",
     "fetch_stats_for_range",
     "get_time_view_static_bundle",
     "warm_time_view_static_bundle_async",

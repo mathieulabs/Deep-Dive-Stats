@@ -40,12 +40,12 @@ class DeepDiveContextMenu:
 
         if section_key in avg_sections:
             menu.addSeparator()
-            
+
             show_avg = self.manager._get_dd_widget_setting(section_key, "show_average", True)
             avg_act = QAction("Show Average", menu)
             avg_act.setCheckable(True)
             avg_act.setChecked(show_avg)
-            avg_act.triggered.connect(lambda checked: 
+            avg_act.triggered.connect(lambda checked:
                 self.manager._update_dd_widget_setting(section_key, "show_average", checked))
             menu.addAction(avg_act)
 
@@ -114,7 +114,7 @@ class DeepDiveContextMenu:
                 sync_act = QAction("Sync with other charts", menu)
                 sync_act.setCheckable(True)
                 sync_act.setChecked(is_synced)
-                sync_act.triggered.connect(lambda checked: 
+                sync_act.triggered.connect(lambda checked:
                     self.manager._update_dd_widget_setting("added", "sync_zoom", checked))
                 menu.addAction(sync_act)
 
@@ -161,7 +161,7 @@ class DeepDiveContextMenu:
             bottom_stats_act.triggered.connect(lambda checked:
                 self.manager._toggle_global_bottom_stats(checked))
             menu.addAction(bottom_stats_act)
-            
+
             show_all_stats = self.manager.addon_config.config.get(Config.DEEP_DIVE_SHOW_STATS, True)
             all_stats_act = QAction("Show Stats (All Charts)", menu)
             all_stats_act.setCheckable(True)
@@ -187,7 +187,7 @@ class DeepDiveContextMenu:
             "retrievability": "retrievability",
         }
         stype = _type_map.get(section_key)
-        
+
         if stype:
             ctx_span = int(self.manager.last_history_range)
             label_text = section_key.replace("_", " ").title()

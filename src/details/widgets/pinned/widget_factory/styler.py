@@ -10,7 +10,7 @@ from ...common.surface import dark_surface_rgba
 def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
     """Apply the global pinned widget style (glass/shadow) to the card."""
     cfg = config_manager if config_manager else _addon_config()
-    
+
     if hasattr(card, "widget_id") and card.widget_id:
         pinned_widgets = cfg.config.get(Config.PINNED_WIDGETS, [])
         for w_def in pinned_widgets:
@@ -25,17 +25,17 @@ def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
 
     from ...charts.heatmap import HeatmapWidget
     from ...stats_cards import StatCardWidget
-    
+
     check_targets = [card]
     if inner_widget: check_targets.append(inner_widget)
-    
+
     is_heatmap = any(isinstance(t, HeatmapWidget) or t.findChild(HeatmapWidget) for t in check_targets)
     is_stat = any(isinstance(t, StatCardWidget) or t.findChild(StatCardWidget) for t in check_targets)
     is_text_label = any(str(getattr(t, "wtype", "")) == "text_label" for t in check_targets)
-    
+
     is_facecard = card.objectName() == "StatCard" or is_stat
     # If it's a StatCard, we let its internal style handle some things, but styler handles the container
-    
+
     hover_border = True
     if is_facecard:
         use_glass = cfg.config.get(Config.FACECARDS_SHOW_GLASS, True)
@@ -55,7 +55,7 @@ def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
         intensity = cfg.config.get(Config.PINNED_GLASS_INTENSITY, 20)
         border_alpha_pct = cfg.config.get(Config.PINNED_GLASS_BORDER, 50)
         hover_border = cfg.config.get(Config.PINNED_HOVER_BORDER, True)
-    
+
     tv = _theme_vars(card)
     if not use_glass:
         card.setGraphicsEffect(None)
@@ -63,7 +63,7 @@ def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
         if hasattr(card, "layout") and card.layout():
             card.layout().setContentsMargins(0, 0, 0, 0)
         return
-        
+
     if base_color:
         rgba = QColor(base_color)
         base_rgb = f"{rgba.red()}, {rgba.green()}, {rgba.blue()}"
@@ -91,9 +91,9 @@ def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
                 "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
                 f"stop:0 rgba({base_rgb}, {a_top:.3f}), stop:1 rgba({base_rgb}, {a_bot:.3f}))"
             )
-        
+
         card.setProperty("blur_radius", 0)
-        
+
         # Keep pinned chart borders readable across themes: the theme border color can
         # be very subtle, so boost its contrast and alpha slightly for non-facecards.
         if not is_facecard:
@@ -132,8 +132,7 @@ def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
             bg_style = surface
             border_style = f"1px solid rgba({edge_rgb}, {edge:.3f})"
             border_hover = f"1px solid rgba({edge_rgb}, {min(1.0, edge + 0.10):.3f})"
-        
-        
+
         card.setGraphicsEffect(None)
     else:
         bg_style = tv['bg_card']
@@ -147,7 +146,7 @@ def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
         if intensity > 40:
             text_col = "#ffffff" if tv['is_dark'] else "#000000"
             text_color_override = f"color: {text_col} !important;"
-            
+
     if hasattr(card, "layout") and card.layout():
         if use_glass:
             if is_facecard:

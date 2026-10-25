@@ -12,7 +12,6 @@ def on_profile_switch(cache, cache_cls, *args, **kwargs):
     except Exception:
         profile_name = "Unknown"
 
-
     # collection_did_load and profile_did_open both fire when a profile opens: reset once per collection.
     if getattr(cache, "_reset_col", None) is mw.col and mw.col is not None and not cache.is_initialized:
         return
@@ -49,8 +48,6 @@ def on_profile_switch(cache, cache_cls, *args, **kwargs):
     cache._init_deferred_hook_installed = False
     cache._deferred_warmup_priority = []
     cache._hier_cache_data = None
-    cache._hier_cache_count = 0
-    cache._hier_cache_time = 0.0
     cache._hier_cache_invalidated = False
     cache._hier_prewarm_scheduled = False
 
@@ -102,7 +99,6 @@ def init_async(cache_cls, callback=None):
     with instance._lock:
         if instance._is_initializing:
             return
-
 
     if instance.is_initialized:
         callbacks = instance._pop_init_callbacks()
@@ -180,7 +176,7 @@ def init_async(cache_cls, callback=None):
 
             if not has_fsrs:
                 mw.taskman.run_in_background(
-                    lambda: cache_cls._populate_fsrs_cache(instance.cache),
+                    lambda: cache_cls._populate_fsrs_cache(),
                     on_done=lambda f: instance._apply_fsrs_cache(f),
                 )
             else:

@@ -126,8 +126,6 @@ def rebuild_overlay(manager, deck_id):
         if getattr(manager, "_review_return_fast_path", False):
             manager._last_review_return_rebuild_sig = (deck_id, mw.state)
             manager._last_review_return_rebuild_ts = _time.perf_counter()
-        if manager._review_return_t0 is not None:
-            pass
 
 
 

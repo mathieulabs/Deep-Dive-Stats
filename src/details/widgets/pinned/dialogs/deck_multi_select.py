@@ -74,7 +74,7 @@ class DeckMultiSelectDialog(QDialog):
 
         self.scroll = QScrollArea(self)
         self.scroll.setWidgetResizable(True)
-        set_qss(self.scroll, 
+        set_qss(self.scroll,
             """
             QScrollBar:vertical { width: 6px; margin: 0px; }
             QScrollBar:horizontal { height: 6px; margin: 0px; }

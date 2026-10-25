@@ -121,7 +121,7 @@ def refresh_dashboard_data(self):
     ctx_did = self.last_row_data.get("did") if self.last_row_data else None
     is_deleted = self.last_row_data.get("is_deleted", False) if self.last_row_data else False
     _cache_did = -1 if is_deleted else (None if (self.last_row_data and self.last_row_data.get("is_total_row")) else ctx_did)
-    
+
     from ... import ADAPTIVE_CHART_BINNING
     adaptive_binning = self.addon_config.config.get(ADAPTIVE_CHART_BINNING, True)
 
@@ -202,13 +202,6 @@ def refresh_dashboard_data(self):
             span_eff = int(self._get_dd_widget_setting(section_key, "time_span", self.last_history_range))
         custom_days_eff = int(self._get_dd_widget_setting(section_key, "custom_days", 7) or 7)
         return span_eff, custom_days_eff
-
-    # Visual-order stagger for animations: section_wrappers keys are in insertion order, i.e. chart visual order (sorted by DEEP_DIVE_CHART_ORDER at build time).
-    _dd_stagger_idx = 0
-    for _sk, _sw in self.section_wrappers.items():
-        if _sw is not None:
-            _sw._anim_stagger_ms = min(_dd_stagger_idx * 25, 200)
-            _dd_stagger_idx += 1
 
     _real_act = any(h.get("reviews", 0) > 0 for h in (self.last_history_data or []))
     has_act = _vis("activity", _real_act)
@@ -301,7 +294,7 @@ def refresh_dashboard_data(self):
             )
             self.stacked_chart._last_timespan_token = span_token_b
             self.stacked_chart._last_deck_id = self.last_deck_identifier
-        
+
     has_ret = _vis("retention", _real_act) # Retention usually exists if activity exists
     self._set_section_visible("retention", has_ret)
     if has_ret and hasattr(self, 'retention_chart') and self.retention_chart:
@@ -355,13 +348,13 @@ def refresh_dashboard_data(self):
         added_data_desc = None
         if hasattr(self, "last_history_context") and self.last_history_context:
             added_data_desc = self.last_history_context.get("added")
-        
+
         if added_data_desc is None and _cached_ctx:
             added_data_desc = _cached_ctx.get("added")
-        
+
         if added_data_desc is None:
             added_data_desc = []
-        
+
         has_added = _vis("added", (any(d.get("count", 0) > 0 for d in added_data_desc) if added_data_desc else False))
         self._set_section_visible("added", has_added)
         if has_added:
@@ -406,7 +399,7 @@ def refresh_dashboard_data(self):
             dist_data = cached_dist
         else:
             dist_data = {}
-        
+
         has_dist = _vis("distribution", bool(dist_data and any(any(val > 0 for val in counts) for counts in dist_data.values())))
         self._set_section_visible("distribution", has_dist)
         if has_dist:
@@ -421,7 +414,7 @@ def refresh_dashboard_data(self):
                 lambda chart=dist_chart, data=dist_data: chart.update_data(data),
                 animate_candidate=dist_should_animate,
             )
-        
+
     hm_chart = find_chart("heatmap")
     if hm_chart and hasattr(hm_chart, 'update_data'):
         ctx = getattr(self, "last_history_context", {}) or {}
@@ -488,7 +481,7 @@ def refresh_dashboard_data(self):
                 is_deleted=is_deleted,
             ) or {},
         )
-        
+
         # Deleted cards have no live state: the pie shows the state of their last review.
         has_counts = bool(
             counts_data
@@ -511,7 +504,7 @@ def refresh_dashboard_data(self):
 
     # FSRS charts: fall back to SQL via _get_or_fetch_fsrs_data when the context stability is empty
     fsrs_data = self._get_or_fetch_fsrs_data(self.last_row_data or {})
-    
+
     has_stab = _vis("stability", bool(fsrs_data.get("stability")))
     self._set_section_visible("stability", has_stab)
     stab_chart = find_chart("stabilitychart")
@@ -547,7 +540,7 @@ def refresh_dashboard_data(self):
         )
         stab_chart._last_timespan_token = span_token_s
         stab_chart._last_deck_id = self.last_deck_identifier
-        
+
     has_diff = _vis("difficulty", bool(fsrs_data.get("difficulty")))
     self._set_section_visible("difficulty", has_diff)
     diff_chart = find_chart("difficultychart")
@@ -564,7 +557,7 @@ def refresh_dashboard_data(self):
             lambda chart=diff_chart, data=difficulty_payload, adaptive=adaptive_binning: chart.update_data(data, adaptive_binning=adaptive),
             animate_candidate=difficulty_should_animate,
         )
-        
+
     has_retr = _vis("retrievability", bool(fsrs_data.get("retrievability")))
     self._set_section_visible("retrievability", has_retr)
     ret_chart = find_chart("retrievabilitychart")
@@ -581,7 +574,7 @@ def refresh_dashboard_data(self):
             lambda chart=ret_chart, data=retrievability_payload, adaptive=adaptive_binning: chart.update_data(data, adaptive_binning=adaptive),
             animate_candidate=retrievability_should_animate,
         )
-        
+
     # Hourly breakdown is aggregated from the cached history bins (same source as the activity and retention charts, so always in sync).
     hourly_data = {h: {"total": 0, "correct": 0} for h in range(24)}
     history_source = self.last_history_data or []
@@ -594,13 +587,13 @@ def refresh_dashboard_data(self):
                 if h in b_hourly:
                     hourly_data[h]["total"] += b_hourly[h].get("total", 0)
                     hourly_data[h]["correct"] += b_hourly[h].get("correct", 0)
-    
+
     # Fallback: if bins have no hourly sub-data, use the TOTAL-range cached aggregate
     if not has_bin_hourly and _cached_ctx:
         cached_hourly = _cached_ctx.get("hourly")
         if cached_hourly:
             hourly_data = cached_hourly
-    
+
     has_hourly = _vis("hourly", bool(any(h_data.get("total", 0) > 0 for h_data in hourly_data.values())))
     self._set_section_visible("hourly", has_hourly)
     hourly_chart = find_chart("hourlybreakdown")
@@ -616,7 +609,7 @@ def refresh_dashboard_data(self):
             lambda chart=hourly_chart, data=hourly_data: chart.update_data(data),
             animate_candidate=hourly_should_animate,
         )
-        
+
     f_idx = self._get_dd_widget_setting("future_due", "time_span_idx")
     from ....widgets.common import resolve_future_due_ranges
     f_span = get_future_due_range(
@@ -644,7 +637,7 @@ def refresh_dashboard_data(self):
             self.addon_config, self.last_deck_identifier, is_deleted, f_span,
             include_backlog=show_backlog_cached
         )
-        
+
         has_future = bool(
             future_data
             and (
@@ -652,7 +645,7 @@ def refresh_dashboard_data(self):
                 or (show_backlog_cached and future_data.get("backlog", 0) > 0)
             )
         )
-        
+
         # Also check for scheduled or overdue (backlog) cards. Visible if the deck has
         # any due cards, whether or not the backlog checkbox is on.
         if not has_future:
@@ -705,10 +698,10 @@ def refresh_dashboard_data(self):
             )
 
     _refresh_future_due_now()
-        
+
     cur_span_i, cur_days_i = _effective_span_and_days("review_intervals")
     int_data = ReviewIntervalsDataProvider.fetch_data(self.addon_config, ctx_did, is_deleted, int(cur_span_i))
-    
+
     if show_empty and not int_data:
         int_data = {"total": 0, "intervals": [], "counts": []}
     has_int = _vis("review_intervals", bool(int_data and int_data.get("total", 0) > 0))
@@ -765,9 +758,6 @@ def refresh_dashboard_data(self):
             apply_chart_update()
 
     self._refresh_bottom_stats()
-
-    if hasattr(self, 'persisted_zoom_range') and self.persisted_zoom_range and self.activity_chart:
-        self.activity_chart.set_zoom_range(*self.persisted_zoom_range)
 
     if hasattr(self, '_show_and_animate'):
         self._show_and_animate()

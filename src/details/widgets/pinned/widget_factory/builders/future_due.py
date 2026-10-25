@@ -21,7 +21,6 @@ def _build_future_due(widget_def, deck_id, cache=None, parent=None, cfg=None):
     from .....logic.metrics import FutureDueDataProvider
     from ....charts.future_due import FutureDueChart
 
-
     config = cfg or _addon_config()
     span = widget_def.get("time_span", Period.YEAR)
     show_backlog = widget_def.get("show_backlog", False)
@@ -30,7 +29,7 @@ def _build_future_due(widget_def, deck_id, cache=None, parent=None, cfg=None):
     data = FutureDueDataProvider.fetch_data(config, deck_id, False, span, include_backlog=show_backlog)
 
     adaptive_binning = config.config.get(ADAPTIVE_CHART_BINNING, True)
-    
+
     chart = FutureDueChart(data, parent=parent, adaptive_binning=adaptive_binning, show_backlog=show_backlog)
     chart.binning_override = widget_def.get("binning_override", None)
     chart.set_cumulative_mode(widget_def.get("show_cumulative", True))
@@ -125,16 +124,10 @@ def _update_future_due(chart, widget_def, deck_id, cache=None, fail_if_not_cache
         raw_dist = cached_data.get("distribution", {})
         from aqt import mw
         today = int(mw.col.sched.today or 0)
-        
 
         filtered = {}
         backlog_count = 0
-        excluded_invalid_rel_keys = 0
-        excluded_invalid_rel_cards = 0
-        extreme_rel_samples = []
-        max_abs_rel = 0
         for k, v in raw_dist.items():
-            orig_k = k
             try:
                 k = int(k)
             except Exception:
@@ -142,24 +135,15 @@ def _update_future_due(chart, widget_def, deck_id, cache=None, fail_if_not_cache
             # Cache stores absolute Anki day offsets, convert to relative days.
             # Skip epoch timestamps (queue=1 learning cards, excluded to match Anki native forecast).
             if k >= 1000000000:
-                excluded_invalid_rel_keys += 1
-                excluded_invalid_rel_cards += int(v or 0)
                 continue
             rel_day = k - today
             # For day-based dues, the minimum plausible relative day is -today.
             # Values far below this are invalid artifacts (e.g. -100000).
             if rel_day < -today:
-                excluded_invalid_rel_keys += 1
-                excluded_invalid_rel_cards += int(v or 0)
                 continue
-            abs_rel = abs(int(rel_day))
-            if abs_rel > max_abs_rel:
-                max_abs_rel = abs_rel
-            if abs_rel > 5000 and len(extreme_rel_samples) < 8:
-                extreme_rel_samples.append((int(orig_k), int(rel_day), int(v or 0)))
-            
+
             is_in_span = (span_max_days is None) or (rel_day <= span_max_days)
-            
+
             if rel_day >= 0:
                 if is_in_span:
                     filtered[rel_day] = filtered.get(rel_day, 0) + v
@@ -167,7 +151,7 @@ def _update_future_due(chart, widget_def, deck_id, cache=None, fail_if_not_cache
                 # Backlog is always included regardless of span limit (it's the past)
                 filtered[rel_day] = filtered.get(rel_day, 0) + v
                 backlog_count += v
-                
+
         if filtered:
             data = build_future_due_payload(
                 filtered,
@@ -175,7 +159,7 @@ def _update_future_due(chart, widget_def, deck_id, cache=None, fail_if_not_cache
                 addon_config=config,
                 backlog_count=backlog_count,
             )
-    
+
     # Fall back to the provider fetch on a cache miss or unresolved span. This
     # widget must stay live when navigating decks even if the Deep Dive has not
     # primed the cache key yet.
@@ -191,13 +175,13 @@ def _update_future_due(chart, widget_def, deck_id, cache=None, fail_if_not_cache
         if cfg is None:
              cfg = _addon_config()
         adaptive_binning = cfg.config.get(ADAPTIVE_CHART_BINNING, True)
-        
+
         chart.show_backlog = show_backlog
         chart.binning_override = widget_def.get("binning_override", None)
         chart.set_cumulative_mode(widget_def.get("show_cumulative", True))
         chart.update_data(data, adaptive_binning=adaptive_binning)
-        
+
         refresh_parent_chart_header_stats(chart)
-                
+
         return True
     return False

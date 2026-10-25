@@ -21,6 +21,7 @@ from aqt.qt import (
     QCursor,
     QEasingCurve,
     QEvent,
+    QGraphicsOpacityEffect,
     QMouseEvent,
     QPainter,
     QPixmap,
@@ -29,6 +30,7 @@ from aqt.qt import (
     QRect,
     QRectF,
     QRegion,
+    QScrollBar,
     Qt,
     QTimer,
     QVariantAnimation,
@@ -48,7 +50,6 @@ SWITCH_AT = 0.7  # share of a running zoom after which a page switch may start
 EDGE_BAND = 0.12  # share of the view near each edge where bars count less for the axis
 LABEL_OUT = 0.3  # the old labels are gone at this progress; the new ones start at LABEL_IN_AT (short overlap, no blank moment)
 LABEL_IN_AT = 0.2
-LABEL_FADE = 0.5  # share of the zoom used to fade the old labels out / the new in
 MAX_RATIO = 16.0
 _EASE = QEasingCurve(QEasingCurve.Type.OutQuad)
 _EASE_IN = QEasingCurve(QEasingCurve.Type.InOutQuad)
@@ -387,11 +388,29 @@ def _restore_paint(widget):
         widget.paintEvent = saved
 
 
-def _release_overlay(state, hidden):
+def _mute(widget):
+    effect = QGraphicsOpacityEffect(widget)
+    effect.setOpacity(0.0)
+    widget.setGraphicsEffect(effect)
+    widget._zc_muted = effect
+
+
+def _unmute(widget):
+    try:
+        effect = widget.__dict__.pop("_zc_muted", None)
+        if effect is not None and widget.graphicsEffect() is effect:
+            widget.setGraphicsEffect(None)
+    except RuntimeError:
+        pass
+
+
+def _release_overlay(state, hidden, muted=()):
     """What an overlay leaves behind if it is destroyed without stop() (host closed, tab gone)."""
     if state.get("memo"):
         state["memo"] = False
         palette_memo(False)
+    for b in muted:
+        _unmute(b)
     for w in hidden:
         try:
             if getattr(w, "_zoom_camera", None) is None:
@@ -422,6 +441,13 @@ class _Overlay(QWidget):
         self._memo_state = {"memo": False}
         self._host = host
         self._hidden = [w for w in hidden if w is not None]
+        # The chart's scrollbar is in the pictures too: drawn under them as well, its
+        # see-through handle would show twice as bright until the end of the animation.
+        # (A paintEvent set on a plain Qt widget is not called, so it is made invisible.)
+        try:
+            self._muted = [b for b in host.findChildren(QScrollBar) if b.isVisible() and b.graphicsEffect() in (None, b.__dict__.get("_zc_muted"))]
+        except RuntimeError:
+            self._muted = []
         self._t = 0.0
         self._done_callbacks = []
         self._progress_callbacks = []
@@ -433,8 +459,8 @@ class _Overlay(QWidget):
         self._anim.setDuration(int(duration))
         self._anim.valueChanged.connect(self._on_value)
         self._anim.finished.connect(self.stop)
-        _st, _hid = self._memo_state, list(self._hidden)
-        self.destroyed.connect(lambda *_a, _st=_st, _hid=_hid: _release_overlay(_st, _hid))
+        _st, _hid, _mut = self._memo_state, list(self._hidden), list(self._muted)
+        self.destroyed.connect(lambda *_a, _st=_st, _hid=_hid, _mut=_mut: _release_overlay(_st, _hid, _mut))
 
     def on_done(self, callback):
         self._done_callbacks.append(callback)
@@ -451,6 +477,8 @@ class _Overlay(QWidget):
             w._zoom_camera = self
         for w in self._hidden:
             _suppress_paint(w)
+        for b in self._muted:
+            _mute(b)
         if not self._memo_state["memo"]:
             self._memo_state["memo"] = True
             palette_memo(True)
@@ -480,6 +508,17 @@ class _Overlay(QWidget):
             self._anim.stop()
         except RuntimeError:
             pass
+        try:
+            if self._t >= 0.9999 and self.isVisible() and not self._in_paint:
+                # The last frame (progress 1) is drawn on screen before the overlay goes: it is
+                # the chart itself. The clock ends between two ticks, so without this the
+                # picture shown last is the previous tick's, up to a few pixels off, and the
+                # chart "snaps" into place. Drawn while the chart under it is still not
+                # painted: with both, every see-through part (the retention fill, the bars,
+                # the scrollbar) is drawn twice and flashes brighter for one frame.
+                self.repaint()
+        except RuntimeError:
+            pass
         if self._memo_state["memo"]:
             self._memo_state["memo"] = False
             palette_memo(False)
@@ -492,15 +531,9 @@ class _Overlay(QWidget):
                     w.update()
             except RuntimeError:
                 pass
-        try:
-            if self._t >= 0.9999 and self.isVisible() and not self._in_paint:
-                # The last frame (progress 1) is drawn on screen before the overlay goes: it is
-                # the chart itself. The clock ends between two ticks, so without this the
-                # picture shown last is the previous tick's, up to a few pixels off, and the
-                # chart "snaps" into place.
-                self.repaint()
-        except RuntimeError:
-            pass
+        for b in self._muted:
+            _unmute(b)
+        self._muted = []
         try:
             self.hide()
             self.deleteLater()
@@ -1030,8 +1063,9 @@ class _VectorZoom(_Overlay):
     HOLD_W = 0.35  # how far back (in animation progress) the axis maximum is averaged
     HOLD_STEP = 0.05
 
-    def _layers(self, v0, v1, e):
-        """[(first row, bin size, bins, share, extra)] drawn for the window [v0, v1)."""
+    def _split_state(self, v0, v1, e):
+        """(w, k_glide): how far the bars have split into the fine bins, and the bin size
+        their heights are scaled to."""
         w = self._fine_weight(v1 - v0)
         if self._k_start > self._k_end:
             # Zooming in: the view shrinks fastest at the start, but the bars should not all
@@ -1042,6 +1076,28 @@ class _VectorZoom(_Overlay):
         # every bar is drawn as (its sum / its bin size) x a bin size gliding from the start
         # one to the end one, so changing the bin size does not change the height scale.
         k_glide = math.exp(math.log(self._k_start) + (math.log(self._k_end) - math.log(self._k_start)) * e)
+        return w, k_glide
+
+    def _average(self, v0, v1, e):
+        """Average line value for the window [v0, v1).
+
+        Taken on the real bins at the coarse and the fine size, mixed by how far the bars
+        have split. The bars drawn while splitting are a blend of both, and averaging them
+        over active days only would jump at the end: a quiet day keeps a bit of its parent
+        bar's value (so it counts as active) until the very last frame."""
+        w, k_glide = self._split_state(v0, v1, e)
+        avg = 0.0
+        for k, share in ((self._kf, w), (self._kc, 1.0 - w)):
+            if share <= 0.0:
+                continue
+            s, rows = self._bins(v0, v1, k)
+            rows = [_scale_row(self._chart, r, k_glide / k) for r in rows]
+            avg += share * self._targets(s, k, rows, v0, v1, e)[1]
+        return avg
+
+    def _layers(self, v0, v1, e):
+        """[(first row, bin size, bins, share, extra)] drawn for the window [v0, v1)."""
+        w, k_glide = self._split_state(v0, v1, e)
         layers = []
         if w >= 1.0 or w <= 0.0:
             k = self._kf if w >= 1.0 else self._kc
@@ -1097,7 +1153,8 @@ class _VectorZoom(_Overlay):
             self._frame = None
             return
         layers = self._layers(v0, v1, e)
-        log_mx, avg = self._targets_of(layers, v0, v1, e)
+        log_mx = self._targets_of(layers, v0, v1, e)[0]
+        avg = self._average(v0, v1, e)
         # The axis stays at least on a steady glide from its start value to its end value:
         # a tall bar leaving the view quickly does not rescale everything at once, and on a
         # zoom-out the axis grows ahead of the tall bars coming in.
@@ -1140,6 +1197,16 @@ class _VectorZoom(_Overlay):
         self._max = mx
         self._glide = glide
         self._avg = avg
+        if len(layers) > 1 and getattr(self._chart, "cumulative_visible", False):
+            # Both layers draw one and the same running total line, mixed from the coarse
+            # and the fine one. Each layer drawing its own would show two lines a little
+            # apart (a coarse bin's total sits at its slot, not at its last day) that fade
+            # into each other, so the line seemed to jump into place at the end.
+            blend = []
+            for s, k, rows, share, _extra in layers:
+                offset, view = self._view_of(s, k, v0, v1)
+                blend.append((offset, view, self._true_cumulative(s, k, len(rows)), share))
+            layers = [(s, k, rows, share, dict(extra or {}, cum_blend=blend)) for s, k, rows, share, extra in layers]
         rendered = [(self._render(s, k, rows, v0, v1, extra), share) for s, k, rows, share, extra in layers]
         if len(rendered) == 1:
             self._frame = rendered[0][0]

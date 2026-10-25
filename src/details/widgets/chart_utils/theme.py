@@ -307,9 +307,6 @@ class _ThemeManager:
             self._details_mode = mode
             self.invalidate_cache()
 
-    def is_details_force_dark(self) -> bool:
-        return self._details_mode == "dark"
-
     def set_pinned_use_active_theme(self, enabled: bool):
         enabled = bool(enabled)
         if self._pinned_use_active_theme != enabled:
@@ -572,8 +569,8 @@ class _ThemeManager:
         for ref in self._listeners:
             if isinstance(ref, weakref.WeakMethod):
                 cb = ref()
-                if cb is None:
-                    continue
+                if cb is None or _qt_deleted(getattr(cb, "__self__", None)):
+                    continue  # widget closed: drop it rather than call it on every change
                 kept.append(ref)
             else:
                 cb = ref
@@ -632,6 +629,18 @@ def is_details_context(widget_or_context=None):
     """Return True if the widget is in the Details (non-pinned) theme context."""
     ctx, _ = _THEME_MANAGER._resolve(widget_or_context)
     return ctx != ThemeContext.PINNED
+
+
+def _qt_deleted(obj):
+    """True when obj is a Qt object whose C++ side was already deleted."""
+    if obj is None:
+        return False
+    try:
+        from aqt.qt import sip
+
+        return isinstance(obj, QObject) and sip.isdeleted(obj)
+    except Exception:
+        return False
 
 
 def subscribe_theme_changed(callback):

@@ -156,22 +156,39 @@ class ReviewDotsChart(QWidget):
         self.update()
 
     def set_events(self, events, t0_ms, t1_ms):
-        self._events = list(events or [])
         t0, t1 = int(t0_ms), max(int(t1_ms), int(t0_ms) + 1)
         if (t0, t1) != (self._t0, self._t1):
-            widened = (
-                bool(self._events_shown) and self.isVisible() and animations_enabled("all")
-                and t0 <= self._v0 and t1 >= self._v1 and t1 - t0 > self._v1 - self._v0
-            )
+            from ...chart_utils.zoom_camera import camera_zoom, finish
+
+            can_animate = bool(self._events_shown) and self.isVisible() and animations_enabled("all")
+            widened = can_animate and t0 <= self._v0 and t1 >= self._v1 and t1 - t0 > self._v1 - self._v0
             if widened:
                 # Zooming out: keep what is on screen and glide to the wider window.
+                # A zoom-in picture still sliding would hide the glide, so end it first.
+                finish(self)
+                self._events = list(events or [])
                 self._t0, self._t1 = t0, t1
                 self._animate_view(t0, t1 - t0)
                 self._events_shown = bool(events)
                 self.update()
                 return
+            if can_animate:
+                # Zooming in or moving (the other charts are already at their closest zoom):
+                # the camera slides from the old picture to the new one, as for the bars.
+                with camera_zoom(self):
+                    self._replace_events(events, t0, t1)
+                return
             self._stop_view_anim()
             self._v0, self._v1 = t0, t1
+        self._events = list(events or [])
+        self._t0, self._t1 = t0, t1
+        self._events_shown = True
+        self.update()
+
+    def _replace_events(self, events, t0, t1):
+        self._stop_view_anim()
+        self._events = list(events or [])
+        self._v0, self._v1 = t0, t1
         self._t0, self._t1 = t0, t1
         self._events_shown = True
         self.update()
@@ -277,9 +294,6 @@ class ReviewDotsChart(QWidget):
             p.setBrush(color)
             p.drawEllipse(QPointF(x, y), r, r)
             self._points.append((x, y, ev))
-        if not self._events:
-            p.setPen(text)
-            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No reviews in this window")
         press = getattr(self, "_press_pos", None)
         drag_x = getattr(self, "_drag_x", None)
         if press is not None and drag_x is not None:

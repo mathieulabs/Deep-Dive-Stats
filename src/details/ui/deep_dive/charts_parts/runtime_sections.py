@@ -76,18 +76,12 @@ def build_future_due_section(manager, deck_identifier, period_range, row_data, t
     fd_ranges, _fd_short, fd_labels = resolve_future_due_ranges(
         manager._get_dd_widget_setting("future_due", "radio_ranges", None)
     )
-    default_idx, active_range, choice_source = resolve_future_due_choice(
+    default_idx, active_range, _source = resolve_future_due_choice(
         manager._get_dd_widget_setting("future_due", "time_span_idx", None),
         fallback_range=period_range,
         default_idx=0,
         ranges=fd_ranges,
     )
-    if choice_source == "saved":
-        pass
-    elif choice_source == "fallback_range":
-        pass
-    else:
-        pass
 
     manager._update_dd_widget_setting("future_due", "time_span_idx", default_idx, refresh=False)
 
@@ -129,8 +123,6 @@ def build_future_due_section(manager, deck_identifier, period_range, row_data, t
                 if not manager._show_empty_charts():
                     return None, None
                 data = {"total": 0, "days": [], "counts": [], "backlog": 0}
-        else:
-            pass
 
     adaptive = manager.dialog.addon_config.config.get(ADAPTIVE_CHART_BINNING, True)
     binning_override = manager._get_dd_widget_setting("future_due", "binning_override", None)
@@ -141,9 +133,6 @@ def build_future_due_section(manager, deck_identifier, period_range, row_data, t
         show_backlog=show_backlog,
     )
     chart.binning_override = binning_override
-    chart.binning_toggled_callback = (
-        lambda val: manager._update_dd_widget_setting("future_due", "binning_override", val, refresh=False)
-    )
     apply_chart_display_config(
         chart,
         opacity=manager._get_dd_widget_setting("future_due", "chart_opacity", 100),
@@ -250,9 +239,6 @@ def build_review_intervals_section(
         filter_mode=initial_mode,
     )
     chart.binning_override = binning_override
-    chart.binning_toggled_callback = (
-        lambda val: manager._update_dd_widget_setting("review_intervals", "binning_override", val, refresh=False)
-    )
     apply_chart_display_config(
         chart,
         opacity=manager._get_dd_widget_setting("review_intervals", "chart_opacity", 100),

@@ -25,9 +25,9 @@ class Period:
     THREE_MONTHS = 8
     DAYS_IN = {WEEK: 7, TWO_WEEKS: 14, MONTH: 30, THREE_MONTHS: 90, YEAR: 365, CUSTOM: 1}
     LABEL = {
-        WEEK: 'Past Week', 
-        TWO_WEEKS: 'Past 2 Weeks', 
-        MONTH: 'Past Month', 
+        WEEK: 'Past Week',
+        TWO_WEEKS: 'Past 2 Weeks',
+        MONTH: 'Past Month',
         THREE_MONTHS: 'Past 3 Months',
         YEAR: 'Past Year',
         LAST_YEAR: 'Last Year',

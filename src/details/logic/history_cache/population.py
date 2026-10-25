@@ -213,7 +213,7 @@ class PopulationMixin:
                     log_debug(f"Heatmap future reprojection failed: {e}", tag="CACHE")
 
     @staticmethod
-    def _populate_fsrs_cache(current_cache, dirty_dids=None):
+    def _populate_fsrs_cache(dirty_dids=None):
         """Deferred worker: decode FSRS memory states for all cards.
 
         dirty_dids is ignored on purpose. Fetching only dirty decks would give the
@@ -226,7 +226,7 @@ class PopulationMixin:
         try:
             from anki.cards_pb2 import CardData as _CD; _has_pb = True
         except ImportError: _has_pb = False
-        
+
         try:
             # Always scan all cards, partial data would corrupt parent-deck aggregates
             where_f = "WHERE queue IN (1,2,3) AND data IS NOT NULL AND data != ''"
@@ -246,6 +246,8 @@ class PopulationMixin:
             elif isinstance(data, str):
                 try:
                     jd = _json.loads(data)
+                    if "cd" in jd and not ("s" in jd and "d" in jd):
+                        jd = _json.loads(jd["cd"]) if isinstance(jd["cd"], str) else jd["cd"]
                     if "s" in jd and "d" in jd: s = float(jd["s"]); d_val = float(jd["d"]); decay = jd.get("decay")
                     else: continue
                 except Exception: continue
@@ -254,7 +256,7 @@ class PopulationMixin:
             s_b = min(int(s), 100)
             d_b = int(((d_val - 1) / 9.0) * 100) if d_val > 0 else 0
             d_b = max(0, min(100, d_b))
-            
+
             bk = leaf_fsrs.setdefault(did_, {"stability": {}, "difficulty": {}, "retrievability": {}})
             bk["stability"][s_b] = bk["stability"].get(s_b, 0) + 1
             bk["difficulty"][d_b] = bk["difficulty"].get(d_b, 0) + 1
@@ -273,7 +275,7 @@ class PopulationMixin:
         """
         try:
             leaf_fsrs, dirty_dids = future.result()
-            
+
             # Always use full rebuild from fresh leaf data via hier_map
             # This is O(decks * ranges) but FSRS data is tiny (100-bucket histograms)
             for tdid in list(self.cache.keys()):
@@ -292,7 +294,7 @@ class PopulationMixin:
                     for r_k in self.cache[tdid]:
                         if isinstance(self.cache[tdid].get(r_k), dict):
                             self.cache[tdid][r_k]["fsrs"] = fsrs_v
-                        
+
             self._save_to_disk()
         except Exception as e:
             self._log(f"_apply_fsrs_cache failed: {e}")

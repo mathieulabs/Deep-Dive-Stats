@@ -199,7 +199,7 @@ def apply_theme_card_style(card, is_selected, palette):
     border_width = "2px" if is_selected else "1px"
     text_color = palette.get("text_primary", "#ffffff")
 
-    set_qss(card, 
+    set_qss(card,
         f"""
         QFrame#theme_preset_card {{
             background: {bg};
@@ -235,7 +235,7 @@ def apply_base_mode_button_styles(buttons, palette):
     acc_bg = f"rgba({acc.red()}, {acc.green()}, {acc.blue()}, 40)"
     for _mode, btn in buttons.items():
         if btn.isChecked():
-            set_qss(btn, 
+            set_qss(btn,
                 f"""
                 QPushButton {{
                     background: {acc_bg};
@@ -248,7 +248,7 @@ def apply_base_mode_button_styles(buttons, palette):
                 """
             )
         else:
-            set_qss(btn, 
+            set_qss(btn,
                 f"""
                 QPushButton {{
                     background: {bg_surface};
@@ -487,7 +487,7 @@ def rebuild_theme_cards_grid(*, grid, card_container, current_preset, card_defs,
 
 def set_theme_color_button_hex(btn, hex_label, hex_val):
     if btn:
-        set_qss(btn, 
+        set_qss(btn,
             f"background-color: {hex_val}; border: 1px solid rgba(128,128,128,0.45); border-radius: 4px;"
         )
     if hex_label:

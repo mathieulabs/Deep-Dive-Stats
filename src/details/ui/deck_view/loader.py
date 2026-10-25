@@ -75,7 +75,6 @@ def restore_deck_view_from_cache(
                 if deck_id in dialog.deck_view_data:
                     populate_deck_tab_fn(dialog, idx, do_resize=True, from_tab_change=True)
             refresh_deck_tab_header_styles_fn(dialog)
-            dialog._initial_deck_selected = True
             dialog._tab_widget_view_kind = "deck"
             dialog.on_tab_changed(tab_widget.currentIndex())
             return True
@@ -144,7 +143,6 @@ def restore_deck_view_from_cache(
             if deck_id in dialog.deck_view_data:
                 populate_deck_tab_fn(dialog, idx, do_resize=True, from_tab_change=True)
         refresh_deck_tab_header_styles_fn(dialog)
-        dialog._initial_deck_selected = True
         dialog._tab_widget_view_kind = "deck"
         dialog.on_tab_changed(tab_widget.currentIndex())
         return True
@@ -183,16 +181,16 @@ def load_deck_view(
         if prefer_cached and cache_has_snapshot and cache_has_data:
             if restore_deck_view_from_cache_fn(dialog, cache):
                 return
-        
+
         dialog._tab_widget_view_kind = "deck"
         dialog.tab_widget.clear()
         dialog.tab_stats = {}
         dialog.deck_view_data = {}
         dialog._deck_tabs_populated = set()
-        
+
         from ...logic.tabs import get_tabs_config
         tabs_config = [t for t in get_tabs_config(dialog.addon_config) if t.get("enabled", True)]
-        
+
         from ...logic.history_cache import GlobalHistoryCache
         ghc = GlobalHistoryCache()
         if ghc.is_initialized:
@@ -200,8 +198,7 @@ def load_deck_view(
             all_dids = fetch_dids_with_data()
         else:
             all_dids = []
-        
-        
+
         deck_tree = build_deck_tree_fn(dialog, all_dids, deleted_tab_did=deleted_tab_did)
         dialog._deck_view_cache = {
             "complete": False,
@@ -220,14 +217,14 @@ def load_deck_view(
         tab_bar.setUpdatesEnabled(False)
         visible_indices = []
 
-        for skeleton_count, deck_info in enumerate(deck_tree):
+        for deck_info in deck_tree:
             if dialog.load_generation != gen: return
-            
+
             did = deck_info["did"]
             tab_name = deck_info["name"]
             depth = deck_info["depth"]
             is_folder = deck_info["is_folder"]
-            
+
             tab = QWidget(tab_widget)
             tab_layout = QVBoxLayout(tab)
             tab_layout.setContentsMargins(0, 0, 0, 0)
@@ -235,7 +232,7 @@ def load_deck_view(
             tab.setProperty("full_name", deck_info.get("full_name", tab_name))
             tab.setProperty("is_folder", is_folder)
             tab.setProperty("depth", depth)
-            
+
             tab_index = tab_widget.count()
             tab_widget.addTab(tab, tab_name)
             is_visible = is_deck_tab_visible_fn(dialog, deck_info.get("full_name", tab_name), tab_name, did)
@@ -243,7 +240,7 @@ def load_deck_view(
                 tab_widget.setTabVisible(tab_index, False)
             else:
                 visible_indices.append(tab_index)
-            
+
             # Keep native tab text (so it follows the same centered style as View by Time),
             # and only inject folder affordances on tab sides.
             if is_folder:
@@ -252,14 +249,12 @@ def load_deck_view(
         tab_widget.setUpdatesEnabled(prev_updates_enabled)
         tab_bar.setUpdatesEnabled(prev_bar_updates_enabled)
 
-
-
         # Auto-select the target deck before starting the streaming queue so the
         # first fetch can prioritize what the user is actually looking at.
         target_did = getattr(dialog, 'target_deck_id', None)
         target_name = None
         selected = False
-        
+
         if target_did:
             all_decks = mw.col.decks.all_names_and_ids()
             try:
@@ -314,7 +309,7 @@ def load_deck_view(
 
         show_trends = dialog.trend_toggle.isChecked() if hasattr(dialog, 'trend_toggle') else False
         dialog.deck_view_data = {}
-        
+
         start_deck_streaming(
             dialog=dialog,
             gen=gen,
@@ -325,11 +320,9 @@ def load_deck_view(
             deleted_tab_did=deleted_tab_did,
             populate_deck_tab_fn=populate_deck_tab_fn,
         )
-        
-        
+
         refresh_deck_tab_header_styles_fn(dialog)
-                
-        dialog._initial_deck_selected = True
+
 
         dialog.on_tab_changed(dialog.tab_widget.currentIndex())
 

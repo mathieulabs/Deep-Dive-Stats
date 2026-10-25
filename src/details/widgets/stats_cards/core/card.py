@@ -5,7 +5,7 @@ import time
 from aqt.qt import (
     QFrame, QVBoxLayout, QGridLayout, QLabel, QSizePolicy,
     Qt, QColor, QPropertyAnimation, QEasingCurve, QFontMetrics, QTimer,
-    pyqtProperty, QPalette, QEvent,
+    pyqtProperty, QPalette, QEvent, QPainter,
 )
 
 
@@ -37,6 +37,23 @@ class _ColorLabel(QLabel):
         super().changeEvent(event)
         if event.type() in (QEvent.Type.PaletteChange, QEvent.Type.StyleChange):
             self._apply_forced_palette()
+
+
+class _TitleLabel(_ColorLabel):
+    """Card title that ends with "..." when the card is too narrow, instead of being cut."""
+
+    def paintEvent(self, event):
+        text = self.text()
+        rect = self.contentsRect()
+        fm = self.fontMetrics()
+        if not text or fm.horizontalAdvance(text) <= rect.width():
+            return super().paintEvent(event)
+        shown = fm.elidedText(text, Qt.TextElideMode.ElideRight, rect.width())
+        p = QPainter(self)
+        self.style().drawItemText(
+            p, rect, int(self.alignment().value), self.palette(), self.isEnabled(), shown, self.foregroundRole()
+        )
+        p.end()
 from ...chart_utils import is_night_mode
 from ...chart_utils.formatting import fmt_num
 from ....animations.hover_effect import StatCardEffect
@@ -100,26 +117,26 @@ class StatCardWidget(QFrame):
         self.time_span = time_span
         self.is_pinned = is_pinned
         self.stat_type = stat_type
-        
+
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        
+
         self.addon_config = addon_config if addon_config is not None else load_addon_config(__name__)
-        
+
         if stat_type:
             from ....ui import get_color
             color_ctx = "pinned" if self.is_pinned else self
             self.base_color = get_color(self.addon_config, stat_type, color_ctx)
         else:
             self.base_color = color
-        
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 2, 12, 6)
         self.main_layout = layout
-        
+
         title_col = theme_title_color(is_night_mode(self), self)
         self.title_col = title_col
-        
+
         layout.addStretch()
         self._content_grid = QGridLayout()
         self._content_grid.setContentsMargins(0, 0, 0, 0)
@@ -127,13 +144,13 @@ class StatCardWidget(QFrame):
         self._content_grid.setVerticalSpacing(2)
 
         display_title = f"{icon}  {title.upper()}" if icon else title.upper()
-        self.title_lbl = _ColorLabel(display_title, parent=self)
+        self.title_lbl = _TitleLabel(display_title, parent=self)
         self.title_lbl.setObjectName("StatCardTitle")
         set_qss(self.title_lbl, title_label_style(0))
         self.title_lbl.setMinimumWidth(1)
         self.title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.title_lbl)
-        
+
         self.value_lbl = _ColorLabel(value, parent=self)
         self.value_lbl.setObjectName("StatCardValue")
         set_qss(self.value_lbl, value_label_style(False))
@@ -173,7 +190,7 @@ class StatCardWidget(QFrame):
         self._roll_width_anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self._roll_width_anim.finished.connect(self._finish_roll_width)
         self._last_roll_layout_refresh_ts = 0.0
-        
+
         self.sub_lbl = None
         if subtitle:
             self.sub_lbl = _ColorLabel(subtitle, parent=self)
@@ -181,19 +198,19 @@ class StatCardWidget(QFrame):
             self.sub_lbl.setVisible(False)
             set_qss(self.sub_lbl, "font-weight: 400;")
             layout.addWidget(self.sub_lbl)
-            
+
         layout.addStretch()
         self._inline_mode_active = None
         self._apply_inline_layout_mode()
-        
+
         self._val_font = self.value_lbl.font()
         self._title_font = self.title_lbl.font()
         if self.sub_lbl:
             self._sub_font = self.sub_lbl.font()
-            
+
         self._is_ghost = False
         self._is_loading = (value == "...")
-        
+
         self.set_font_sizes(6.5, 4.5, 5.25, 4)
 
         # Generalized Fire/Glow effect: default fallback value is set first,
@@ -202,7 +219,7 @@ class StatCardWidget(QFrame):
         self._max_effect_opacity = 0.5
         self.apply_visual_style()
         self.update_style_params(self.base_color, self.title_col)
-        
+
         # Unlocked effects are read from the config (locked by default)
         unlocked_list = self.addon_config.get("UNLOCKED_EFFECTS", [])
         card_id = self.widget_id or self.config_key
@@ -397,9 +414,6 @@ class StatCardWidget(QFrame):
     def set_title_visible(self, visible: bool):
         set_widget_title_visible(self, visible)
 
-
-
-
     def enterEvent(self, event):
         if getattr(self, "hover_effect_enabled", True):
             self._effect.start()
@@ -438,12 +452,9 @@ class StatCardWidget(QFrame):
         if getattr(self, "_last_color_params", None) == params:
             return
         self._last_color_params = params
-        self._label_value_color = color
-        self._label_title_color = title_col
         self.value_lbl.force_color(color)
         self.title_lbl.force_color(title_col)
         if self.sub_lbl:
-            self._label_sub_color = title_col
             self.sub_lbl.force_color(title_col)
 
     def refresh_theme(self, conf=None):
@@ -456,17 +467,17 @@ class StatCardWidget(QFrame):
         if getattr(self, "_last_font_params", None) == params:
             return
         self._last_font_params = params
-        
+
         self._val_font.setPointSizeF(float(val_fs))
         self.value_lbl.setFont(self._val_font)
-        
+
         self._title_font.setPointSizeF(float(title_fs))
         self.title_lbl.setFont(self._title_font)
-        
+
         if self.sub_lbl:
             self._sub_font.setPointSizeF(float(sub_fs))
             self.sub_lbl.setFont(self._sub_font)
-            
+
         self.main_layout.setContentsMargins(int(h_margin), 6, int(h_margin), 6)
 
     def shown_value(self):
@@ -496,9 +507,6 @@ class StatCardWidget(QFrame):
         """Alignment: centered (usually pinned) or left (usually dashboard)."""
         set_widget_centered(self, centered)
 
-
-
-
     def mousePressEvent(self, event):
         handle_mouse_press(self, event)
         super().mousePressEvent(event)
@@ -521,6 +529,11 @@ class StatCardWidget(QFrame):
 
     def setOpacity(self, opacity):
         set_card_opacity(self, opacity)
+
+    def get_height_ideal_width(self, scale=1.0):
+        """Width this card would want with a typical value: the dashboard height is
+        computed from it, so it does not change with the values."""
+        return self._ideal_width_for_value_text("0.00%", scale=scale)
 
     def get_ideal_width(self, scale=1.0):
         """Calculates the width this card PREFERS at max font size."""

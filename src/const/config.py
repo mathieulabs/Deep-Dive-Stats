@@ -94,14 +94,6 @@ class Config:
     TOOLBAR_BUTTON_TEXT = 'Toolbar_Button_Text'
     OPEN_SHORTCUT = 'Open_Shortcut'
 
-    
-    SHOW_RETENTION = 'Show_Retention'
-    SHOW_RETENTION_YOUNG = 'Show_Retention_Young'
-    SHOW_RETENTION_MATURE = 'Show_Retention_Mature'
-    SHOW_BUTTONS_DIST = 'Show_Buttons_Dist'
-    SHOW_AVG_TIME = 'Show_Avg_Time'
-    SHOW_STREAK = 'Show_Streak'
-    SHOW_LONGEST_STREAK = 'Show_Longest_Streak'
     SHOW_TRENDS = 'Show_Trends'
     STATS_PRECISION = 'Stats_Precision'
     DETAILS_SIDE_VIEW = 'Details_Side_View'
@@ -230,14 +222,14 @@ class Config:
     USE_THOUSANDS_SEPARATOR = 'Use_Thousands_Separator'
     ANIMATION_SCOPE = 'Animation_Scope'
     CHART_ANIMATION_VISIBLE_THRESHOLD = 'Chart_Animation_Visible_Threshold'
-    
+
     # Theme Management
     THEME_PRESET = 'Theme_Preset'
     THEME_IS_CUSTOM = 'Theme_Is_Custom'
     THEME_CUSTOM_COLORS = 'Theme_Custom_Colors'
     THEME_CUSTOM_BASE_MODE = 'Theme_Custom_Base_Mode'
     THEME_CUSTOM_PRESETS = 'Theme_Custom_Presets'
-    
+
     WEEK_START = 'Week_Start'
 
     DEFAULT_CONFIG = {
@@ -439,8 +431,8 @@ class Config:
         DEEP_DIVE_GRID_SETTINGS: {},
         DEEP_DIVE_GRID_COLUMNS: 4,
         DEEP_DIVE_CHART_ORDER: [
-            "activity", "retention", "heatmap", "future_due", "distribution", 
-            "hourly", "card_counts", "review_intervals", "stability", 
+            "activity", "retention", "heatmap", "future_due", "distribution",
+            "hourly", "card_counts", "review_intervals", "stability",
             "difficulty", "retrievability", "added"
         ],
         DEEP_DIVE_WIDGET_SETTINGS: {

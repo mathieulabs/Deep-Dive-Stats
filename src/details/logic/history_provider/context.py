@@ -17,34 +17,33 @@ from .ops.context_pinned_processing import (
 class ContextMixin:
     @staticmethod
     def fetch_pinned_context(addon_config, deck_id=None, range_type=Period.YEAR, custom_days=7, custom_type="relative", start_date_str="", end_date_str="", widget_settings=None):
-        """Fetch all data needed for pinned widgets in one go.
-        Highly optimized: All aggregation happens in this background thread.
-        """
+        """Everything a pinned widget shows for one deck and period. Runs in a background
+        thread: the aggregation is done here, not on the UI thread."""
         is_deleted = (deck_id == -1)
 
         did_limit = HistoryProvider._get_did_limit(addon_config, deck_id)
-        
+
         reviews_history = HistoryProvider.fetch_history(
             addon_config, deck_id, range_type, is_deleted=is_deleted, did_limit=did_limit,
             custom_days=custom_days, custom_type=custom_type,
             start_date_str=start_date_str, end_date_str=end_date_str
         )
-        
+
         added_history = HistoryProvider.fetch_added_history(
             addon_config, deck_id, range_type, is_deleted=is_deleted, did_limit=did_limit,
             custom_days=custom_days, custom_type=custom_type,
             start_date_str=start_date_str, end_date_str=end_date_str
         )
-        
+
         target_year = range_type if (isinstance(range_type, int) and range_type > 7) else datetime.now().year
         future_reviews = HistoryProvider.fetch_future_reviews(deck_id, target_year, addon_config, did_limit=did_limit)
-        
+
         counts = HistoryProvider.fetch_card_counts(addon_config, deck_id, is_deleted=is_deleted, did_limit=did_limit)
-        
+
         processed_heatmap, active_days_set = build_processed_heatmap(reviews_history, future_reviews)
-        
+
         stats = HistoryProvider.fetch_stats_direct(addon_config, deck_id, range_type, did_limit=did_limit)
-        
+
         # Streak is global for the deck, ignoring the time range
         current_streak, _ = get_deck_streaks(deck_id, start_ms=0, excluded_dids=addon_config.config.get(Config.EXCLUDED_DECKS, []))
         stats["streak"] = current_streak
@@ -52,7 +51,7 @@ class ContextMixin:
         dist_range = range_type
         if widget_settings and "distribution" in widget_settings:
             dist_range = int(widget_settings["distribution"].get("time_span", range_type))
-            
+
         distribution = HistoryProvider.fetch_button_distribution(
             addon_config, deck_id, dist_range, is_deleted=is_deleted, did_limit=did_limit
         )
@@ -60,12 +59,12 @@ class ContextMixin:
         added_range = range_type
         if widget_settings and "added" in widget_settings:
             added_range = int(widget_settings["added"].get("time_span", range_type))
-        
+
         if added_range != range_type:
             added_history = HistoryProvider.fetch_added_history(
                 addon_config, deck_id, added_range, is_deleted=is_deleted, did_limit=did_limit
             )
-        
+
         from ..metrics.hourly import HourlyDataProvider
         hourly_range = range_type
         if widget_settings and "hourly" in widget_settings:

@@ -30,14 +30,13 @@ def _auto_resize_impl(dialog, table, resize_window=True):
             table.show()
     if not table.isVisible():
         return False
-        
 
     fm = QFontMetrics(table.font())
     header_fm = QFontMetrics(table.horizontalHeader().font())
-    
+
     # Buffer for padding (12px * 2 = 24px) + margin
-    CELL_PADDING = 30 
-    
+    CELL_PADDING = 30
+
     # Measure a representative subset of rows instead of every row.
     row_count = table.rowCount()
     sample_rows = set()
@@ -75,7 +74,7 @@ def _auto_resize_impl(dialog, table, resize_window=True):
         raw_header = table.horizontalHeaderItem(c).text() if table.horizontalHeaderItem(c) else ""
         header_text = raw_header.upper() # CSS text-transform: uppercase
         max_width = header_fm.horizontalAdvance(header_text) + CELL_PADDING
-        
+
         for r in sample_rows:
             widget = table.cellWidget(r, c)
             if widget:
@@ -84,7 +83,7 @@ def _auto_resize_impl(dialog, table, resize_window=True):
                 elif isinstance(widget, QLabel):
                     if "<table" in widget.text():
                         # HTML table width: trust sizeHint with a minimum
-                        text_width = widget.sizeHint().width() + 25 
+                        text_width = widget.sizeHint().width() + 25
                     else:
                         plain_text = re.sub('<[^<]+?>', '', widget.text())
                         text_width = fm.horizontalAdvance(plain_text) + CELL_PADDING
@@ -108,10 +107,10 @@ def _auto_resize_impl(dialog, table, resize_window=True):
                             text_width = fm.horizontalAdvance(txt) + CELL_PADDING
                 else:
                     text_width = 0
-            
+
             if text_width > max_width:
                 max_width = text_width
-        
+
         if c == 0:
             max_width = min(max_width, 300) # Cap the deck column width but let the user widen it manually
         elif raw_header == "Buttons" and show_buttons_visual:
@@ -130,23 +129,11 @@ def _auto_resize_impl(dialog, table, resize_window=True):
     except Exception:
         log_swallowed()
 
-    total_required_width = table.horizontalHeader().length()
-
-    total_required_width += 44 
-    
     # First column is interactive so it does not get crushed
     table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
     from ..table.fill_width import install_fill, remember_natural_widths
 
     install_fill(table)
     remember_natural_widths(table)
-    for c in range(table.columnCount()):
-        h = table.horizontalHeaderItem(c)
-        if h and h.text() == "Buttons":
-            break
-    try:
-        pass
-    except Exception:
-        log_swallowed()
     return True
 

@@ -7,7 +7,6 @@ BLOCK_STATS = "stats"
 BLOCK_CHARTS = "charts"
 BLOCK_TEXTS = "texts"
 
-DEFAULT_BLOCK_ORDER = [BLOCK_STATS, BLOCK_CHARTS, BLOCK_TEXTS]
 
 
 def _to_nonneg_int(value, default=0):
@@ -213,7 +212,6 @@ def apply_block_layout_order(manager, pinned_conf, add_stretch=False):
                 text_containers[_to_nonneg_int(box_id, 0)] = container
     elif texts_container is not None and not texts_container.isHidden():
         text_containers[0] = texts_container
-
 
     raw_order = pinned_conf.get(Config.PINNED_BLOCK_ORDER, None)
     section_order = normalize_block_order(

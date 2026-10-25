@@ -125,17 +125,17 @@ class ResizableWrapper(QFrame):
         apply_theme_context(self, ThemeContext.DETAILS if force_details else ThemeContext.PINNED)
         self.setMouseTracking(self.resizable)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        
+
         self._resize_mode = None  # "r", "b", "rb" or None
         self._drag_start_pos = None
         self._drag_start_pos_local = None
         self._start_geom = None
-        
+
         self.border_sensitivity = 8
         self.col_span = col_span
-        
+
         self.inner_widget = None
-        
+
         self.apply_size(saved_w, saved_h)
 
     def _layout_outer_metrics(self):
@@ -254,20 +254,19 @@ class ResizableWrapper(QFrame):
         self._last_size_args = (w, h)
         self.setMinimumSize(0, 0)
         self.setMaximumSize(16777215, 16777215)
-        
+
         w_type = getattr(self, "wtype", self.widget_id)
         self._has_saved_height = (h is not None) and (w_type != "text_label")
 
         if w is not None:
             self.setMinimumWidth(max(1, int(round(w * zoom_scale))))
         if h is not None and w_type != "text_label":
-            # If we are in deep dive or pinned mode, saved_h is the "Base" height.
-            # We must add the statistics offset if they are currently enabled.
+            # saved_h is the height without the bottom stats: add them when they are shown.
             offset = 0
             if show_bottom_stats and show_all_stats:
                 offset = ChartGeometry.STATS_EXTRA_HEIGHT.get(w_type, 0)
             self.setMinimumHeight(max(1, int(round((h + offset) * zoom_scale))))
-            
+
         # 2. If a dimension is missing (reset state), apply the type defaults.
         # Always recompute _content_min_h so the drag floor is correct, even when
         # apply_size gets a saved h.
@@ -320,19 +319,13 @@ class ResizableWrapper(QFrame):
                 else:
                      if w is None: self.setMinimumWidth(max(1, int(round(450 * zoom_scale))))
                      if h is None: self.setMinimumHeight(max(1, int(round(self._content_min_h * zoom_scale))))
-            
+
             if w is None:
                 self.setMinimumWidth(self.minimumWidth())
                 self.setMaximumWidth(16777215)
             if h is None:
                 self.setMinimumHeight(self.minimumHeight())
                 self.setMaximumHeight(16777215)
-
-        if getattr(self, "wtype", self.widget_id) == "text_label":
-            try:
-                pass
-            except Exception:
-                log_swallowed()
 
         if getattr(self, "_pinned_collapsed", False):
             ch = self._collapsed_height()
@@ -491,12 +484,8 @@ class ResizableWrapper(QFrame):
     def heightForWidth(self, width):
         if self.layout():
             h = self.layout().heightForWidth(width)
-            if getattr(self, "widget_id", "") == "heatmap":
-                pass
             return h
         h = self.height()
-        if getattr(self, "widget_id", "") == "heatmap":
-            pass
         return h
 
     def mousePressEvent(self, event):
@@ -517,7 +506,7 @@ class ResizableWrapper(QFrame):
                     return
             else:
                 self._resize_mode = None
-        
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -570,34 +559,34 @@ class ResizableWrapper(QFrame):
 
             snap_threshold = 15
             best_diff_h = snap_threshold
-            
+
             if self.parentWidget():
                 for child in self.parentWidget().children():
                     if child is self: continue
                     if not isinstance(child, type(self)): continue
                     if not child.isVisible(): continue
-                    
+
                     if "b" in self._resize_mode:
                         diff_h = abs(child.height() - new_h)
                         if diff_h < best_diff_h:
                             best_diff_h = diff_h
                             snapped_h = child.height()
-            
+
             # Apply changes only when the delta is significant (more than 5px), to avoid flicker from micro-movements.
             if abs(self.width() - snapped_w) < 5 and abs(self.height() - snapped_h) < 5:
-                # Still accept the move event so the cursor logic stays smooth 
+                # Still accept the move event so the cursor logic stays smooth
                 # but don't trigger the expensive layout/sync sequence.
                 super().mouseMoveEvent(event)
                 return
 
             # During a live resize use a fixed size to force the layout to follow; setting both min and max overrides earlier fixed constraints.
             self.setFixedSize(snapped_w, snapped_h)
-            
+
             if self.parentWidget():
                 if self.parentWidget().layout():
                     self.parentWidget().layout().invalidate()
                 self.parentWidget().updateGeometry()
-            
+
             self._sync_all()
             # Only propagate row-height sync while vertical resizing is active. During a
             # horizontal resize it could sync neighboring rows after the col_span reflow.
@@ -642,7 +631,7 @@ class ResizableWrapper(QFrame):
                             slots = round((w + _sp) / (_col_w + _sp))
                             self.col_span = max(1, min(num_cols, slots))
                             w = self.col_span * _col_w + (self.col_span - 1) * _sp
-                
+
                 if "b" in release_mode:
                     # Subtract the extra stats height so the saved config always holds the base
                     # chart height, like _persist_grid_row_height does in the grid layout.
@@ -678,11 +667,10 @@ class ResizableWrapper(QFrame):
                     start_min_h = getattr(self, "_start_min_h", 0)
                     if getattr(self, "wtype", self.widget_id) != "text_label" and start_min_h > 0:
                         self.setMinimumHeight(start_min_h)
-            
-            self._sync_all()
-                
-        super().mouseReleaseEvent(event)
 
+            self._sync_all()
+
+        super().mouseReleaseEvent(event)
 
     def _sync_all(self):
         """Trigger global sync of overlay, mask, and Anki placeholder."""
@@ -690,12 +678,10 @@ class ResizableWrapper(QFrame):
 
     def _handle_drag(self, event):
 
-        
         DragInitiator.maybe_start_drag(
             self, event, self._drag_start_pos_local,
             MIME_CHART_ID, self.widget_id
         )
-        
 
     def _sync_edge_cursor(self, pos):
         """Set the cursor for a position in this widget. Returns True on a resize border."""
@@ -725,14 +711,14 @@ class ResizableWrapper(QFrame):
     def _check_border(self, pos):
         w, h = self.width(), self.height()
         x, y = pos.x(), pos.y()
-        
+
         dirs = self.resize_directions if self.resize_directions else ["r", "b"]
         if getattr(self, "_pinned_collapsed", False):
             dirs = [d for d in dirs if d != "b"]
-        
+
         on_right = "r" in dirs and (w - self.border_sensitivity) <= x <= w
         on_bottom = "b" in dirs and (h - self.border_sensitivity) <= y <= h
-        
+
         if on_right and on_bottom: return "rb"
         if on_right: return "r"
         if on_bottom: return "b"
@@ -745,14 +731,14 @@ def _wrap(inner_widget, label, header_widget=None, base_color=None, wtype=None, 
     card.wtype = wtype
     if wtype == "text_label":
         label = None
-    
+
     layout = QVBoxLayout(card)
     top_margin = 3 if (header_widget or label is not None) else 2
     layout.setContentsMargins(6, top_margin, 6, 6)
     layout.setSpacing(2)
-    
+
     apply_style(card, base_color=base_color, inner_widget=inner_widget)
-    
+
     from ...stats_cards import StatCardWidget
 
     # The arrow is always built for charts and shown or hidden by the setting, so the
@@ -811,7 +797,7 @@ def _wrap(inner_widget, label, header_widget=None, base_color=None, wtype=None, 
     layout.addWidget(inner_widget)
     card.inner_widget = inner_widget
     card.body_widget = inner_widget
-    
+
     card.apply_size(saved_w, saved_h)
 
     if getattr(card, "_collapse_btn", None) is not None:
@@ -820,7 +806,6 @@ def _wrap(inner_widget, label, header_widget=None, base_color=None, wtype=None, 
             inner_widget.setVisible(False)
             card.apply_size(saved_w, saved_h)
         card._update_collapse_icon()
-    
 
     if wtype == "text_label":
         card.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)

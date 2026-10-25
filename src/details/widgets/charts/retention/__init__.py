@@ -2,6 +2,6 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Retention chart package."""
 
-from .widget import RetentionChart, RetentionChartContainer
+from .widget import RetentionChart
 
-__all__ = ["RetentionChart", "RetentionChartContainer"]
+__all__ = ["RetentionChart"]

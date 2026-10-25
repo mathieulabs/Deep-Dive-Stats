@@ -26,7 +26,7 @@ class PinnedOverlay(QWidget):
         # A child widget that ignored the event (no Ctrl+zoom) bubbles it here. Scroll the page by
         # injecting a scroll command into the WebView, since standard propagation to QWebEngineView
         # often fails.
-        
+
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             # Ctrl + wheel is Anki's interface zoom. Over a pinned widget the event never
             # reaches the page, so apply the zoom here (same 10 % step as View > Zoom In).
@@ -49,32 +49,32 @@ class PinnedOverlay(QWidget):
         delta = event.angleDelta().y()
         if delta == 0:
             return
-            
+
         scroll_amount = -delta
-        
+
         cmd = f"window.scrollBy({{top: {scroll_amount}, left: 0, behavior: 'auto'}});"
         if self.parent() and hasattr(self.parent(), "eval"):
             self.parent().eval(cmd)
         else:
             mw.web.eval(cmd)
-        
+
         event.accept()
 
     def update_mask(self):
         """Update the mask to only allow events on child widgets."""
         if not self.isVisible():
             return
-            
+
         visible_region = QRegion()
-        
+
         if not self.layout():
             return
-            
+
         for i in range(self.layout().count()):
             item = self.layout().itemAt(i)
             if not item or not item.widget(): continue
             w = item.widget()
-            
+
             if not w.isVisible(): continue
             from ....stats_cards import StatCardsContainer
             if isinstance(w, StatCardsContainer):
@@ -83,7 +83,7 @@ class PinnedOverlay(QWidget):
                          geo = card.geometry()
                          geo.translate(w.geometry().topLeft())
                          visible_region += geo.adjusted(-20, -20, 20, 20)
-            
+
             elif w.layout() and isinstance(w.layout(), MasonryLayout):
                  for j in range(w.layout().count()):
                      c_item = w.layout().itemAt(j)
@@ -92,7 +92,7 @@ class PinnedOverlay(QWidget):
                          geo = cw.geometry()
                          geo.translate(w.geometry().topLeft())
                          visible_region += geo.adjusted(-20, -20, 20, 20)
-                         
+
             elif w.layout() and isinstance(w.layout(), QHBoxLayout):
                  for j in range(w.layout().count()):
                      c_item = w.layout().itemAt(j)
@@ -101,17 +101,17 @@ class PinnedOverlay(QWidget):
                          geo = cw.geometry()
                          geo.translate(w.geometry().topLeft())
                          visible_region += geo.adjusted(-20, -20, 20, 20)
-                         
+
             else:
                 visible_region += w.geometry().adjusted(-20, -20, 20, 20)
-                
+
         self.setMask(visible_region)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         # Debounce mask updates during active resizing to prevent flickering (16ms is about 60fps).
         self._mask_timer.start(16)
-        
+
     def paintEvent(self, event):
         pass
 

@@ -139,9 +139,6 @@ class ChartAnimationMixin:
             return
         if self.width() <= 0 or self.height() <= 0:
             return
-        timer = getattr(self, "_idle_recapture_timer", None)
-        if timer is not None and timer.isActive():
-            timer.stop()
         self._capturing_cache = True
         try:
             # The chart alone, without its child widgets (zoom scroll bar, labels): they are

@@ -65,11 +65,11 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
         saved_h = self._get_dd_widget_setting(wid, "height")
         if saved_h is not None:
             saved_h = int(saved_h)
-        
+
         container = ResizableWrapper(
-            widget_id=wid, 
-            saved_w=None, 
-            saved_h=saved_h, 
+            widget_id=wid,
+            saved_w=None,
+            saved_h=saved_h,
             resizable=True,
             resize_directions=["r", "b"],
             save_callback=lambda resizable_wrapper, w, h, wid=wid: self._persist_grid_row_height(resizable_wrapper, h),
@@ -82,19 +82,19 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
         container.height_changed.connect(lambda h, w=container: self._sync_grid_row_height(w, h))
         container.col_span_changed.connect(lambda s, k=wid: self._update_dd_widget_setting(k, "col_span", s))
         container.setObjectName("pinned_widget_card")
-        
+
         container.setCursor(Qt.CursorShape.ArrowCursor)
-        
+
         layer = QVBoxLayout(container)
         top_m = 6 if (header_layout or label_text) else 2
         layer.setContentsMargins(8, top_m, 10, 6)
         layer.setSpacing(2)
-        
+
         local_settings = self.addon_config.config.get(Config.DEEP_DIVE_WIDGET_SETTINGS, {}).get(wid, {})
         global_style = self.addon_config.config.get(Config.DEEP_DIVE_GRID_STYLE, {})
         use_custom = local_settings.get("use_custom_style", False)
         composite_config = self.addon_config.config.copy()
-        
+
         if use_custom:
             composite_config.update(local_settings)
         else:
@@ -109,37 +109,37 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
                 if generic in global_style:
                     for specific in specifics:
                         composite_config[specific] = global_style[generic]
-        
+
         class DummyConfigManager:
             def __init__(self, c): self.config = c
-        
+
         apply_style(container, config_manager=DummyConfigManager(composite_config))
-        
+
         from ..context_menu import DeepDiveContextMenu
         context_menu = DeepDiveContextMenu(self)
         section_key = state_key if state_key else (label_text.strip().lower() if label_text else "unknown")
-        
+
         container.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         container.customContextMenuRequested.connect(
             lambda pos, w=container, k=section_key: context_menu.show(w, k, pos)
         )
-        
+
         show_bottom_stats = self.addon_config.config.get(Config.DEEP_DIVE_SHOW_BOTTOM_STATS, False)
         show_all_stats = self.addon_config.config.get(Config.DEEP_DIVE_SHOW_STATS, True)
-        
+
         collapsible = bool(self.addon_config.config.get(Config.DEEP_DIVE_CHARTS_COLLAPSIBLE, True))
         # With the option off every chart stays open, whatever was folded before.
         is_collapsed = bool(self.section_collapse_states.get(section_key, False)) and collapsible
 
         container.is_collapsed = is_collapsed
         container.state_key = section_key
-        
+
         def toggle_grid_row():
             if not collapsible:
                 return
             if not hasattr(self, 'current_grid_layout') or not self.current_grid_layout:
                 return
-            
+
             layout = self.current_grid_layout
             idx = -1
             for i in range(layout.count()):
@@ -147,26 +147,26 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
                     idx = i
                     break
             if idx < 0: return
-            
+
             num_cols = layout.current_cols
             if num_cols <= 0: return
-            
+
             row_idx = idx // num_cols
             start_i = row_idx * num_cols
             end_i = start_i + num_cols
-            
+
             new_state = not getattr(container, "is_collapsed", False)
             for i in range(start_i, min(end_i, layout.count())):
                 w = layout.itemAt(i).widget()
                 if w: self._update_grid_widget_collapse(w, new_state)
-            
+
             layout.invalidate()
             if layout.parentWidget():
                 layout.parentWidget().updateGeometry()
-        
+
         if label_text or header_layout:
             header_widget, header_lay = _create_section_header_widget(container)
-            
+
             btn_toggle = QPushButton("", parent=container)
             btn_toggle.setIconSize(QSize(16, 16))
             btn_toggle.setFixedSize(18, 24)
@@ -181,7 +181,7 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
                 header_lay.addWidget(label)
                 header_lay.addSpacing(4)
                 container.title_label = label
-                
+
             if header_layout:
                 controls_wrapper = _wrap_section_header_controls(self.dialog, header_layout)
                 header_lay.addWidget(controls_wrapper)
@@ -189,7 +189,7 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
                 controls_wrapper.setVisible(not is_collapsed)
             else:
                 header_lay.addStretch()
-                
+
             layer.addWidget(header_widget)
             container.header_widget = header_widget
             self._apply_grid_header_theme(container)
@@ -203,9 +203,9 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
             widget_or_layout.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             container.body_widget = widget_or_layout
             if is_collapsed: widget_or_layout.hide()
-        
+
         min_w = 200 if self.grid_mode else 450; min_h = 200
-        
+
         saved_h = self._get_dd_widget_setting(section_key, "height")
         if saved_h:
             min_h = int(saved_h)
@@ -215,22 +215,19 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
             elif "stats" in (wid or "").lower(): min_h = 100
             else: min_h = 200
 
-        
         # Widgets can optionally report their type via inner_widget lookup for better min_h defaults
         # (handled inside ResizableWrapper.apply_size)
-        
+
         from ....widgets.chart_utils.geometry import ChartGeometry
         if section_key in ChartGeometry.STATS_EXTRA_HEIGHT:
             wid = section_key
             if show_bottom_stats and show_all_stats:
                 min_h += ChartGeometry.STATS_EXTRA_HEIGHT.get(wid, 70)
 
-        
-            
-        container.setMinimumWidth(min_w) 
+        container.setMinimumWidth(min_w)
         container.original_min_h = min_h
         self._update_grid_widget_height(container, min_h)
-        
+
         if is_collapsed:
             self._update_grid_widget_collapse(container, True, update_persistence=False)
 

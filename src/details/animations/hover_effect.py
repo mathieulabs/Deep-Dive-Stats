@@ -149,7 +149,7 @@ class StatCardEffect:
             self._last_color = base_color_hex
 
             grad = QLinearGradient(draw_rect.topLeft(), draw_rect.bottomRight())
-            # We store the gradient object, but we'll still update colors if opacity changes
+            # Kept while the rect and colour stay the same; its stops are reset below on every paint (opacity).
             self._grad_cache = grad
 
         if is_light_bg:

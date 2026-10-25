@@ -34,8 +34,6 @@ def register_hooks(manager):
         gui_hooks.sync_did_finish.append(manager._on_sync_did_finish)
     if hasattr(gui_hooks, "operation_did_execute"):
         gui_hooks.operation_did_execute.append(manager._on_operation_did_execute)
-    else:
-        pass
 
     gui_hooks.profile_did_open.append(manager._on_profile_did_open)
 
@@ -67,8 +65,6 @@ def on_operation_did_execute(manager, changes, handler):
                 )
             except Exception:
                 log_swallowed()
-        elif deck_changed or deck_config_changed:
-            pass
         if mw.state == "review":
             return
         if (
@@ -91,6 +87,7 @@ def run_operation_refresh(manager):
         return
     manager._op_force_refresh = False
     force_full = True
+    states_only = False
     try:
         from ...widget_factory.utils import PinnedDataManager, invalidate_max_ids_cache, _get_max_ids
         from ..imports import GlobalHistoryCache
@@ -117,7 +114,12 @@ def run_operation_refresh(manager):
                 fingerprint_changed = fingerprint_curr is not None and fingerprint_curr != fingerprint_prev
                 if fingerprint_changed:
                     ghc._last_db_fingerprint = fingerprint_curr
-                force_full = bool(fingerprint_changed)
+                    # Same reviews, same cards in the same decks: only card states changed.
+                    states_only = (
+                        fingerprint_curr[:5] == fingerprint_prev[:5]
+                        and fingerprint_curr[5][0] == fingerprint_prev[5][0]
+                    )
+                force_full = bool(fingerprint_changed) and not states_only
         PinnedDataManager.clear()
         invalidate_max_ids_cache()
     except Exception:
@@ -135,10 +137,13 @@ def run_operation_refresh(manager):
             except Exception:
                 log_swallowed()
 
-        ghc.refresh_incremental(
-            callback=_after_op_refresh,
-            force_full=force_full,
-        )
+        if states_only:
+            ghc.refresh_card_states(callback=_after_op_refresh)
+        else:
+            ghc.refresh_incremental(
+                callback=_after_op_refresh,
+                force_full=force_full,
+            )
 
         def _maybe_safety_rebuild():
             elapsed_ms = round((__import__("time").perf_counter() - float(getattr(manager, "_last_op_callback_rebuild_ts", 0.0) or 0.0)) * 1000, 1)
@@ -152,10 +157,6 @@ def run_operation_refresh(manager):
 
 
 def on_profile_did_open(manager):
-    try:
-        pass
-    except Exception:
-        log_swallowed()
     manager._mark_config_dirty()
     manager._last_state = None
     manager._last_widget_set = None

@@ -21,18 +21,18 @@ class HourlyDataProvider:
             did_limit = HistoryProvider._get_did_limit(addon_config, deck_id)
 
         week_start = addon_config.config.get("week_start", 0)
-        
+
         if override_start_ms is not None and override_end_ms is not None:
              start_ms, end_ms = override_start_ms, override_end_ms
         else:
              start_ms, end_ms, _, _ = get_time_range_ms(time_span, week_start=week_start)
-        
+
         time_limit = ""
         if start_ms > 0:
             time_limit += f" AND (CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) >= {start_ms}"
         if end_ms > 0 and (time_span != Period.TOTAL or override_end_ms is not None):
             time_limit += f" AND (CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) < {end_ms}"
-        
+
         # Aggregate by local hour inside SQLite instead of building a datetime per
         # review in Python (about 150k rows on a large collection). SQLite's
         # 'localtime' uses the same OS timezone rules as datetime.fromtimestamp().

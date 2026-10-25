@@ -49,8 +49,9 @@ def compute_compact_layout_metrics(container, stat_card_cls):
 
 def compute_dashboard_layout_metrics(container, visible_cards, width, stat_card_cls):
     cards_only = [c for c in visible_cards if isinstance(c, stat_card_cls)]
-    ideal_widths = {card: card.get_ideal_width() for card in cards_only}
-    total_ideal = sum(ideal_widths.values()) + (len(cards_only) - 1) * container.layout.spacing()
+    gaps = (len(cards_only) - 1) * container.layout.spacing()
+    total_ideal = sum(card.get_ideal_width() for card in cards_only) + gaps
+    height_ideal = sum(card.get_height_ideal_width() for card in cards_only) + gaps
 
     for card in container.cards:
         idx = container.layout.indexOf(card)
@@ -63,6 +64,7 @@ def compute_dashboard_layout_metrics(container, visible_cards, width, stat_card_
         width,
         total_ideal,
         getattr(container, "_reduced_height_mode", False),
+        height_ideal=height_ideal,
     )
 
 

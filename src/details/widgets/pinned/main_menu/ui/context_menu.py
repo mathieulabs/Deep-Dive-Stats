@@ -42,7 +42,7 @@ class PinnedContextMenu:
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         btn.setMinimumHeight(30)
-        set_qss(btn, 
+        set_qss(btn,
             "QPushButton {"
             " text-align: left;"
             " padding: 4px 8px 4px 24px;"
@@ -251,7 +251,7 @@ class PinnedContextMenu:
             QTimer.singleShot(0, _reopen)
 
         position_menu = None
-        
+
         details_action = QAction("Open Details Window", menu)
         details_action.setIcon(get_svg_icon("external-link", size=16, context_ref=menu))
         details_action.triggered.connect(lambda _=False, wd=widget_def: self._open_details_for_widget(wd))
@@ -290,29 +290,29 @@ class PinnedContextMenu:
         settings_action.setIcon(get_svg_icon("settings", size=16, context_ref=menu))
         settings_action.triggered.connect(lambda: self.manager._open_widget_settings(widget, widget_def))
         menu.addAction(settings_action)
-        
+
         menu.addSeparator()
-        
+
         no_span_types = [
             "card_counts", "heatmap", "future_due", "review_intervals",
             "stability", "difficulty", "retrievability"
         ]
         is_streak = widget_def.get("stat_key") in [Config.DASH_SHOW_STREAK, Config.DEEP_DIVE_SHOW_STREAK]
-        
+
         if widget_def.get("type") not in no_span_types and not is_streak:
             span_menu = menu.addMenu("Time Span")
             span_menu.setIcon(get_svg_icon("calendar", size=16, context_ref=menu))
-            
+
             from .....ui.shared.span_menu import populate_span_menu
-            
+
             current_span = widget_def.get("time_span", Period.TOTAL)
             current_days = widget_def.get("custom_days", None)
-            
+
             def on_update_span(v, d=None):
                 updates = {"time_span": v}
                 if d is not None:
                     updates["custom_days"] = d
-                
+
                 if hasattr(self.manager, "_update_span_bulk"):
                     self.manager._update_span_bulk(widget_def["id"], updates)
                 else:
@@ -519,7 +519,7 @@ class PinnedContextMenu:
 
             from .....ui.shared.heatmap_menu import add_heatmap_display_actions
             add_heatmap_display_actions(menu, cfg, on_display_changed)
-        
+
         wtype_stats = ["activity", "added", "hourly", "future_due", "review_intervals", "stability", "difficulty", "retrievability", "retention"]
         if wtype in wtype_stats:
             menu.addSeparator()
@@ -529,7 +529,7 @@ class PinnedContextMenu:
             bottom_stats_act.setChecked(global_show_bottom_stats)
             bottom_stats_act.triggered.connect(self.manager._toggle_global_bottom_stats)
             menu.addAction(bottom_stats_act)
-            
+
             global_show_all_stats = self.manager._config_manager.config.get(Config.DEEP_DIVE_PINNED_SHOW_STATS, True)
             all_stats_act = QAction("Show Stats (Global)", menu)
             all_stats_act.setCheckable(True)
@@ -540,19 +540,18 @@ class PinnedContextMenu:
         wtype_binning = ["activity", "added", "retention", "future_due", "review_intervals", "stability", "difficulty", "retrievability"]
         if wtype in wtype_binning:
             menu.addSeparator()
-            
+
             from ..imports import Config as _Cfg
             global_binning = self.manager._config_manager.config.get(_Cfg.ADAPTIVE_CHART_BINNING, True)
             binning_override = widget_def.get("binning_override", None)
             effective_binning = binning_override if binning_override is not None else global_binning
-            
+
             binning_act = QAction("Adaptive Binning", menu)
             binning_act.setCheckable(True)
             binning_act.setChecked(effective_binning)
             binning_act.triggered.connect(lambda checked, wid=widget_def["id"]:
                 self.manager._update_setting(wid, "binning_override", checked))
             menu.addAction(binning_act)
-
 
         # Row break option, only for chart widgets (stat cards expose it through StatCardsContainer's own context menu).
         _wtype = widget_def.get("type")

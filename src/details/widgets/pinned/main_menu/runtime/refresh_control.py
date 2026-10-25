@@ -14,8 +14,6 @@ def refresh(manager, clear_cache=True):
         return
     # Instead of forcing Anki to reload HTML/queries, coalesce our own widget refresh.
     if mw.state not in ("deckBrowser", "overview"):
-        if mw.state == "review":
-            manager._refresh_after_review = True
         return
 
     if getattr(manager, "_review_return_fast_path", False):

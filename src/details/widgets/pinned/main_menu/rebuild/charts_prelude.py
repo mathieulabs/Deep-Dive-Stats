@@ -26,7 +26,6 @@ def prepare_other_defs_and_reflow(
         )
         for d in other_defs
     )
-    manager._last_chart_probe_sig = chart_probe_sig
 
     chart_reflow_sig = (
         chart_probe_sig,

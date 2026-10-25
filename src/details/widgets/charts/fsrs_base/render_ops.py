@@ -45,7 +45,6 @@ def paint_event_impl(widget, event):
 
     widget._anim_draw_values = draw_values
     widget._anim_draw_ratios = draw_ratios
-    widget._anim_axis_max = axis_max
 
     margin_left = ChartGeometry.calculate_dynamic_left_margin(widget.fontMetrics(), axis_max)
     if widget.show_cumulative_axis:

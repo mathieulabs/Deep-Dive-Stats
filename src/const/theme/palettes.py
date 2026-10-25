@@ -76,7 +76,7 @@ class ThemePalettes:
         "error": "#ef4444",
         "info": "#3b82f6"
     }
-    
+
     DEEP_OCEAN_PALETTE = {
         "bg_root": "#1b2b34",
         "bg_surface": "#21313c",
@@ -88,7 +88,7 @@ class ThemePalettes:
         "accent": "#6699cc",
         "accent_hover": "#5fb3b3"
     }
-    
+
     NORD_PALETTE = {
         "bg_root": "#2e3440",
         "bg_surface": "#3b4252",
@@ -100,7 +100,7 @@ class ThemePalettes:
         "accent": "#88c0d0",
         "accent_hover": "#81a1c1"
     }
-    
+
     GITHUB_PALETTE = {
         "bg_root": "#0d1117",
         "bg_surface": "#161b22",
@@ -112,7 +112,7 @@ class ThemePalettes:
         "accent": "#58a6ff",
         "accent_hover": "#1f6feb"
     }
-    
+
     MIDNIGHT_PALETTE = {
         "bg_root": "#121212",
         "bg_surface": "#222222",

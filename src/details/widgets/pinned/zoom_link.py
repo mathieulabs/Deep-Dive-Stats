@@ -12,6 +12,23 @@ from ...ui.shared.zoom_span import _row_date, zoom_dates
 _busy = False
 
 
+class held:
+    """No zoom is passed between pinned charts inside this block: a data refresh (deck
+    change, new reviews) resets or keeps each chart's zoom by itself, and a reset seen
+    halfway would zoom the other charts back to the old window."""
+
+    def __enter__(self):
+        global _busy
+        self._prev = _busy
+        _busy = True
+        return self
+
+    def __exit__(self, *_exc):
+        global _busy
+        _busy = self._prev
+        return False
+
+
 def _widgets(manager):
     try:
         return [w for w in list(manager._active_widgets.values()) if w is not None]

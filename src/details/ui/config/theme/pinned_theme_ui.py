@@ -94,7 +94,7 @@ def make_pinned_theme_color_control(
     btn_reset.setFixedSize(22, 22)
     btn_reset.setCursor(Qt.CursorShape.PointingHandCursor)
     btn_reset.setToolTip("Reset to preset value")
-    set_qss(btn_reset, 
+    set_qss(btn_reset,
         "QPushButton { background: transparent; border: none; } "
         "QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }"
     )

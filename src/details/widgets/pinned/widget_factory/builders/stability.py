@@ -24,7 +24,8 @@ def _build_stability(widget_def, deck_id, cache=None, parent=None, cfg=None):
         cfg = _addon_config()
     cfg = _addon_config() if cfg is None else cfg
     adaptive_binning = cfg.config.get(ADAPTIVE_CHART_BINNING, True)
-    fsrs_data = fetch_fsrs_data(deck_id, cfg, fail_if_not_cached=True)
+    # Not cached yet: start empty, the data comes with the next update (as the other FSRS charts).
+    fsrs_data = fetch_fsrs_data(deck_id, cfg, fail_if_not_cached=True) or {}
 
     chart = StabilityChartWidget(fsrs_data.get("stability", {}), parent=parent, adaptive_binning=adaptive_binning)
     chart._last_timespan_token = widget_def.get("_timespan_token", widget_def.get("time_span"))
@@ -49,7 +50,7 @@ def _build_stability(widget_def, deck_id, cache=None, parent=None, cfg=None):
         title=pinned_title(widget_def, "CARD STABILITY"),
         title_object_name="pinned_header",
     )
-    
+
     add_fsrs_filter_radio(chart, widget_def, header_widget, header_lay)
 
     return _wrap(chart, None,
@@ -82,7 +83,7 @@ def _update_stability(chart, widget_def, deck_id, cache=None, fail_if_not_cached
             deck_policy="force",
             extra_trigger=bool(fail_if_not_cached),
         )
-        
+
         chart.binning_override = widget_def.get("binning_override", None)
         chart.set_cumulative_mode(widget_def.get("show_cumulative", True))
         chart.update_data(
@@ -92,9 +93,9 @@ def _update_stability(chart, widget_def, deck_id, cache=None, fail_if_not_cached
         )
         chart._last_timespan_token = current_span_token
         chart._last_deck_id = deck_id
-        
+
         refresh_parent_chart_header_stats(chart)
-                
+
         return True
     return False
 

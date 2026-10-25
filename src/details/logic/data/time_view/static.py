@@ -6,6 +6,7 @@ from aqt import mw
 
 from ... import excluded_decks_clause
 from ..core.streaks import get_all_deck_streaks
+from ..core.forecast import deck_new_limit
 
 _TIME_VIEW_STATIC_CACHE = {}
 _TIME_VIEW_STATIC_TTL_S = 10
@@ -29,11 +30,7 @@ def get_time_view_static_bundle(excluded_dids):
     all_decks_list = list(mw.col.decks.all_names_and_ids())
     deck_limits = {}
     for d in all_decks_list:
-        try:
-            conf = mw.col.decks.config_dict_for_deck_id(d.id)
-            deck_limits[d.id] = conf["new"]["perDay"]
-        except Exception:
-            deck_limits[d.id] = 20
+        deck_limits[d.id] = deck_new_limit(mw.col, d.id)
 
     new_cards_results = mw.col.db.all(
         f"SELECT (CASE WHEN odid > 0 THEN odid ELSE did END), COUNT(*) FROM cards WHERE type = 0 {did_limit} GROUP BY 1"
@@ -56,7 +53,7 @@ def get_time_view_static_bundle(excluded_dids):
     return bundle, False
 
 
-def warm_time_view_static_bundle_async(excluded_dids, generation_key=None):
+def warm_time_view_static_bundle_async(excluded_dids):
     """Warm the static time-view bundle in the background if needed."""
     cache_key = _static_cache_key(excluded_dids)
     now = datetime.now().timestamp()

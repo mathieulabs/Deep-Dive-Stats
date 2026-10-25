@@ -110,6 +110,5 @@ def build_pinned_widgets_section(dialog, parent_layout) -> None:
     )
     layout_pinned_gen.addWidget(margins_form_host)
 
-
     parent_layout.addWidget(group_pinned_gen)
 

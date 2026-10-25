@@ -5,6 +5,7 @@ from aqt.qt import QColor, QFontMetrics, QTableWidgetItem, Qt
 
 from .. import format_hours
 from ...widgets import SegmentedBarWidget
+from ...logic.data.core.forecast import forecast_days
 from .retention_visual import retention_bar, retention_visual_on
 from ...widgets.chart_utils.formatting import fmt_num, stats_precision
 from ...widgets.chart_utils.theme import get_theme_colors
@@ -46,7 +47,6 @@ def populate_table(
 ):
     from .core import SortableTableWidgetItem, get_dist_text, get_trend_html
 
-    
     SortableTableWidgetItem.PIN_TOP = pin_top
 
     try:
@@ -64,7 +64,7 @@ def populate_table(
     sorting_was_enabled = table.isSortingEnabled()
     table.setUpdatesEnabled(False)
     table.setSortingEnabled(False)
-    
+
     # If sorting is requested, we re-flatten the tree_data hierarchically
     if sort_col is not None and tree_data:
         # Copy entries once and keep child lookups O(1) instead of rescanning the whole tree.
@@ -72,7 +72,7 @@ def populate_table(
         children_map = {}
         for path, info in tree_data.items():
             children_map.setdefault(info.get("parent"), []).append(path)
-        
+
         header_text = table.horizontalHeaderItem(sort_col).text() if table.horizontalHeaderItem(sort_col) else ""
 
         def get_val(d):
@@ -95,17 +95,18 @@ def populate_table(
             if header_text == "Streak": return d.get("streak_current", 0)
             if header_text == "Active Days": return d.get("active_days", 0)
             if header_text == "Forecast":
-                return (d.get("remaining_new", 0) / d["new_limit"]) if d.get("new_limit", 0) > 0 else -1
+                days = None if d.get("is_deleted") else forecast_days(d.get("new_limit", 0), d.get("max_days"), d.get("remaining_new", 0))
+                return -1 if days is None else days
             return 0
 
         reverse = (sort_order == Qt.SortOrder.DescendingOrder)
-        
+
         new_results = []
-        
+
         def add_children_sorted(parent_path, prefix):
             children = list(children_map.get(parent_path, ()))
             children.sort(key=lambda p: get_val(tree_data[p]), reverse=reverse)
-            
+
             count = len(children)
             for i, child_path in enumerate(children):
                 is_last = (i == count - 1)
@@ -121,13 +122,12 @@ def populate_table(
             tree_data[root]["tree_prefix"] = ""
             new_results.append(tree_data[root])
             add_children_sorted(root, "")
-            
-        results = new_results
 
+        results = new_results
 
     table.setRowCount(len(results) + 1) # +1 for Total row
     total_row_idx = 0 if pin_top else len(results)
-    
+
     cols_widths = [0, 0, 0, 0]
     fm = QFontMetrics(table.font())
     trend_html_cache = {}
@@ -136,7 +136,7 @@ def populate_table(
     formatted_time_cache = {}
     days_text_cache = {}
     retention_text_cache = {}
-    
+
     def get_trend_html_local(curr, prev, bigger_is_better=True, points=False):
         key = (curr, prev, bigger_is_better, points)
         cached = trend_html_cache.get(key)
@@ -217,7 +217,7 @@ def populate_table(
             c_hard = res["hard"]
             c_good = res["good"]
             c_easy = res["easy"]
-            
+
             texts = [
                 get_dist_text_local(c_again, reviews),
                 get_dist_text_local(c_hard, reviews),
@@ -228,7 +228,7 @@ def populate_table(
                 basis_txt = "100.00%" if not show_counts else txt
                 w = fm.horizontalAdvance(basis_txt)
                 if w > cols_widths[i]: cols_widths[i] = w
-        
+
         t_texts = [
             get_dist_text_local(totals["again"], totals["rev"]),
             get_dist_text_local(totals["hard"], totals["rev"]),
@@ -329,41 +329,41 @@ def populate_table(
 
         time_hours = time_ms / 1000 / 60 / 60
         row_color = resolve_row_color(data)
-        
+
         col = 0
         icon = ""
         tree_prefix_html = tree_prefix.replace(" ", "&nbsp;")
         if has_children:
             icon = "▾ " if full_name in expanded_decks else "▸ "
-        
+
         name_text = f"<span style='font-family:Consolas, monospace; color:{tree_prefix_color};'>{tree_prefix_html}</span>{icon}{display_name}"
-        
+
         if has_children:
             name_text = f"<b>{name_text}</b>"
-            
+
         item = SortableTableWidgetItem(name_text, sort_value=display_name)
-        
+
         if row_color:
             item.setBackground(row_color)
-        
+
         item.setData(Qt.ItemDataRole.UserRole, full_name)
         # Mark row as empty if it has 0 data for this period (used by filter_table)
         item.setData(Qt.ItemDataRole.UserRole + 1, reviews == 0 and time_ms == 0)
         set_item(row, col, item)
         col += 1
-        
+
         if show_time:
             time_val = formatted_time_local(time_hours)
             time_trend = get_trend_html_local(time_hours, (data.get("prev_time_ms", 0)/3600000))
             it = add_data_item(row, col, f"{time_val}{time_trend}", row_color, sort_value=time_hours)
-            it.setData(Qt.ItemDataRole.UserRole, range_type) 
+            it.setData(Qt.ItemDataRole.UserRole, range_type)
             col += 1
-        
+
         if show_reviews:
             rev_trend = get_trend_html_local(reviews, data.get("prev_reviews", 0))
             add_data_item(row, col, f"{fmt_num_local(reviews)}{rev_trend}", row_color, sort_value=reviews)
             col += 1
-        
+
         def add_retention_cell(key_suffix, passed, rev, prev_pass, prev_rev, col):
             rev_count = rev if rev else 0
             if rev_count > 0 and retention_visual_on(key_suffix):
@@ -385,15 +385,15 @@ def populate_table(
         if show_retention:
             add_retention_cell("all", data["passed"], reviews, data.get("prev_passed",0), data.get("prev_reviews",0), col)
             col += 1
-        
+
         if show_retention_young:
             add_retention_cell("young", data["pass_young"], data["rev_young"], data.get("prev_pass_young",0), data.get("prev_rev_young",0), col)
             col += 1
-            
+
         if show_retention_mature:
             add_retention_cell("mature", data["pass_mat"], data["rev_mat"], data.get("prev_pass_mat",0), data.get("prev_rev_mat",0), col)
             col += 1
-            
+
         if show_buttons_dist:
             if show_buttons_visual:
                 counts = [data["again"], data["hard"], data["good"], data["easy"]]
@@ -433,7 +433,7 @@ def populate_table(
 
         c_s = data.get("streak_current", None)
         l_s = data.get("streak_longest", None)
-        
+
         if show_longest_streak:
              if isinstance(l_s, (int, float)):
                  add_data_item(row, col, days_text_local(l_s), row_color, sort_value=l_s)
@@ -450,37 +450,27 @@ def populate_table(
              else:
                  add_data_item(row, col, "-", row_color, sort_value=-1)
              col += 1
-             
+
         if show_active_days:
             add_data_item(row, col, fmt_num_local(data["active_days"]), row_color, sort_value=data["active_days"])
             col += 1
-            
+
         if show_forecast:
             rem_new = data.get("remaining_new", 0)
-            target_rate = data.get("new_limit", 20)
-            m_days = data.get("max_days")
-            
-            days_left = -1
-            if m_days is not None and data.get("has_children"):
-                days_left = int(m_days)
-                ft = days_text_local(days_left)
-                tooltip = f"Slowest component bottleneck | Rem: {rem_new}"
-            elif target_rate > 0:
-                days_left = int(rem_new / target_rate)
-                ft = days_text_local(days_left)
-                tooltip = f"Theory: {target_rate} new/day | Rem: {rem_new}"
-            else:
+            target_rate = data.get("new_limit", 0)
+            days_left = None if data.get("is_deleted") else forecast_days(target_rate, data.get("max_days"), rem_new)
+            if days_left is None:
                 ft = "-"
-                tooltip = "New cards disabled"
-            
-            add_data_item(row, col, ft, row_color, tooltip, sort_value=days_left if target_rate > 0 else -1)
+                tooltip = f"New cards off | New cards left: {rem_new}"
+            else:
+                ft = days_text_local(days_left)
+                tooltip = f"{target_rate} new/day | New cards left: {rem_new}"
+
+            add_data_item(row, col, ft, row_color, tooltip, sort_value=-1 if days_left is None else days_left)
             col += 1
-            
+
             col += 1
 
-
-
-    
     def set_total_item(col, text, tooltip="", bg=None, sort_value=None):
         if not bg:
              if "total" in deck_colors:
@@ -503,19 +493,19 @@ def populate_table(
         return it
 
     set_total_item(0, "Total")
-    
+
     col = 1
     if show_time:
         t_time_val = formatted_time_local(totals["time"])
         t_time_trend = get_trend_html_local(totals["time"], totals["prev_time"])
         set_total_item(col, f"{t_time_val}{t_time_trend}", sort_value=totals["time"])
         col += 1
-    
+
     if show_reviews:
         t_rev_trend = get_trend_html_local(totals["rev"], totals["prev_rev"])
         set_total_item(col, f"{fmt_num_local(totals['rev'])}{t_rev_trend}", sort_value=totals['rev'])
         col += 1
-    
+
     def add_total_retention(key, passed, rev, prev_pass, prev_rev):
         nonlocal col
         if rev > 0 and retention_visual_on(key):
@@ -553,7 +543,7 @@ def populate_table(
         if show_buttons_visual:
              counts = [totals["again"], totals["hard"], totals["good"], totals["easy"]]
              seg_widget = SegmentedBarWidget(counts, parent=table, animate=False)
-             
+
              row_bg = None
              if "total" in deck_colors:
                  c = QColor(deck_colors["total"])
@@ -571,7 +561,7 @@ def populate_table(
              html += "</tr></table>"
              set_total_item(col, html)
         col += 1
-        
+
     if show_avg_time:
         if totals["rev"] > 0:
              avg_sec = (totals["time"] * 3600) / totals["rev"]
@@ -581,7 +571,7 @@ def populate_table(
         else:
              set_total_item(col, "N/A", sort_value=-1)
         col += 1
-        
+
     if show_longest_streak:
         l_s = totals.get('streak_longest', None)
         if isinstance(l_s, (int, float)):
@@ -603,19 +593,17 @@ def populate_table(
         set_total_item(col, fmt_num_local(totals.get("active_days", 0)), sort_value=totals.get("active_days", 0))
         col += 1
     if show_forecast:
-        t_max_days = totals["max_days"]
         t_rem = totals["remaining"]
-        days_left = -1
-        if t_max_days > 0:
-            days_left = int(t_max_days)
-            ft = days_text_local(days_left)
-            tooltip = f"Limiting Factor: Slowest deck | Total Rem: {t_rem}"
+        days_left = forecast_days(totals.get("limit", 0), totals["max_days"], t_rem)
+        if days_left is None:
+            ft = "-"
+            tooltip = f"New cards off | New cards left: {t_rem}"
         else:
-            ft = "-" if t_rem == 0 else "∞"
-            tooltip = f"Total limit 0 | Rem: {t_rem}"
-        set_total_item(col, ft, tooltip, sort_value=days_left if t_max_days > 0 else -1)
+            ft = days_text_local(days_left)
+            tooltip = f"Slowest deck | New cards left: {t_rem}"
+        set_total_item(col, ft, tooltip, sort_value=-1 if days_left is None else days_left)
         col += 1
-        
+
         col += 1
 
     if show_buttons_dist:

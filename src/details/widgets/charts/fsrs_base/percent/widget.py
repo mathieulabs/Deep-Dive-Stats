@@ -12,14 +12,12 @@ from .shared import (
 
 class FSRSPercentChartBase(FSRSBaseChart):
     chart_title = ""
-    chart_bottom_text_lines = 2
     reverse_gradient = False
     exact_hover_match = False
     clear_hover_outside_plot = False
 
     def __init__(self, data_dict, parent=None, adaptive_binning=True):
         super().__init__(data_dict, self.chart_title, parent, adaptive_binning=adaptive_binning)
-        self.bottom_text_lines = self.chart_bottom_text_lines
         self.show_cumulative_axis = False
         self._chrome_cache_key = None
         self._chrome_cache_pixmap = None

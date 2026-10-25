@@ -141,7 +141,7 @@ def install(dialog):
     hider = QWidget(dialog.tab_widget)
     hider.setObjectName("table_drawer_hider")
     hrow = QHBoxLayout(hider)
-    hrow.setContentsMargins(8, 3, 0, 0)
+    hrow.setContentsMargins(8, 0, 0, 0)
     hide_btn = QToolButton(hider)
     hide_btn.setObjectName("table_drawer_hide")
     hide_btn.setText("Hide")
@@ -157,7 +157,7 @@ def install(dialog):
     closer = QWidget(dialog.tab_widget)
     closer.setObjectName("table_drawer_closer")
     crow = QHBoxLayout(closer)
-    crow.setContentsMargins(0, 3, 10, 0)
+    crow.setContentsMargins(0, 0, 10, 0)
     crow.setSpacing(6)
     cb2 = QCheckBox("Auto-close", parent=closer)
     cb2.setToolTip("Close the table after you pick a deck in it")
@@ -347,8 +347,17 @@ class _EdgeHandle(QFrame):
         self._dragging = False
 
     def mousePressEvent(self, event):
+        anim = getattr(self._dialog, "_drawer_anim", None)
+        if anim is not None and anim.state() == QAbstractAnimation.State.Running:
+            # Still sliding: a drag now would fight the slide (and the closing slide hides
+            # this handle while the mouse holds it).
+            event.accept()
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
+            self._close_on_release = False
+            # Closing by dragging keeps the size the table had before the drag.
+            self._size_before = dict(getattr(self._dialog, "_drawer_sizes", {}) or {})
             event.accept()
 
     def mouseMoveEvent(self, event):
@@ -374,7 +383,11 @@ class _EdgeHandle(QFrame):
             event.accept()
             if getattr(self, "_close_on_release", False):
                 self._close_on_release = False
-                _open_overlay(self._dialog, False)
+                d = self._dialog
+                d._drawer_sizes = dict(getattr(self, "_size_before", None) or d._drawer_sizes)
+                # Close once the release is fully handled: the slide hides and re-stacks
+                # widgets, this one included, which should not happen inside its own event.
+                QTimer.singleShot(0, lambda: _open_overlay(d, False) if engaged(d) else None)
                 return
             _save_sizes(self._dialog)
 
@@ -530,6 +543,23 @@ def _set_closer(dialog, show):
     ):
         tabs.setCornerWidget(widget if show else None, corner)
         widget.setVisible(show)
+    _fit_corners(dialog)
+
+
+def _fit_corners(dialog):
+    """Qt puts the corner widgets at the top of the tab row with their own height. Give them
+    the row's height so the Hide button and the Auto-close switch sit on its middle."""
+    if not getattr(dialog, "_drawer_closer_on", False):
+        return
+    try:
+        bar = dialog.tab_widget.tabBar()
+        h = max(bar.height(), bar.sizeHint().height())
+    except Exception:
+        log_swallowed()
+        return
+    for widget in (dialog.table_drawer_hider, dialog.table_drawer_closer):
+        if h > 0 and widget.height() != h:
+            widget.setFixedHeight(h)
 
 
 def _place(dialog, p):
@@ -563,6 +593,7 @@ def _place(dialog, p):
         bh = BAR_HEIGHT + _BAR_GAP
         bar.setGeometry(QRect(0, r.height() - bh, r.width(), bh))
     inner = rect.adjusted(1, 1, -1, -1)
+    _fit_corners(dialog)
     mover = getattr(dialog, "_drawer_snap", None) or table
     if mover.geometry() != inner:
         mover.setGeometry(inner)
@@ -1016,7 +1047,8 @@ def _update_bar(dialog):
     if side:
         strip.setIcon(_icon("chevron-right" if opened else "chevron-left"))
         return
-    label = "  Table: " + title if title else "  Table"
+    # Doubled "&": the button would read it as a keyboard shortcut.
+    label = "  Table: " + title.replace("&", "&&") if title else "  Table"
     if summary:
         label += "  \u00b7  " + summary
     dialog.table_drawer_btn.setText(label)

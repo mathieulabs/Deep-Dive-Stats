@@ -49,7 +49,6 @@ def start_deck_streaming(
                 dialog._deck_view_cache["tab_stats"] = dict(dialog.tab_stats)
             return
 
-
         current_idx = dialog.tab_widget.currentIndex()
         current_tab = dialog.tab_widget.widget(current_idx)
         if current_tab:
@@ -89,7 +88,6 @@ def start_deck_streaming(
                 if getattr(dialog, "_deck_view_cache", None):
                     dialog._deck_view_cache["deck_view_data"] = dict(dialog.deck_view_data)
 
-                found = False
                 should_resize = False
                 for i in range(dialog.tab_widget.count()):
                     w = dialog.tab_widget.widget(i)
@@ -97,11 +95,7 @@ def start_deck_streaming(
                         should_resize = i == dialog.tab_widget.currentIndex()
                         if should_resize and populate_deck_tab_fn is not None:
                             populate_deck_tab_fn(dialog, i, do_resize=True)
-                        found = True
                         break
-
-                if not found:
-                    pass
 
                 if getattr(dialog, "_deck_view_cache", None):
                     dialog._deck_view_cache["tab_stats"] = dict(dialog.tab_stats)

@@ -53,29 +53,29 @@ class WidgetRegistry:
     @staticmethod
     def is_pinned(widget_type, stat_key=None, deck_id=None, time_span=None):
         """Check if a widget is pinned with specific context."""
-        
+
         for w in WidgetRegistry.get_all():
             if w.get("type") != widget_type: continue
-            
+
             if widget_type == 'stat_card' and w.get("stat_key") != stat_key:
                 continue
-                
+
             # Use strict equality for context to allow multiple pins of same type but diff context
             w_did = w.get("deck_id")
             w_span = w.get("time_span")
-            
+
             if w_did is not None: w_did = int(w_did)
             if deck_id is not None: deck_id = int(deck_id)
-            
+
             if w_did != deck_id: continue
-            
+
             if w_span is not None: w_span = int(w_span)
             if time_span is not None: time_span = int(time_span)
-            
+
             if w_span != time_span: continue
-            
+
             return True
-            
+
         return False
 
     @staticmethod
@@ -95,7 +95,6 @@ class WidgetRegistry:
         if time_span is not None: entry["time_span"] = int(time_span)
         entry.update(extra_fields)
 
-
         widgets.append(entry)
         cfg[Config.PINNED_WIDGETS] = widgets
         WidgetRegistry._write(cfg)
@@ -106,8 +105,7 @@ class WidgetRegistry:
         cfg = WidgetRegistry._config()
         widgets = cfg.get(Config.PINNED_WIDGETS, [])
         new_widgets = [w for w in widgets if w["id"] != widget_id]
-        
-        
+
         cfg[Config.PINNED_WIDGETS] = new_widgets
         WidgetRegistry._write(cfg)
 
@@ -133,7 +131,7 @@ class WidgetRegistry:
                         w[key] = value
                         changed = True
                 break
-        
+
         if changed:
             cfg[Config.PINNED_WIDGETS] = widgets
             WidgetRegistry._write(cfg)
@@ -141,19 +139,19 @@ class WidgetRegistry:
     def reorder(ordered_ids):
         cfg = WidgetRegistry._config()
         widgets = cfg.get(Config.PINNED_WIDGETS, [])
-        
+
         widget_map = {w["id"]: w for w in widgets}
-        
+
         reordered = []
         for wid in ordered_ids:
             if wid in widget_map:
                 reordered.append(widget_map[wid])
-        
+
         rem_ids = set(widget_map.keys()) - set(ordered_ids)
         for wid in widgets:
             if wid["id"] in rem_ids:
                 reordered.append(wid)
-        
+
         cfg[Config.PINNED_WIDGETS] = reordered
         WidgetRegistry._write(cfg)
 

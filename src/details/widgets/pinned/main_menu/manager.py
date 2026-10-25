@@ -143,8 +143,6 @@ class MainMenuWidgetManager(QObject):
         self._active_widgets = {} # widget_id -> widget instance
         self._preserved_widgets_by_scope = {}
         self._last_render_scope_key = None
-        self._browser_heatmap_snapshot = None
-        self._browser_heatmap_snapshot_rect = None
         self._heatmap_snapshot_label = None
         self._current_deck_id = self._runtime_state.current_deck_id
         self._is_deck_browser = self._runtime_state.is_deck_browser
@@ -161,13 +159,9 @@ class MainMenuWidgetManager(QObject):
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self._on_refresh_timer_timeout)
         self._refresh_clear_cache = self._runtime_state.refresh_clear_cache
-        
-        self._height_debounce_timer = QTimer()
-        self._height_debounce_timer.setSingleShot(True)
-        self._height_debounce_timer.timeout.connect(self._on_height_debounce_timeout)
-        self._pending_height = self._overlay_state.pending_height
+
         self._last_drag_move_time = self._overlay_state.last_drag_move_time
-        
+
         self._sync_timer = QTimer()
         self._sync_timer.setSingleShot(True)
         self._sync_timer.timeout.connect(self._do_sync_overlay)
@@ -179,7 +173,7 @@ class MainMenuWidgetManager(QObject):
         self._poll_timer = QTimer()
         self._poll_timer.timeout.connect(self.sync_overlay)
         self._poll_timer.start(POLL_INTERVAL_MS)
-        
+
         cache = GlobalHistoryCache()
         MainMenuWidgetManager._global_cache_instance = cache
         # Auto refreshes from cache lifecycle should not wipe local pinned contexts.
@@ -191,12 +185,11 @@ class MainMenuWidgetManager(QObject):
         self._config_manager = None
         self._config_dirty = True
         self._config_profile_name = None
-        
+
         self._pending_updates = self._runtime_state.pending_updates  # (deck_id, span, history_type, widget_id)
         self._initial_rebuild_queued = self._runtime_state.initial_rebuild_queued
         self._widget_update_signatures = self._runtime_state.widget_update_signatures
         self._last_resize_signature = self._overlay_state.last_resize_signature
-        self._refresh_after_review = self._runtime_state.refresh_after_review
         self._review_return_seq = self._runtime_state.review_return_seq
         self._review_return_t0 = self._runtime_state.review_return_t0
         self._skip_next_silent_refresh = self._runtime_state.skip_next_silent_refresh
@@ -214,13 +207,11 @@ class MainMenuWidgetManager(QObject):
         self._last_browser_rebuild_ts = self._runtime_state.last_browser_rebuild_ts
         self._last_op_callback_rebuild_ts = self._runtime_state.last_op_callback_rebuild_ts
         self._pending_deferred_widget_updates = self._runtime_state.pending_deferred_widget_updates
-        self._overview_prefetch_hot = self._runtime_state.overview_prefetch_hot
         self._pending_browser_refresh = self._runtime_state.pending_browser_refresh
         self._pending_partial_refresh_payload = self._runtime_state.pending_partial_refresh_payload
         self._external_refresh_suspensions = self._runtime_state.external_refresh_suspensions
         self._pending_refresh_while_suspended = self._runtime_state.pending_refresh_while_suspended
         self._pending_refresh_clear_cache = self._runtime_state.pending_refresh_clear_cache
-        self._last_chart_probe_sig = self._runtime_state.last_chart_probe_sig
         self._last_chart_reflow_sig = self._runtime_state.last_chart_reflow_sig
         self._chart_reflow_epoch = self._runtime_state.chart_reflow_epoch
         self._fade_anims = self._runtime_state.fade_anims
@@ -361,7 +352,7 @@ class MainMenuWidgetManager(QObject):
     def _schedule_rebuild(self, deck_id: int | None = None, force: bool = False, after_page_load: bool = False) -> None:
         return schedule_rebuild_impl(self, deck_id=deck_id, force=force, after_page_load=after_page_load)
 
-    def _clear_browser_heatmap_snapshot_overlay(self, *, recapture=False):
+    def _clear_browser_heatmap_snapshot_overlay(self):
         label = getattr(self, "_heatmap_snapshot_label", None)
         if label is not None:
             try:
@@ -373,10 +364,6 @@ class MainMenuWidgetManager(QObject):
             except Exception:
                 log_swallowed()
             self._heatmap_snapshot_label = None
-        elif recapture:
-            pass
-        self._browser_heatmap_snapshot = None
-        self._browser_heatmap_snapshot_rect = None
 
     def _rebuild_overlay(self, deck_id: int | None) -> None:
         return rebuild_overlay_impl(self, deck_id)
@@ -429,16 +416,13 @@ class MainMenuWidgetManager(QObject):
     def _trigger_async_widget_update(self, widget, widget_def, deck_id):
         return trigger_async_widget_update_impl(self, widget=widget, widget_def=widget_def, deck_id=deck_id)
 
-    def _on_height_debounce_timeout(self) -> None:
-        pass
-
     def sync_overlay(self) -> None:
         """Update overlay geometry based on placeholder positions in the webview (Debounced)."""
         sync_overlay_impl(self)
 
     def _do_sync_overlay(self) -> None:
         do_sync_overlay_impl(self)
-        
+
     def _show_context_menu(self, widget, widget_id, pos):
         show_context_menu_impl(self, widget, widget_id, pos)
 
@@ -460,7 +444,6 @@ class MainMenuWidgetManager(QObject):
     def _update_setting(self, wid, key, value):
         update_setting_impl(self, wid, key, value)
 
-
     def _toggle_global_bottom_stats(self, enabled):
         toggle_global_bottom_stats_impl(self, enabled)
 
@@ -469,7 +452,7 @@ class MainMenuWidgetManager(QObject):
 
     def _unpin(self, wid):
         unpin_impl(self, wid)
-    
+
     def _reset_widget_size(self, wid):
         reset_widget_size_impl(self, wid)
 

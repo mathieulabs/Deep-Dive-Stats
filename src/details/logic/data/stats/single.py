@@ -8,6 +8,8 @@ from aqt import mw
 
 from ... import LAST_YEAR, REVLOG_RESCHED, Period, get_rollover_offset_ms
 from ..core.streaks import get_deck_streaks
+from ..core.forecast import deck_new_limit, forecast_parts
+from ..core.revlog_slices import scan_slices, sliced_all
 from ..core.time_utils import get_time_range_ms
 from .shared import build_collection_did_limit, resolve_prev_exact_bounds
 
@@ -18,10 +20,10 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
     Returns a list of dictionaries containing data for each range.
     """
     stats_data = []
-    
+
     offset_ms = get_rollover_offset_ms()
     ms_per_day = 86400 * 1000
-    
+
     child_ids = []
     if is_collection:
         did_filter = build_collection_did_limit(excluded_dids)
@@ -43,11 +45,7 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
             for d in mw.col.decks.all_names_and_ids():
                 if excluded_dids and d.id in excluded_dids:
                     continue
-                try:
-                    conf = mw.col.decks.config_dict_for_deck_id(d.id)
-                    deck_limits[d.id] = conf['new']['perDay']
-                except Exception:
-                    deck_limits[d.id] = 20
+                deck_limits[d.id] = deck_new_limit(mw.col, d.id)
 
             if deck_limits:
                 dids_csv = ",".join(map(str, deck_limits.keys()))
@@ -58,14 +56,8 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
             else:
                 rem_map = {}
 
-            limit = sum(deck_limits.values())
-            remaining_new = sum(rem_map.values())
-
-            # Forecast bottleneck for collection = slowest deck
-            max_days = 0.0
-            for did, lim in deck_limits.items():
-                if lim > 0:
-                    max_days = max(max_days, rem_map.get(did, 0) / lim)
+            # Forecast: the slowest deck still holding new cards (see core.forecast).
+            limit, max_days, remaining_new = forecast_parts(deck_limits, deck_limits, rem_map)
         except Exception:
             limit = 0
             remaining_new = 0
@@ -80,25 +72,13 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
             deck_limits = {}
             target_ids = child_ids if child_ids else [deck_id]
             for cid in target_ids:
-                try:
-                    conf = mw.col.decks.config_dict_for_deck_id(cid)
-                    deck_limits[cid] = conf['new']['perDay']
-                except Exception:
-                    deck_limits[cid] = 20
-            limit = sum(deck_limits.values())
-
+                deck_limits[cid] = deck_new_limit(mw.col, cid)
             rem_query = f"SELECT (CASE WHEN odid > 0 THEN odid ELSE did END), COUNT(*) FROM cards WHERE type = 0 {did_filter} GROUP BY 1"
             rem_rows = mw.col.db.all(rem_query)
             rem_map = dict(rem_rows)
-            remaining_new = sum(rem_map.values())
-
-            # Forecast bottleneck for folder (and equivalent for leaf)
-            max_days = 0.0
-            for did, lim in deck_limits.items():
-                if lim > 0:
-                    max_days = max(max_days, rem_map.get(did, 0) / lim)
+            limit, max_days, remaining_new = forecast_parts(deck_limits, deck_limits, rem_map)
         except Exception:
-            limit = 20
+            limit = 0
             remaining_new = 0
             max_days = None
 
@@ -122,19 +102,19 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
                     end_date_str=tab_config.get("end_date", ""))
                 if not ctx:
                     continue
-                    
+
                 s = ctx.get("stats", {})
-                
+
                 start_ms, end_ms, _tp_start, _tp_end = get_time_range_ms(
                     range_type,
-                    week_start=tab_config.get("week_start", week_start), 
+                    week_start=tab_config.get("week_start", week_start),
                     custom_days=tab_config.get("days", 7),
                     custom_type=tab_config.get("custom_type", "relative"),
                     start_date_str=tab_config.get("start_date", ""),
                     end_date_str=tab_config.get("end_date", ""),
                     show_trends=True,
                 )
-                
+
                 # Mock 'res' tuple for components expecting the raw db row
                 mock_res = (
                     0, s.get("total_time_ms", 0), s.get("total_reviews", 0),
@@ -147,12 +127,12 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
                 prev_res = [0]*13
                 if show_trends and range_type != Period.TOTAL:
                     p_start_ms, p_end_ms = _tp_start, _tp_end
-                    
+
                     p_lb, p_ub = resolve_prev_exact_bounds(p_start_ms, p_end_ms)
 
-                    prev_ctx = ghc.get_context(deck_id, Period.CUSTOM, cfg=None, 
+                    prev_ctx = ghc.get_context(deck_id, Period.CUSTOM, cfg=None,
                         custom_type="exact", start_date_str=p_lb, end_date_str=p_ub)
-                        
+
                     if prev_ctx:
                         ps = prev_ctx.get("stats", {})
                         prev_res = (
@@ -201,27 +181,30 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
             total_tab = tab
         else:
             other_tabs.append(tab)
-    
+
     if pin_top:
         ordered_tabs = ([total_tab] if total_tab else []) + other_tabs
     else:
         ordered_tabs = other_tabs + ([total_tab] if total_tab else [])
-    
+
     # Pre-compute streaks ONCE for this deck (reused across all tabs)
     if is_collection:
         c_s, l_s = get_deck_streaks(None, start_ms=0, end_ms=None, excluded_dids=excluded_dids)
     elif deck_id is not None:
         c_s, l_s = get_deck_streaks(deck_id, start_ms=0, end_ms=None)
     else:
-        c_s, l_s = 0, 0
-    
+        # Deleted cards: their reviews have no deck, the bulk streaks keep them under None.
+        from ..core.streaks import get_all_deck_streaks
+
+        c_s, l_s = get_all_deck_streaks("").get(None, (0, 0))
+
     for tab_config in ordered_tabs:
         title = tab_config.get("title", "Stats")
         range_type = tab_config.get("range", Period.WEEK)
         week_start = tab_config.get("week_start", week_start)
-        
+
         start_ms, end_ms, _tp_start, _tp_end = get_time_range_ms(
-            range_type, 
+            range_type,
             week_start=tab_config.get("week_start", week_start),
             custom_days=tab_config.get("days", 7),
             custom_type=tab_config.get("custom_type", "relative"),
@@ -229,30 +212,8 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
             end_date_str=tab_config.get("end_date", ""),
             show_trends=True,
         )
-        
-        query = f"""
-            SELECT 
-                SUM(CASE WHEN revlog.time > 0 THEN revlog.time ELSE 0 END) as total_time,
-                COUNT(revlog.id) as reviews,
-                SUM(CASE WHEN revlog.ease > 1 THEN 1 ELSE 0 END) as passed,
-                SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 AND revlog.ease > 1 THEN 1 ELSE 0 END) as pass_young,
-                SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 THEN 1 ELSE 0 END) as rev_young,
-                SUM(CASE WHEN revlog.lastIvl >= 21 AND revlog.ease > 1 THEN 1 ELSE 0 END) as pass_mat,
-                SUM(CASE WHEN revlog.lastIvl >= 21 THEN 1 ELSE 0 END) as rev_mat,
-                SUM(CASE WHEN revlog.ease = 1 THEN 1 ELSE 0 END) as count_again,
-                SUM(CASE WHEN revlog.ease = 2 THEN 1 ELSE 0 END) as count_hard,
-                SUM(CASE WHEN revlog.ease = 3 THEN 1 ELSE 0 END) as count_good,
-                SUM(CASE WHEN revlog.ease = 4 THEN 1 ELSE 0 END) as count_easy,
-                COUNT(DISTINCT CAST(((CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END - {offset_ms}) / {ms_per_day}) AS INT)) as active_days
-            FROM revlog
-            LEFT JOIN cards ON revlog.cid = cards.id
-            WHERE revlog.type < {REVLOG_RESCHED}
-            AND (CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) >= {start_ms}
-            AND (CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) < {end_ms}
-            {did_filter} {excluded_days_clause()}
-        """
-        
-        res = mw.col.db.first(query)
+
+        res = _period_stats(start_ms, end_ms, did_filter, offset_ms, ms_per_day)
         if res:
             res = (deck_id or 0,) + tuple(res)
         else:
@@ -262,15 +223,14 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
         if show_trends and range_type != Period.TOTAL:
             p_start_ms, p_end_ms = _tp_start, _tp_end
             from ...history_cache import GlobalHistoryCache
-            
+
             ghc = GlobalHistoryCache()
             p_lb, p_ub = resolve_prev_exact_bounds(p_start_ms, p_end_ms)
-            
 
             lookup_id = deck_id if not is_collection else None
-            prev_ctx = ghc.get_context(lookup_id, Period.CUSTOM, cfg=None, 
+            prev_ctx = ghc.get_context(lookup_id, Period.CUSTOM, cfg=None,
                                        custom_type="exact", start_date_str=p_lb, end_date_str=p_ub)
-            
+
             if prev_ctx:
                 ps = prev_ctx.get("stats", {})
                 prev_res = (
@@ -281,28 +241,7 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
                     ""
                 )
             else:
-                prev_query = f"""
-                    SELECT 
-                        SUM(CASE WHEN revlog.time > 0 THEN revlog.time ELSE 0 END) as total_time,
-                        COUNT(revlog.id) as reviews,
-                        SUM(CASE WHEN revlog.ease > 1 THEN 1 ELSE 0 END) as passed,
-                        SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 AND revlog.ease > 1 THEN 1 ELSE 0 END) as pass_young,
-                        SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 THEN 1 ELSE 0 END) as rev_young,
-                        SUM(CASE WHEN revlog.lastIvl >= 21 AND revlog.ease > 1 THEN 1 ELSE 0 END) as pass_mat,
-                        SUM(CASE WHEN revlog.lastIvl >= 21 THEN 1 ELSE 0 END) as rev_mat,
-                        SUM(CASE WHEN revlog.ease = 1 THEN 1 ELSE 0 END) as count_again,
-                        SUM(CASE WHEN revlog.ease = 2 THEN 1 ELSE 0 END) as count_hard,
-                        SUM(CASE WHEN revlog.ease = 3 THEN 1 ELSE 0 END) as count_good,
-                        SUM(CASE WHEN revlog.ease = 4 THEN 1 ELSE 0 END) as count_easy,
-                        COUNT(DISTINCT CAST(((CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END - {offset_ms}) / {ms_per_day}) AS INT)) as active_days
-                    FROM revlog
-                    LEFT JOIN cards ON revlog.cid = cards.id
-                    WHERE revlog.type < {REVLOG_RESCHED}
-                    AND (CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) >= {p_start_ms}
-                    AND (CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) < {p_end_ms}
-                    {did_filter} {excluded_days_clause()}
-                """
-                p_res = mw.col.db.first(prev_query)
+                p_res = _period_stats(p_start_ms, p_end_ms, did_filter, offset_ms, ms_per_day)
                 if p_res:
                     prev_res = (deck_id or 0,) + tuple(p_res)
                 else:
@@ -326,7 +265,38 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
     return stats_data
 
 
-
-
-
-
+def _period_stats(start_ms, end_ms, did_filter, offset_ms, ms_per_day):
+    """(time, reviews, passed, pass_young, rev_young, pass_mat, rev_mat, again, hard, good,
+    easy, active_days) of the reviews in [start_ms, end_ms), like one SELECT of sums would
+    give, but read in slices (see revlog_slices) and grouped by day for the active days.
+    The deck filter is on cards, joined to each review, so SQLite reads every review
+    either way: slicing costs nothing more."""
+    id_ms = "(CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END)"
+    slices = scan_slices(start_ms, end_ms)
+    rows = sliced_all(lambda part: f"""
+        SELECT
+            CAST((({id_ms} - {offset_ms}) / {ms_per_day}) AS INT) as day,
+            SUM(CASE WHEN revlog.time > 0 THEN revlog.time ELSE 0 END),
+            COUNT(revlog.id),
+            SUM(CASE WHEN revlog.ease > 1 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 AND revlog.ease > 1 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.lastIvl >= 21 AND revlog.ease > 1 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.lastIvl >= 21 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.ease = 1 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.ease = 2 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.ease = 3 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.ease = 4 THEN 1 ELSE 0 END)
+        FROM revlog
+        LEFT JOIN cards ON revlog.cid = cards.id
+        WHERE revlog.type < {REVLOG_RESCHED}
+        AND {id_ms} >= {start_ms}
+        AND {id_ms} < {end_ms}
+        {did_filter} {excluded_days_clause()} {part}
+        GROUP BY day
+    """, slices, 1)
+    if not rows:
+        # What the single SELECT gave for no reviews: NULL sums, zero counts.
+        return (None, 0) + (None,) * 9 + (0,)
+    sums = [sum((r[i] or 0) for r in rows) for i in range(1, 12)]
+    return tuple(sums) + (len(rows),)

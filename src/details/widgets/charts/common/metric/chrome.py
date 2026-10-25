@@ -3,7 +3,7 @@
 """Cached scaffold and chrome painting shared by the Activity and Breakdown charts."""
 
 from ....chart_utils import get_theme_colors
-from ....chart_utils.drawing import chart_axes_style, draw_grid_and_axes, draw_right_axis_labels, draw_x_axis_labels, stroke_average_line
+from ....chart_utils.drawing import chart_style, chart_axes_style, draw_grid_and_axes, draw_right_axis_labels, draw_x_axis_labels, stroke_average_line
 from ..cache_dpr import cache_dpr, cache_surface, draw_cache, stale_cache
 from ..cache_keys import theme_color_token as _theme_color_token
 from aqt.qt import QPainter, Qt
@@ -81,6 +81,7 @@ def draw_cached_chrome(
 ):
     theme = get_theme_colors(widget)
     cache_key = (
+        chart_style(widget),  # line opacity setting (Total / Average lines)
         int(width),
         int(height),
         int(margin_left),

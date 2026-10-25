@@ -178,7 +178,7 @@ def apply_zoom_scale_to_widgets(manager, zoom):
                     )
                     year_lbl = nav.findChild(QLabel, "heatmap_year_lbl")
                     if year_lbl:
-                        set_qss(year_lbl, 
+                        set_qss(year_lbl,
                             f"font-weight: 800; font-size: {fs}px; color: {txt_sec_hex}; letter-spacing: 1px; "
                             f"margin-left: {max(2, int(round(2 * z)))}px; margin-right: {max(2, int(round(2 * z)))}px;"
                         )
@@ -188,7 +188,7 @@ def apply_zoom_scale_to_widgets(manager, zoom):
                             b.setFixedSize(btn_sz, btn_sz)
                             is_active = bool(b.property("heatmap_mode_active"))
                             if is_active and name.startswith("heatmap_mode_"):
-                                set_qss(b, 
+                                set_qss(b,
                                     "QPushButton { "
                                     f"background: {active_bg}; border: none; "
                                     f"font-weight: 800; font-size: {fs}px; color: {txt_pri_hex}; "
@@ -197,7 +197,7 @@ def apply_zoom_scale_to_widgets(manager, zoom):
                                     f"QPushButton:pressed {{ background: {active_bg}; color: {txt_pri_hex}; }}"
                                 )
                             else:
-                                set_qss(b, 
+                                set_qss(b,
                                     "QPushButton { background: transparent; border: none; "
                                     f"font-weight: 800; font-size: {fs}px; color: {txt_sec_hex}; "
                                     "padding: 0px; margin: 0px; border-radius: 3px; } "
@@ -209,7 +209,7 @@ def apply_zoom_scale_to_widgets(manager, zoom):
                         b365.setFixedSize(btn_365_w, btn_sz)
                         is_active_365 = bool(b365.property("heatmap_mode_active"))
                         if is_active_365:
-                            set_qss(b365, 
+                            set_qss(b365,
                                 "QPushButton { "
                                 f"background: {active_bg}; border: none; "
                                 f"font-weight: 800; font-size: {fs}px; color: {txt_pri_hex}; "
@@ -218,7 +218,7 @@ def apply_zoom_scale_to_widgets(manager, zoom):
                                 f"QPushButton:pressed {{ background: {active_bg}; color: {txt_pri_hex}; }}"
                             )
                         else:
-                            set_qss(b365, 
+                            set_qss(b365,
                                 "QPushButton { background: transparent; border: none; "
                                 f"font-weight: 800; font-size: {fs}px; color: {txt_sec_hex}; "
                                 "padding: 0px; margin: 0px; border-radius: 3px; } "

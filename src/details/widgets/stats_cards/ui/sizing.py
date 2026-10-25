@@ -53,34 +53,50 @@ def compact_typography(scale):
     }
 
 
-def dashboard_typography(scale, width, total_ideal, reduced_height_mode):
-    user_scale = max(0.5, min(1.8, float(scale or 1.0)))
+def _dashboard_fit(width, total_ideal):
+    """(threshold_w, adj_scale, grow) for cards that want total_ideal px in width px."""
     threshold_w = float(total_ideal) * DASHBOARD_THRESHOLD_MULTIPLIER
     if width < threshold_w and width > 0:
         fit_scale = max(DASHBOARD_MIN_FIT_SCALE, min(DASHBOARD_MAX_FIT_SCALE, width / threshold_w))
-        adj_scale = fit_scale ** DASHBOARD_FIT_EXPONENT
+        return threshold_w, fit_scale ** DASHBOARD_FIT_EXPONENT, 1.0
+    grow = 1.0
+    if threshold_w > 0 and width > threshold_w:
+        # Room to spare (wide window): one factor for fonts, margins and height together.
+        grow = min(DASHBOARD_MAX_GROW, (width / threshold_w) ** DASHBOARD_GROW_EXPONENT)
+    return threshold_w, 1.0, grow
+
+
+def dashboard_typography(scale, width, total_ideal, reduced_height_mode, height_ideal=None):
+    """Font sizes follow the card texts (total_ideal). The height follows height_ideal,
+    the cards measured with a typical value, so it does not move each time the values
+    change (zoom, period, deck), which would shift every chart below by a pixel or two.
+    The fonts never get bigger than what that height was made for."""
+    user_scale = max(0.5, min(1.8, float(scale or 1.0)))
+    threshold_w, adj_scale, grow = _dashboard_fit(width, total_ideal)
+    h_adj, h_grow = adj_scale, grow
+    if height_ideal is not None:
+        _, h_adj, h_grow = _dashboard_fit(width, height_ideal)
+        adj_scale, grow = min(adj_scale, h_adj), min(grow, h_grow)
+    if adj_scale < 1.0:
         val_fs = DASHBOARD_FIT_VALUE_BASE + (DASHBOARD_FIT_VALUE_GAIN * adj_scale)
         title_fs = DASHBOARD_FIT_TITLE_BASE + (DASHBOARD_FIT_TITLE_GAIN * adj_scale)
         sub_fs = (val_fs * DASHBOARD_FIT_SUB_MULT) + DASHBOARD_FIT_SUB_BASE
         h_margin = DASHBOARD_FIT_MARGIN_BASE + (DASHBOARD_FIT_MARGIN_GAIN * adj_scale)
     else:
-        adj_scale = 1.0
         val_fs = DASHBOARD_VALUE_FS
         title_fs = DASHBOARD_TITLE_FS
         sub_fs = DASHBOARD_SUBTITLE_FS
         h_margin = DASHBOARD_H_MARGIN
-        if threshold_w > 0 and width > threshold_w:
-            # Room to spare (wide window): one factor for fonts, margins and height together.
-            user_scale *= min(DASHBOARD_MAX_GROW, (width / threshold_w) ** DASHBOARD_GROW_EXPONENT)
 
     base_h = DASHBOARD_BASE_HEIGHT_REDUCED if bool(reduced_height_mode) else DASHBOARD_BASE_HEIGHT_NORMAL
-    targ_h = (base_h + (DASHBOARD_HEIGHT_GAIN * adj_scale)) * user_scale
+    targ_h = (base_h + (DASHBOARD_HEIGHT_GAIN * h_adj)) * user_scale * h_grow
+    font_scale = user_scale * grow
     return {
         "threshold_w": threshold_w,
-        "val_fs": val_fs * user_scale,
-        "title_fs": title_fs * user_scale,
-        "sub_fs": sub_fs * user_scale,
-        "h_margin": h_margin * user_scale,
+        "val_fs": val_fs * font_scale,
+        "title_fs": title_fs * font_scale,
+        "sub_fs": sub_fs * font_scale,
+        "h_margin": h_margin * font_scale,
         "targ_h": targ_h,
     }
 

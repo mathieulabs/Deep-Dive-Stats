@@ -298,7 +298,6 @@ def update_levels_impl(widget):
         widget.future_levels.append(c)
 
     widget._pixmap_cache = None
-    widget._transition_old_pixmap = None
     widget._transition_new_pixmap = None
     widget.update()
 
@@ -324,6 +323,5 @@ def update_empty_color_impl(widget):
     widget._scaffold_pixmap_cache = None
     widget._scaffold_pixmap_cache_key = None
     widget._pixmap_cache = None
-    widget._transition_old_pixmap = None
     widget._transition_new_pixmap = None
     widget.update()

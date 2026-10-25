@@ -109,7 +109,7 @@ class _AnimProxy:
 # The single shared QTimer that drives all chart animations
 
 class _GlobalAnimDriver(QObject):
-    _TICK_MS = 16 
+    _TICK_MS = 16
     _QUEUE_OVERLAP_PROGRESS = 0.35
     _QUEUE_OVERLAP_SLOTS = 1
 

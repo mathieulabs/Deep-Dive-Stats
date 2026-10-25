@@ -41,7 +41,7 @@ from .fsrs_filters import (
     resolve_fsrs_filter_choice,
 )
 from .html_delegate import HTMLDelegate
-from .layout_factory import create_hbox_container, create_vbox_container
+from .layout_factory import create_hbox_container
 
 __all__ = [
     "AdaptiveStatsWidget",
@@ -81,5 +81,4 @@ __all__ = [
     "resolve_fsrs_filter_choice",
     "HTMLDelegate",
     "create_hbox_container",
-    "create_vbox_container",
 ]

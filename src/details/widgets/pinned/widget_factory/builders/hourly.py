@@ -38,7 +38,7 @@ def _build_hourly(widget_def, deck_id, cache=None, parent=None, cfg=None):
         show_grid=widget_def.get("show_grid"),
         minimum_height=120,
     )
-    
+
     label = pinned_title(widget_def, "HOURLY BREAKDOWN")
     header_widget, _, _, _ = create_chart_header_for_chart(
         chart,
@@ -80,8 +80,8 @@ def _update_hourly(chart, widget_def, deck_id, cache=None, fail_if_not_cached=Fa
         return False
     if hasattr(chart, "update_data"):
         chart.update_data(data)
-        
+
         refresh_parent_chart_header_stats(chart)
-                
+
         return True
     return False

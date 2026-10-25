@@ -9,13 +9,13 @@ def fmt_num(val, prec=None):
     """
     if not isinstance(val, (int, float)):
         return str(val)
-        
+
     try:
         from ....config import read_config_value
         use_sep = read_config_value(Config.USE_THOUSANDS_SEPARATOR, True)
     except Exception:
         use_sep = True
-        
+
     if use_sep:
         if isinstance(val, int):
             return f"{val:,}"
@@ -26,7 +26,7 @@ def fmt_num(val, prec=None):
                     return f"{i:,}"
                 return f"{val:,.1f}"
             return f"{val:,.{prec}f}"
-    
+
     if isinstance(val, float):
         if prec is None:
             i = int(round(float(val)))
@@ -36,7 +36,7 @@ def fmt_num(val, prec=None):
         else:
             p = prec
         return f"{val:.{p}f}"
-        
+
     return str(val)
 
 
@@ -91,6 +91,11 @@ def format_metric_value(value, value_mode="reviews", with_unit=True, per_day=Fal
     if axis:
         if v <= 0.0:
             return "0"
+        if v < 1.0:
+            # Under a minute, seconds: at one decimal of a minute the ticks of a short
+            # session all read "0.1m" or "0m".
+            secs = v * 60.0
+            return f"{fmt_num_trim_zeros(secs, 0 if secs >= 10 else 1)}s"
         if v < 60.0:
             return f"{fmt_num_trim_zeros(v, 1)}m"
         h = v / 60.0

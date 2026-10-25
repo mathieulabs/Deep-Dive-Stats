@@ -5,6 +5,7 @@
 from .....utils import excluded_days_clause
 from aqt import mw
 from ... import REVLOG_RESCHED, get_rollover_offset_ms
+from .forecast import deck_new_limit
 
 
 def fetch_data(start_ms, end_ms, prev_start_ms, prev_end_ms, did_limit, range_type, spark_precision, show_trends, precomputed_static=None):
@@ -12,13 +13,13 @@ def fetch_data(start_ms, end_ms, prev_start_ms, prev_end_ms, did_limit, range_ty
     Fetches the main statistics and previous statistics (if trends enabled).
     """
     from ...logger import log_debug
-    
+
     offset_ms = get_rollover_offset_ms()
     ms_per_day = 86400 * 1000
 
     # Increase GROUP_CONCAT limit to avoid truncation for very large collections/long history
     mw.col.db.execute("PRAGMA group_concat_max_len = 100000")
-    
+
     query = f"""
         SELECT (CASE WHEN cards.odid > 0 THEN cards.odid ELSE cards.did END), 
                SUM(CASE WHEN revlog.time > 0 THEN revlog.time ELSE 0 END), 
@@ -44,7 +45,7 @@ def fetch_data(start_ms, end_ms, prev_start_ms, prev_end_ms, did_limit, range_ty
     """
     results = mw.col.db.all(query)
     log_debug(f"[DATABASE] Main query returned {len(results)} rows", tag="DATABASE")
-    
+
     prev_stats_map = {}
     if show_trends:
         case_stmt = "(CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END)"
@@ -60,11 +61,7 @@ def fetch_data(start_ms, end_ms, prev_start_ms, prev_end_ms, did_limit, range_ty
     else:
         deck_limits = {}
         for d in mw.col.decks.all_names_and_ids():
-            try:
-                conf = mw.col.decks.config_dict_for_deck_id(d.id)
-                deck_limits[d.id] = conf['new']['perDay']
-            except Exception:
-                deck_limits[d.id] = 20
+            deck_limits[d.id] = deck_new_limit(mw.col, d.id)
 
         new_cards_query = f"""
             SELECT (CASE WHEN odid > 0 THEN odid ELSE did END), COUNT(*) FROM cards WHERE type = 0 {did_limit} GROUP BY 1

@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-import time
 from contextlib import contextmanager
 from aqt.qt import QLabel
 from ...chart_utils.zoom_mixin import preserve_zoom
@@ -102,7 +101,7 @@ class WidgetFactory:
             label = None  # emptied title: no header
         if wtype == "text_label":
             label = None
-        
+
         if "deck_ids" in widget_def:
             deck_id = _resolve_deck_ids(widget_def["deck_ids"], deck_id)
         elif "deck_id" in widget_def:
@@ -136,20 +135,18 @@ class WidgetFactory:
                 return None
             from ...chart_utils.browser_click import set_pinned_deck
             set_pinned_deck(inner, deck_id)
-            
+
             if wtype == "stat_card":
                 return inner
-                
+
             if inner.objectName() == "pinned_widget_card":
                 return inner
 
             color = getattr(inner, "color", None)
             if color is None and hasattr(inner, "base_color"):
                  color = inner.base_color
-            
+
             wrapped = _wrap(inner, label, base_color=color, wtype=wtype, widget_id=widget_def.get("id"), saved_w=widget_def.get("width"), saved_h=widget_def.get("height"), parent=parent)
-            if wtype == "text_label" and wrapped is not None:
-                pass
             return wrapped
         except Exception as e:
             l = QLabel(f"Error: {e}")
@@ -161,7 +158,7 @@ class WidgetFactory:
         """Update an existing widget wrapper with new data."""
         if not wrapper:
             return False
-            
+
         inner = getattr(wrapper, "inner_widget", None)
         if not inner:
             from ...stats_cards import StatCardWidget
@@ -169,13 +166,13 @@ class WidgetFactory:
                 inner = wrapper
             else:
                 return False
-        
+
         from ...stats_cards import StatCardWidget
         if wrapper.objectName() != "pinned_widget_card" and not isinstance(wrapper, StatCardWidget):
             return False
 
         wtype = widget_def.get("type", "")
-        
+
         from .builders.activity import _update_activity
         from .builders.retention import _update_retention
         from .builders.added import _update_added
@@ -207,11 +204,11 @@ class WidgetFactory:
             "retrievability": _update_retrievability,
             "text_label": _update_text_label,
         }
-        
+
         updater = updaters.get(wtype)
         if not updater:
             return False
-            
+
         if "deck_ids" in widget_def:
             deck_id = _resolve_deck_ids(widget_def["deck_ids"], deck_id)
         elif "deck_id" in widget_def:
@@ -220,18 +217,14 @@ class WidgetFactory:
         try:
             from ...chart_utils.browser_click import set_pinned_deck
             set_pinned_deck(inner, deck_id)
-            _t0 = time.perf_counter()
-            with _keep_chart_zoom(inner, widget_def, deck_id):
+            from ..zoom_link import held as _zoom_link_held
+
+            with _zoom_link_held(), _keep_chart_zoom(inner, widget_def, deck_id):
                 success = updater(inner, widget_def, deck_id, cache=cache, fail_if_not_cached=fail_if_not_cached, cfg=cfg)
-            elapsed_ms = (time.perf_counter() - _t0) * 1000.0
-            if elapsed_ms >= 120:
-                pass
             if success:
                 if wrapper.objectName() == "pinned_widget_card" and hasattr(wrapper, "apply_size"):
                     wrapper.apply_size(widget_def.get("width"), widget_def.get("height"))
-                    if wtype == "text_label":
-                        pass
-                
+
                 from ...stats_cards import StatCardWidget
                 label = widget_def.get("label")
                 if label is not None and not isinstance(wrapper, StatCardWidget) and not str(label).strip():
@@ -251,7 +244,7 @@ class WidgetFactory:
                             "difficulty": "Card Difficulty", "retrievability": "Card Retrievability"
                         }
                         label = default_labels.get(wtype, wtype.replace("_", " ").title())
-                        
+
                     if isinstance(wrapper, StatCardWidget):
                         wrapper.update_val(wrapper.shown_value(), title=label, refresh=False)
                     else:

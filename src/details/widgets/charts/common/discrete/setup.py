@@ -13,7 +13,6 @@ def init_discrete_chart_common_state(widget, *, adaptive_binning, opacity_pct=10
     widget.show_cumulative_axis = True
     widget.adaptive_binning = adaptive_binning
     widget.binning_override = None
-    widget.binning_toggled_callback = None
     widget.chart_opacity_pct = int(opacity_pct)
     widget.hover_index = -1
     widget._display_values = []
