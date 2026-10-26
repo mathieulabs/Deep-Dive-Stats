@@ -13,11 +13,17 @@ from ....animations.chart_policy import (
     get_chart_animation_visible_threshold,
 )
 from ....logic.data.section_fetchers import fetch_section_data
+from ....widgets.chart_utils.own_colors import apply_own_colors
 from ....logic.data.transforms.retention_series import build_retention_series
 from ... import Config
 from .....qss import set_qss
 from ....logic.logger import log_error
 from ....logic.logger import log_swallowed
+
+
+def _no_section(res):
+    """True when a section builder gave nothing to show: None, or a tuple without widget."""
+    return not res or (isinstance(res, tuple) and res[0] is None)
 
 
 def _projected_visible_fraction(widget, viewport):
@@ -295,6 +301,17 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
             builder, k, label = widget_builders.pop(0)
             try:
                 res = builder()
+                built_empty = False
+                if _no_section(res) and not self._show_empty_charts() and not getattr(self, "_is_skeleton", False):
+                    # No data here for this section: build it empty and hidden. Skipped, it
+                    # stayed out until the next full rebuild, even on a deck or time span
+                    # that has data (a refresh only updates the sections that exist).
+                    self._force_empty_build = True
+                    try:
+                        res = builder()
+                    finally:
+                        self._force_empty_build = False
+                    built_empty = not _no_section(res)
                 if not res:
                     if not self._build_queue_active: return
                     if is_warmup:
@@ -344,6 +361,9 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
                         try:
                             masonry_layout.addWidget(sect)
                             self.section_wrappers[k] = sect
+                            apply_own_colors(sect, self._get_dd_widget_setting(k, "own_colors", None))
+                            if built_empty:
+                                sect.setVisible(False)  # a refresh shows it once it has data
                         except RuntimeError:
                             return # Layout deleted or stale
             except RuntimeError as re:

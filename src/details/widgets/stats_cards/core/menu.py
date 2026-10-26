@@ -5,6 +5,7 @@ from aqt.qt import QAction, Qt
 
 from ....ui import StyledMenu, get_svg_icon
 from ..logic.model import get_dashboard_local_stat_style
+from ..logic.widget_persistence import card_has_own_color
 
 
 def _find_clicked_card(container, event, stat_card_cls):
@@ -134,6 +135,10 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
         color_action = menu.addAction(f"Change {shown_name} Color...")
         color_action.setIcon(get_svg_icon("palette", size=16))
         color_action.triggered.connect(clicked_card._pick_color)
+        if card_has_own_color(clicked_card):
+            reset_action = menu.addAction(f"Use Shared {shown_name} Color")
+            reset_action.setIcon(get_svg_icon("rotate-ccw", size=16))
+            reset_action.triggered.connect(clicked_card._reset_color)
 
         pin_action = menu.addAction(f"Pin {shown_name}")
         pin_action.setIcon(get_svg_icon("push-pin", size=16))

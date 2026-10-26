@@ -499,7 +499,7 @@ def _style_tab_row(dialog):
     hide = (
         "QToolButton#table_drawer_hide {"
         f" color: {muted.name()}; background: transparent; font-weight: 600;"
-        f" border: 1px solid {_rgba(border, 0.7)}; border-radius: 6px; padding: 5px 12px 5px 8px; }}"
+        f" border: 1px solid {_rgba(border, 0.7)}; border-radius: 6px; padding: 4px 12px 4px 8px; }}"
         "QToolButton#table_drawer_hide:hover {"
         f" color: {text.name()}; background: {_rgba(muted, 0.12)}; border-color: {accent.name()}; }}"
         "QToolButton#table_drawer_hide:pressed {"
@@ -521,7 +521,12 @@ def _style_auto_close(dialog):
         is_dark = bool(runtime.get("is_dark", bool(pal.get("is_dark"))))
         muted = QColor(pal.get("text_secondary") or pal.get("text"))
         accent = QColor(pal.get("accent"))
-        qss = pill_checkbox_qss(muted.name(), f"rgba({accent.red()},{accent.green()},{accent.blue()},180)", is_dark)
+        qss = pill_checkbox_qss(
+            muted.name(),
+            f"rgba({accent.red()},{accent.green()},{accent.blue()},180)",
+            is_dark,
+            extra_css="font-size: 12px; padding: 4px 11px; border-radius: 12px;",
+        )
     except Exception:
         log_swallowed()
         return

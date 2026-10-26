@@ -53,8 +53,9 @@ class HeatmapInteractions:
                 log_debug(f"HeatmapInteractions: Future date detected. Query='{query}'", tag="INTERACTION")
                 return (None, deck_name, date_str, query)
             else:
-                start_ms = int((dt.timestamp() + rollover * 3600) * 1000)
-                end_ms = start_ms + (24 * 3600 * 1000)
+                # Local date arithmetic: the day of a clock change lasts 23 or 25 hours.
+                start_ms = int(dt.replace(hour=rollover).timestamp() * 1000)
+                end_ms = int((dt.replace(hour=rollover) + timedelta(days=1)).timestamp() * 1000)
 
                 cfg = ConfigManager(mw)
                 did_limit = HistoryProvider._get_did_limit(cfg, did)

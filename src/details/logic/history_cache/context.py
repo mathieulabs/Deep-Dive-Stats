@@ -35,6 +35,7 @@ def _hourly_from_days(days):
 class ContextMixin:
     @staticmethod
     def get_context(deck_id, range_type, cfg=None, custom_days=7, custom_type="relative", start_date_str="", end_date_str="", allow_sync_check=True, allow_slow_ops=True):
+        from .global_cache import GlobalHistoryCache
         if deck_id in [0, "0"]:
             deck_id = None
 

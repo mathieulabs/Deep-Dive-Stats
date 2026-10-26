@@ -51,7 +51,6 @@ def _mix(base_hex, over_hex, k):
 
 def get_design_overrides(is_dark, palette=None):
     c = _colors(is_dark, palette)
-    glow = _mix(c["bg"], c["accent"], 0.10 if is_dark else 0.07)
     a = c["accent"]
     tint = lambda col, k: hex_to_rgba(col, k)
     idle = tint(c["muted"], 0.07)
@@ -66,9 +65,10 @@ def get_design_overrides(is_dark, palette=None):
         hairline = "rgba(0, 0, 0, 0.08)"
     return f"""
         /* ---- Soft pill UI ---- */
+        /* Flat: the glow is the window backdrop's (theme/backdrop.py), so turning it off
+           leaves no accent tint. */
         QDialog {{
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 {glow}, stop:0.3 {c['bg']}, stop:1 {c['bg']});
+            background: {c['bg']};
         }}
         QFrame#toolbar {{
             background: {surface};

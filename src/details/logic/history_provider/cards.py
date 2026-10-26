@@ -24,6 +24,7 @@ class CardsMixin:
         start_date_str="",
         end_date_str="",
     ):
+        from .global_provider import HistoryProvider
         return fetch_added_history_impl(
             HistoryProvider,
             addon_config,
@@ -42,6 +43,7 @@ class CardsMixin:
 
     @staticmethod
     def fetch_card_counts(addon_config, deck_id=None, is_deleted=False, did_limit=None):
+        from .global_provider import HistoryProvider
         return fetch_card_counts_impl(
             HistoryProvider,
             addon_config,
@@ -52,6 +54,7 @@ class CardsMixin:
 
     @staticmethod
     def fetch_future_reviews(deck_id, target_year, cfg, did_limit=None):
+        from .global_provider import HistoryProvider
         return fetch_future_reviews_impl(
             HistoryProvider,
             deck_id,

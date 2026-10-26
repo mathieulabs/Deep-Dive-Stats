@@ -3,6 +3,7 @@
 from ....ui import Config
 from aqt.qt import QColor
 from ...common.color_utils import blend_colors
+from ...chart_utils.theme import contrast_ratio
 from ....logic.logger import log_swallowed
 
 GLASS_MIN_ALPHA = 0.02
@@ -172,28 +173,6 @@ def card_frame_stylesheet(bg_card, border="none"):
         """
 
 
-def _srgb_to_linear(c):
-    v = max(0.0, min(1.0, c / 255.0))
-    if v <= 0.04045:
-        return v / 12.92
-    return ((v + 0.055) / 1.055) ** 2.4
-
-
-def _relative_luminance(color):
-    r = _srgb_to_linear(color.red())
-    g = _srgb_to_linear(color.green())
-    b = _srgb_to_linear(color.blue())
-    return (0.2126 * r) + (0.7152 * g) + (0.0722 * b)
-
-
-def _contrast_ratio(fg, bg):
-    l1 = _relative_luminance(fg)
-    l2 = _relative_luminance(bg)
-    hi = max(l1, l2)
-    lo = min(l1, l2)
-    return (hi + 0.05) / (lo + 0.05)
-
-
 def resolve_adaptive_text_colors(base_color, title_color, *, is_dark, show_glass, glass_int):
     """Return (value_color_hex, title_color_hex) with readability safeguards."""
     value_q = QColor(base_color)
@@ -213,9 +192,9 @@ def resolve_adaptive_text_colors(base_color, title_color, *, is_dark, show_glass
         target = QColor("#ffffff" if is_dark else "#111111")
         force = min(0.85, max(0.25, (glass_int - 0.45) / 0.55))
 
-        if _contrast_ratio(value_q, bg_q) < 2.8:
+        if contrast_ratio(value_q, bg_q) < 2.8:
             value_q = blend_colors(value_q, target, force)
-        if _contrast_ratio(title_q, bg_q) < 3.2:
+        if contrast_ratio(title_q, bg_q) < 3.2:
             title_q = blend_colors(title_q, target, max(force, 0.5))
 
         if glass_int >= 0.9:
@@ -224,11 +203,11 @@ def resolve_adaptive_text_colors(base_color, title_color, *, is_dark, show_glass
             title_q = hard
         else:
             for _ in range(4):
-                if _contrast_ratio(value_q, bg_q) >= 3.6:
+                if contrast_ratio(value_q, bg_q) >= 3.6:
                     break
                 value_q = blend_colors(value_q, target, 0.35)
             for _ in range(4):
-                if _contrast_ratio(title_q, bg_q) >= 4.0:
+                if contrast_ratio(title_q, bg_q) >= 4.0:
                     break
                 title_q = blend_colors(title_q, target, 0.35)
 

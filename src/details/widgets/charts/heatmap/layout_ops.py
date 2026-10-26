@@ -45,6 +45,9 @@ def compute_grid_info_impl(widget):
     return grid_start, lambda d: rs <= d <= re
 
 
+_CONT_BOX_COLS = 48
+
+
 def get_continuous_months_impl(widget):
     anchor = day_end_with_rollover()
     ref_month = anchor.month + widget.cont_month_offset
@@ -90,7 +93,7 @@ def get_continuous_layout_impl(widget):
         gap_steps = 0.35
         gap_width = gap_steps * step
 
-        actual_cols = sum(m[3] for m in months)
+        actual_cols = _CONT_BOX_COLS
         total_assembly_w = label_space + actual_cols * step + (len(months) - 1) * gap_width
 
         available_w = widget.width() - 4
@@ -132,6 +135,9 @@ def get_continuous_layout_impl(widget):
         widget._cont_layout_cache = (cell_size, spacing, step, gap_width, label_space, margin_top, start_x)
 
     cell_size, spacing, step, gap_width, label_space, margin_top, start_x = widget._cont_layout_cache
+    # Nine months span 45 to 48 week columns. The box is sized for 48 so it, and the
+    # controls lined up with it, stay put while browsing; the grid is centred inside.
+    start_x += (_CONT_BOX_COLS - sum(m[3] for m in months)) * step / 2.0
     return cell_size, spacing, step, gap_width, label_space, margin_top, start_x, months
 
 

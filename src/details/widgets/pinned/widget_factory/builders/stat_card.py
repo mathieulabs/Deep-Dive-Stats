@@ -15,6 +15,7 @@ from ....stats_cards import (
     deck_state_from_context,
 )
 from ...context_access import get_pinned_context
+from ....chart_utils.own_colors import clean_own_colors
 from .....logic.data.section_fallbacks import resolve_card_counts_payload
 
 
@@ -226,7 +227,10 @@ def _get_stat_info(widget_def, deck_id, cache=None, fail_if_not_cached=False, cf
     if cfg is None:
         cfg = _addon_config()
     color_key = STAT_KEY_TO_COLOR_KEY.get(stat_key)
-    if color_key:
+    own = (clean_own_colors(widget_def.get("own_colors")) or {}).get(color_key)
+    if own:
+        base_color = own  # the card has its own colors
+    elif color_key:
         base_color = get_color(cfg.config, color_key, "pinned")
     else:
         base_color = fallback_color

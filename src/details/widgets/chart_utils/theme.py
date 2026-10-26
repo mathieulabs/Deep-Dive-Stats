@@ -15,15 +15,17 @@ from ...logic.logger import log_swallowed
 
 
 
-def _rel_luminance(c):
+def relative_luminance(c):
+    """Relative luminance of a QColor, 0 (black) to 1 (white), as used for text contrast."""
     def f(v):
         v = v / 255.0
         return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
     return 0.2126 * f(c.red()) + 0.7152 * f(c.green()) + 0.0722 * f(c.blue())
 
 
-def _contrast_ratio(a, b):
-    la, lb = _rel_luminance(a), _rel_luminance(b)
+def contrast_ratio(a, b):
+    """Contrast ratio between two QColors, 1 (same) to 21 (black on white)."""
+    la, lb = relative_luminance(a), relative_luminance(b)
     if la < lb:
         la, lb = lb, la
     return (la + 0.05) / (lb + 0.05)
@@ -35,14 +37,14 @@ def ensure_contrast(color, bg, min_ratio=3.3):
     c = QColor(color)
     if not c.isValid():
         return c
-    if _contrast_ratio(c, bg) >= min_ratio:
+    if contrast_ratio(c, bg) >= min_ratio:
         return c
-    go_dark = _rel_luminance(bg) > 0.4
+    go_dark = relative_luminance(bg) > 0.4
     for _ in range(40):
         h, s, l, a = c.getHsl()
         l = max(0, l - 6) if go_dark else min(255, l + 6)
         c.setHsl(max(h, 0), s, l, a)
-        if _contrast_ratio(c, bg) >= min_ratio or l in (0, 255):
+        if contrast_ratio(c, bg) >= min_ratio or l in (0, 255):
             break
     return c
 

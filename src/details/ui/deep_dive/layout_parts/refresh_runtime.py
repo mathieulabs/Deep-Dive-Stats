@@ -4,7 +4,7 @@
 
 from datetime import datetime
 
-from aqt.qt import QLabel, QWidget
+from aqt.qt import QLabel, QWidget, sip
 
 from ....animations.chart_policy import chart_animation_batch, collect_chart_animation_targets
 from ....logic.data.transforms.activity_series import (
@@ -177,12 +177,18 @@ def refresh_dashboard_data(self):
     # Always resolve the cache context live from the current deck and range
     _cached_ctx = get_pinned_context(_cache_did, self.last_history_range, cfg=self.addon_config)
 
-    # Widget lookup from one findChildren scan
-    scroll_content = self.dialog.expanded_chart_area.parentWidget()
+    # Widget lookup from one scan of the current sections only: after a rebuild the old
+    # charts can still be in the window until Qt deletes them, and a scan of the whole
+    # window could find one of those first and give it the data instead.
     _widget_map = {}  # {class_name_lower: widget}
-    if scroll_content:
-        for _w in scroll_content.findChildren(QWidget):
-            _widget_map.setdefault(type(_w).__name__.lower(), _w)
+    for _wrapper in list((self.section_wrappers or {}).values()):
+        try:
+            if _wrapper is None or sip.isdeleted(_wrapper):
+                continue
+            for _w in _wrapper.findChildren(QWidget):
+                _widget_map.setdefault(type(_w).__name__.lower(), _w)
+        except RuntimeError:
+            continue
     def find_chart(keyword):
         kw = keyword.lower()
         return next((v for k, v in _widget_map.items() if kw in k), None)

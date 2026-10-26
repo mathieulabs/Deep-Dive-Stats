@@ -68,17 +68,6 @@ def apply_heatmap_live_changes(dialog, conf):
         conf[Config.HEATMAP_ROUNDING] = dialog.rounding_slider.value()
     if hasattr(dialog, "monday_first_cb"):
         conf[Config.HEATMAP_MONDAY_FIRST] = dialog.monday_first_cb.isChecked()
-    if (
-        getattr(dialog, "is_pinned_mode", False)
-        and hasattr(dialog, "_is_pinned_separate_theme_mode")
-        and dialog._is_pinned_separate_theme_mode()
-    ):
-        if hasattr(dialog, "_set_pinned_separate_data_color_override"):
-            dialog._set_pinned_separate_data_color_override(Config.HEATMAP_COLOR, dialog.current_color)
-        else:
-            conf[Config.HEATMAP_COLOR] = dialog.current_color
-    else:
-        conf[Config.HEATMAP_COLOR] = dialog.current_color
     if hasattr(dialog, "opacity_slider"):
         conf[Config.HEATMAP_EMPTY_OPACITY] = dialog.opacity_slider.value()
     if hasattr(dialog, "filled_opacity_slider"):

@@ -391,6 +391,8 @@ def check_incremental_update(cache, force_fingerprint=False):
 
     if threading.current_thread() is not threading.main_thread():
         return
+    if getattr(mw, "col", None) is None:
+        return  # profile closing or switching: nothing to check
 
     try:
         current_max = mw.col.db.scalar("select max(id) from revlog") or 0

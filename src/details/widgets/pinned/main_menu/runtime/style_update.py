@@ -6,6 +6,7 @@ from aqt.qt import QLabel, QWidget, QColor, QCheckBox, QRadioButton, QDialog
 from ..imports import Config, get_color
 from ...widget_factory.factory import WidgetFactory
 from .....logic.logger import log_swallowed
+from ......const.theme.color_resolver import own_color_for
 
 
 _STYLE_TOKEN_ATTR = "_deepdivestats_styles_token"
@@ -145,7 +146,7 @@ def update_styles(manager, config_manager=None):
                 hm.set_metric(cfg.get(Config.HEATMAP_METRIC, "reviews"))
                 hm.set_invert_intensity(cfg.get(Config.HEATMAP_INVERT_INTENSITY, False))
 
-                hm.base_color = QColor(get_color(cfg, Config.HEATMAP_COLOR, "pinned"))
+                hm.base_color = QColor(own_color_for(hm, Config.HEATMAP_COLOR) or get_color(cfg, Config.HEATMAP_COLOR, "pinned"))
                 hm._update_levels()
 
             from ....stats_cards import StatCardWidget

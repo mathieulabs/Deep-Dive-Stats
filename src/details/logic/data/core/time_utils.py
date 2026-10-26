@@ -29,13 +29,15 @@ def get_time_range_ms(range_type, week_start, custom_days=7, custom_type="relati
         # Currently in yesterday's logical day -> ends at today's rollover
         anki_day_end_dt = today_rollover
 
-    ms_per_day = 86400000
-
     # anki_day_start_dt is the rollover boundary that started the CURRENT logical day
     anki_day_start_dt = anki_day_end_dt - timedelta(days=1)
 
     end_ms = int(anki_day_end_dt.timestamp() * 1000)
     anchor_ms = int(anki_day_start_dt.timestamp() * 1000)
+
+    def days_back(n):
+        # Local date arithmetic: a day with a clock change lasts 23 or 25 hours.
+        return int((anki_day_start_dt - timedelta(days=n)).timestamp() * 1000)
 
     start_ms = 0
 
@@ -48,19 +50,19 @@ def get_time_range_ms(range_type, week_start, custom_days=7, custom_type="relati
     elif range_type == Period.TODAY:
         start_ms = anchor_ms
     elif range_type == Period.YESTERDAY:
-        start_ms = anchor_ms - 86400000
+        start_ms = days_back(1)
         end_ms = anchor_ms
     elif range_type == Period.WEEK:
         # Days total: 6 previous days + the current logical day
-        start_ms = anchor_ms - (6 * 86400000)
+        start_ms = days_back(6)
     elif range_type == Period.TWO_WEEKS:
-        start_ms = anchor_ms - (13 * 86400000)
+        start_ms = days_back(13)
     elif range_type == Period.MONTH:
-        start_ms = anchor_ms - (29 * 86400000)
+        start_ms = days_back(29)
     elif range_type == Period.THREE_MONTHS:
-        start_ms = anchor_ms - (89 * 86400000)
+        start_ms = days_back(89)
     elif range_type == Period.YEAR:
-        start_ms = anchor_ms - (364 * 86400000)
+        start_ms = days_back(364)
     elif range_type == LAST_YEAR:
         last_year = anki_day_start_dt.year - 1
         start_ms = int(datetime(last_year, 1, 1, off_h, 0).timestamp() * 1000)
@@ -84,7 +86,7 @@ def get_time_range_ms(range_type, week_start, custom_days=7, custom_type="relati
                 except Exception:
                     log_swallowed()
         else:
-            start_ms = anchor_ms - (custom_days * ms_per_day)
+            start_ms = days_back(custom_days)
     elif isinstance(range_type, int) and range_type > 7:
         # Anki logical day starts at rollover
         off_h = rollover_hour()
@@ -96,9 +98,14 @@ def get_time_range_ms(range_type, week_start, custom_days=7, custom_type="relati
     prev_start_ms = 0
     prev_end_ms = 0
     if show_trends:
-        duration = end_ms - start_ms
+        # Same number of days just before, counted on local dates (see days_back).
         prev_end_ms = start_ms
-        prev_start_ms = start_ms - duration
+        try:
+            start_dt, end_dt = datetime.fromtimestamp(start_ms / 1000), datetime.fromtimestamp(end_ms / 1000)
+            prev_start_ms = int((start_dt - (end_dt - start_dt)).timestamp() * 1000)
+        except (OSError, OverflowError, ValueError):
+            # Before 1970 (all time): Windows can't convert it, and the exact length is moot.
+            prev_start_ms = start_ms - (end_ms - start_ms)
         # Calendar years have different lengths (leap years): compare a calendar
         # year with the whole previous calendar year instead of 'same duration'.
         try:

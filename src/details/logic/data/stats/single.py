@@ -6,7 +6,8 @@ from .....utils import excluded_days_clause
 
 from aqt import mw
 
-from ... import LAST_YEAR, REVLOG_RESCHED, Period, get_rollover_offset_ms
+from ... import LAST_YEAR, REVLOG_RESCHED, Period
+from .....utils import get_logical_day_sql
 from ..core.streaks import get_deck_streaks
 from ..core.forecast import deck_new_limit, forecast_parts
 from ..core.revlog_slices import scan_slices, sliced_all
@@ -21,8 +22,6 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
     """
     stats_data = []
 
-    offset_ms = get_rollover_offset_ms()
-    ms_per_day = 86400 * 1000
 
     child_ids = []
     if is_collection:
@@ -213,7 +212,7 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
             show_trends=True,
         )
 
-        res = _period_stats(start_ms, end_ms, did_filter, offset_ms, ms_per_day)
+        res = _period_stats(start_ms, end_ms, did_filter)
         if res:
             res = (deck_id or 0,) + tuple(res)
         else:
@@ -241,7 +240,7 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
                     ""
                 )
             else:
-                p_res = _period_stats(p_start_ms, p_end_ms, did_filter, offset_ms, ms_per_day)
+                p_res = _period_stats(p_start_ms, p_end_ms, did_filter)
                 if p_res:
                     prev_res = (deck_id or 0,) + tuple(p_res)
                 else:
@@ -265,7 +264,7 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
     return stats_data
 
 
-def _period_stats(start_ms, end_ms, did_filter, offset_ms, ms_per_day):
+def _period_stats(start_ms, end_ms, did_filter):
     """(time, reviews, passed, pass_young, rev_young, pass_mat, rev_mat, again, hard, good,
     easy, active_days) of the reviews in [start_ms, end_ms), like one SELECT of sums would
     give, but read in slices (see revlog_slices) and grouped by day for the active days.
@@ -275,14 +274,14 @@ def _period_stats(start_ms, end_ms, did_filter, offset_ms, ms_per_day):
     slices = scan_slices(start_ms, end_ms)
     rows = sliced_all(lambda part: f"""
         SELECT
-            CAST((({id_ms} - {offset_ms}) / {ms_per_day}) AS INT) as day,
+            {get_logical_day_sql(id_ms)} as day,
             SUM(CASE WHEN revlog.time > 0 THEN revlog.time ELSE 0 END),
             COUNT(revlog.id),
             SUM(CASE WHEN revlog.ease > 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 AND revlog.ease > 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN revlog.lastIvl >= 21 AND revlog.ease > 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN revlog.lastIvl >= 21 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl < 21 AND revlog.ease > 1 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl < 21 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl >= 21 AND revlog.ease > 1 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl >= 21 THEN 1 ELSE 0 END),
             SUM(CASE WHEN revlog.ease = 1 THEN 1 ELSE 0 END),
             SUM(CASE WHEN revlog.ease = 2 THEN 1 ELSE 0 END),
             SUM(CASE WHEN revlog.ease = 3 THEN 1 ELSE 0 END),

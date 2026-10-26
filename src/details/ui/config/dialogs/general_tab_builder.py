@@ -547,6 +547,18 @@ def build_general_tab(dialog) -> None:
         _dev_row.addWidget(dialog.reset_everything_btn)
         layout_dev.addLayout(_dev_row)
         layout_dev.addWidget(dialog.open_data_folder_btn)
+
+        def _on_preview_rate_banner():
+            from aqt.utils import tooltip
+            from ...details_dialog.rate_prompt import preview_next_open
+
+            preview_next_open()
+            tooltip("Deep Dive: the rating banner shows the next time the Deep Dive window opens.", parent=dialog)
+
+        dialog.preview_rate_btn = QPushButton("Preview rating banner")
+        dialog.preview_rate_btn.setToolTip("Shows the rating banner the next time the Deep Dive window opens.")
+        dialog.preview_rate_btn.clicked.connect(lambda _checked=False: _on_preview_rate_banner())
+        layout_dev.addWidget(dialog.preview_rate_btn)
         gen_main_layout.addWidget(group_dev)
 
     gen_main_layout.addStretch()

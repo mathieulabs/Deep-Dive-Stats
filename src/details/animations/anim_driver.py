@@ -135,7 +135,7 @@ class _GlobalAnimDriver(QObject):
             self._pending.pop(cid, None)
 
         if cid in self._entries:
-            self._entries[cid] = (chart, root_key, time.monotonic(), duration_ms, easing, finished_proxy, queue_plan)
+            self._entries[cid] = (chart, root_key, None, duration_ms, easing, finished_proxy, queue_plan)
             if not self._timer.isActive():
                 self._timer.start()
             return
@@ -190,7 +190,7 @@ class _GlobalAnimDriver(QObject):
     def _oldest_progress_for_root(self, root_key, now):
         progress = 0.0
         for _, entry_root_key, t0, dur_ms, _, _, _ in self._entries.values():
-            if entry_root_key != root_key:
+            if entry_root_key != root_key or t0 is None:
                 continue
             try:
                 raw_t = ((now - t0) * 1000.0) / max(1, int(dur_ms))
@@ -200,10 +200,11 @@ class _GlobalAnimDriver(QObject):
         return progress
 
     def _start_entry(self, chart, root_key, duration_ms, easing, finished_proxy, queue_plan=None):
+        # The clock starts on the first frame (see _tick), not now.
         self._entries[id(chart)] = (
             chart,
             root_key,
-            time.monotonic(),
+            None,
             max(1, int(duration_ms)),
             easing,
             finished_proxy,
@@ -258,6 +259,9 @@ class _GlobalAnimDriver(QObject):
             if int(queue_plan.get("wave_index", 0) or 0) >= int(wave_index):
                 continue
             has_active_lower_wave = True
+            if t0 is None:
+                lower_wave_progress = 0.0
+                continue
             try:
                 raw_t = ((now - t0) * 1000.0) / max(1, int(dur_ms))
             except Exception:
@@ -331,6 +335,12 @@ class _GlobalAnimDriver(QObject):
         freed_root_keys = set()
 
         for cid, (chart, root_key, t0, dur_ms, easing, fin, queue_plan) in list(self._entries.items()):
+            if t0 is None:
+                # First frame: the clock starts here. Started while the window was busy
+                # (building the other charts), the animation would otherwise have used up
+                # part of its time before showing anything, and looked faster than the rest.
+                t0 = now
+                self._entries[cid] = (chart, root_key, t0, dur_ms, easing, fin, queue_plan)
             elapsed_ms = (now - t0) * 1000.0
             raw_t = elapsed_ms / dur_ms
             if raw_t >= 1.0:

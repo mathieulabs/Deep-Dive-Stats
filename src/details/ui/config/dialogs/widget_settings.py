@@ -21,7 +21,7 @@ from aqt.qt import (
     QTimer,
 )
 from aqt.theme import theme_manager
-from ... import COLOR_DEFAULTS, Config, ThemePalettes, get_color
+from ... import Config
 from ....logic.logger import log_swallowed
 from ....widgets.stats_cards.logic.model import get_stat_card_default_title
 from ...theme.icons import get_svg_icon
@@ -42,11 +42,6 @@ from ..widgets.facecard_section import setup_facecard_settings
 from ..widgets.chart_section import setup_chart_settings
 from ..widgets.heatmap_section import setup_heatmap_settings
 from ..widgets.heatmap_reset import reset_heatmap
-from ..widgets.heatmap_color import (
-    reset_color,
-    select_color,
-    update_color_button,
-)
 from ..widgets.chart_reset import reset_chart_settings
 from ..widgets.label_defaults import (
     get_default_label,
@@ -135,8 +130,7 @@ class WidgetSettingsDialog(QDialog):
 
         # Charts re-read their colours from the config while this dialog is
         # open; let them see the unsaved edits (see read_config_dict).
-        if isinstance(self.global_config, dict):
-            set_live_config_override(self.global_config)
+        set_live_config_override(self.live_config())
 
         self._backup_global = copy.deepcopy(self.global_config)
         self._backup_local = copy.deepcopy(self.local_config)
@@ -232,6 +226,7 @@ class WidgetSettingsDialog(QDialog):
             self._update_reset_button_visibility()
 
             self.content_layout.addWidget(group_gen)
+            self._general_group = group_gen
 
         if self.type == "text_label":
             self._setup_text_label_settings()
@@ -241,6 +236,14 @@ class WidgetSettingsDialog(QDialog):
             self._setup_heatmap_settings()
         else:
             self._setup_chart_settings()
+        # Colors right under General: what people look for first.
+        from ..widgets.widget_colors import build_widget_color_section
+
+        colors_group = build_widget_color_section(self)
+        if colors_group is not None:
+            general = getattr(self, "_general_group", None)
+            at = self.content_layout.indexOf(general) + 1 if general is not None else self.content_layout.count()
+            self.content_layout.insertWidget(at, colors_group)
 
         self.bottom_area = QWidget(self)
         bottom_area_layout = QVBoxLayout(self.bottom_area)
@@ -291,6 +294,16 @@ class WidgetSettingsDialog(QDialog):
         final_w = clamp_dialog_width(total_w, min_width=500)
         self.resize(final_w, final_h)
 
+    def live_config(self):
+        """The config charts read while the dialog is open: the one it edits. A Deep Dive
+        chart's settings are a compact style dict without the colors (the charts read
+        those through the Deep Dive), so they keep reading the whole config then:
+        otherwise a chart rebuilt meanwhile came back in the default colors."""
+        for conf in (self.global_config, self.theme_config):
+            if isinstance(conf, dict) and (Config.PINNED_WIDGETS in conf or Config.THEME_PRESET in conf):
+                return conf
+        return None
+
     def done(self, result):
         self.update_timer.stop()
         set_live_config_override(None)
@@ -309,6 +322,9 @@ class WidgetSettingsDialog(QDialog):
 
         # Refresh the UI widgets to the restored config first, so apply_live_changes does not read the modified values.
         try:
+            from ..widgets.widget_colors import cancel_own_colors
+
+            cancel_own_colors(self)
             self.refresh_ui_values()
             self.apply_live_changes()
         except Exception:
@@ -444,8 +460,6 @@ class WidgetSettingsDialog(QDialog):
             if hasattr(self, "rounding_slider"): set_val(self.rounding_slider, "setValue", conf.get(Config.HEATMAP_ROUNDING, 20))
             if hasattr(self, "monday_first_cb"): set_val(self.monday_first_cb, "setChecked", conf.get(Config.HEATMAP_MONDAY_FIRST, False))
 
-            self.current_color = self._get_effective_heatmap_color()
-            self._update_color_button()
 
             if hasattr(self, "opacity_slider"): set_val(self.opacity_slider, "setValue", conf.get(Config.HEATMAP_EMPTY_OPACITY, 15))
             if hasattr(self, "filled_opacity_slider"): set_val(self.filled_opacity_slider, "setValue", conf.get(Config.HEATMAP_FILLED_OPACITY, 100))
@@ -494,65 +508,6 @@ class WidgetSettingsDialog(QDialog):
         """Config key for the current context (pinned or Deep Dive)."""
         return dashboard_key if self.is_dashboard_context else facecard_key
 
-    def _is_pinned_separate_theme_mode(self):
-        """True when pinned widgets are configured to use a separate theme."""
-        if not self.is_pinned_mode:
-            return False
-        conf = self.global_config if isinstance(self.global_config, dict) else self.addon_config
-        return bool(conf.get(Config.PINNED_USE_ACTIVE_THEME, False)) and bool(
-            conf.get(Config.PINNED_USE_SEPARATE_THEME, False)
-        )
-
-    def _get_pinned_theme_data_color_baseline(self):
-        conf = self.global_config if isinstance(self.global_config, dict) else self.addon_config
-        preset_key = conf.get(Config.PINNED_THEME_PRESET, ThemePalettes.NATIVE)
-        custom_presets = conf.get(Config.THEME_CUSTOM_PRESETS, {})
-        entry = custom_presets.get(preset_key, {}) if isinstance(custom_presets, dict) else {}
-        if isinstance(entry, dict) and isinstance(entry.get("data_colors"), dict):
-            return {**COLOR_DEFAULTS, **entry["data_colors"]}
-        return ThemePalettes.get_preset_data_colors(preset_key)
-
-    def _get_heatmap_color_baseline(self):
-        if self._is_pinned_separate_theme_mode():
-            baseline = self._get_pinned_theme_data_color_baseline()
-            return baseline.get(
-                Config.HEATMAP_COLOR,
-                COLOR_DEFAULTS.get(Config.HEATMAP_COLOR, "#3b82f6"),
-            )
-        from ..theme.data_color_ops import get_data_color_baseline
-
-        conf = self.global_config if isinstance(self.global_config, dict) else self.addon_config
-        return get_data_color_baseline(conf).get(
-            Config.HEATMAP_COLOR,
-            COLOR_DEFAULTS.get(Config.HEATMAP_COLOR, "#3b82f6"),
-        )
-
-    def _get_effective_heatmap_color(self):
-        conf = self.global_config if isinstance(self.global_config, dict) else self.addon_config
-        if self._is_pinned_separate_theme_mode():
-            return get_color(conf, Config.HEATMAP_COLOR, "pinned")
-        value = conf.get(Config.HEATMAP_COLOR, "#3b82f6")
-        return value if isinstance(value, str) and value.strip() else "#3b82f6"
-
-    def _set_pinned_separate_data_color_override(self, color_key, color_hex):
-        conf = self.global_config if isinstance(self.global_config, dict) else self.addon_config
-        custom_map = conf.get(Config.PINNED_THEME_CUSTOM_COLORS, {})
-        if not isinstance(custom_map, dict):
-            custom_map = {}
-
-        baseline_hex = self._get_pinned_theme_data_color_baseline().get(
-            color_key,
-            COLOR_DEFAULTS.get(color_key, "#888888"),
-        )
-        if str(color_hex).lower() == str(baseline_hex).lower():
-            custom_map.pop(color_key, None)
-        else:
-            custom_map[color_key] = color_hex
-
-        conf[Config.PINNED_THEME_CUSTOM_COLORS] = custom_map
-        has_mode_override = conf.get(Config.PINNED_THEME_CUSTOM_BASE_MODE, None) is not None
-        conf[Config.PINNED_THEME_IS_CUSTOM] = bool(custom_map) or has_mode_override
-
     def apply_live_changes(self):
         """Update the live config object and trigger a style refresh on pinned widgets."""
         conf = self.addon_config
@@ -594,9 +549,6 @@ class WidgetSettingsDialog(QDialog):
             # Merge styling config with the widget's own instance definition
             # to preserve properties like time_span, show_average, etc.
             merged_def = {**self.widget_def, **conf}
-            if self.type == "heatmap" and self._is_pinned_separate_theme_mode():
-                # Avoid feeding stale global Heatmap_Color into live pinned updates.
-                merged_def[Config.HEATMAP_COLOR] = self.current_color
 
             if self.type == "stat_card":
                 scale_key = self._get_key(Config.FACECARDS_SCALE, Config.DASHBOARD_SCALE)
@@ -826,15 +778,6 @@ class WidgetSettingsDialog(QDialog):
     def _setup_heatmap_settings(self):
         setup_heatmap_settings(self)
 
-    def _update_color_button(self):
-        update_color_button(self)
-
-    def _select_color(self):
-        select_color(self)
-
-    def _reset_color(self):
-        reset_color(self)
-
     def _reset_heatmap(self):
         reset_heatmap(self)
 
@@ -876,8 +819,6 @@ class WidgetSettingsDialog(QDialog):
         icon_col = self._get_icon_color()
         if hasattr(self, "reset_label_btn"):
             self.reset_label_btn.setIcon(get_svg_icon("rotate-ccw", color=icon_col, size=14, context_ref=self))
-        if hasattr(self, "reset_color_btn"):
-            self.reset_color_btn.setIcon(get_svg_icon("rotate-ccw", color=icon_col, size=14, context_ref=self))
         if hasattr(self, "reset_btn"):
             self.reset_btn.setIcon(get_svg_icon("rotate-ccw", color=icon_col, size=14, context_ref=self))
 

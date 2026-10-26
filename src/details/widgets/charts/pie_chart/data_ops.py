@@ -4,6 +4,8 @@ from ...chart_utils.theme import is_details_context
 from ..common.core import set_chart_opacity_impl
 from aqt.qt import QAbstractAnimation
 
+from .....const.theme.color_resolver import own_color_for
+
 _PIE_CHART_COLORS: dict[str, dict[str, str]] = {}
 
 
@@ -12,29 +14,34 @@ def invalidate_pie_chart_color_cache():
     _PIE_CHART_COLORS = {}
 
 
+_PIE_COLOR_KEYS = {
+    "new": "Color_New",
+    "learn": "Color_Learn",
+    "relearn": "Color_Relearn",
+    "young": "Color_Young",
+    "mature": "Color_Mature",
+    "suspended": "Color_Suspended",
+    "buried": "Color_Buried",
+    "deleted": "Color_Deleted",
+}
+
+
 def get_pie_chart_colors(widget_or_context=None, force_refresh=False):
-    cache_key = "details" if is_details_context(widget_or_context) else "pinned"
+    is_details = is_details_context(widget_or_context)
+    cache_key = "details" if is_details else "pinned"
     if force_refresh:
         _PIE_CHART_COLORS.pop(cache_key, None)
-    if cache_key in _PIE_CHART_COLORS:
-        return dict(_PIE_CHART_COLORS[cache_key])
+    resolved = _PIE_CHART_COLORS.get(cache_key)
+    if resolved is None:
+        from aqt import mw
+        from ....ui import ConfigManager, get_color
 
-    from aqt import mw
-    from ....ui import Config, ConfigManager, get_color
-
-    cfg = ConfigManager(mw).config
-    resolved = {
-        "new": get_color(cfg, Config.COLOR_NEW, widget_or_context),
-        "learn": get_color(cfg, Config.COLOR_LEARN, widget_or_context),
-        "relearn": get_color(cfg, Config.COLOR_RELEARN, widget_or_context),
-        "young": get_color(cfg, Config.COLOR_YOUNG, widget_or_context),
-        "mature": get_color(cfg, Config.COLOR_MATURE, widget_or_context),
-        "suspended": get_color(cfg, Config.COLOR_SUSPENDED, widget_or_context),
-        "buried": get_color(cfg, Config.COLOR_BURIED, widget_or_context),
-        "deleted": get_color(cfg, Config.COLOR_DELETED, widget_or_context),
-    }
-    _PIE_CHART_COLORS[cache_key] = resolved
-    return dict(resolved)
+        cfg = ConfigManager(mw).config
+        # The shared colors are cached per context; a widget's own colors are not shared.
+        context = None if is_details else "pinned"
+        resolved = {name: get_color(cfg, key, context) for name, key in _PIE_COLOR_KEYS.items()}
+        _PIE_CHART_COLORS[cache_key] = resolved
+    return {name: own_color_for(widget_or_context, _PIE_COLOR_KEYS[name]) or color for name, color in resolved.items()}
 
 
 def refresh_data_colors_impl(widget):

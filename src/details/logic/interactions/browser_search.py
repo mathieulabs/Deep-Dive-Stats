@@ -3,7 +3,7 @@
 """Open the Anki browser for the data behind a chart bar (like the native stats)."""
 from ....utils import excluded_days_clause
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from aqt import mw
 
@@ -56,9 +56,12 @@ def _parse_one(label, end):
     now = datetime.now()
     m = _DAY_RE.match(label)
     if m and m.group(1) in _MONTHS:
-        dt = datetime(int(m.group(3)), _MONTHS[m.group(1)], int(m.group(2)))
-        start = int((dt.timestamp() + rollover_hour() * 3600) * 1000)
-        return start + 86400000 if end else start
+        # The Anki day runs from its rollover hour to the next day's, local time (23 or 25
+        # hours on the day of a clock change).
+        dt = datetime(int(m.group(3)), _MONTHS[m.group(1)], int(m.group(2)), rollover_hour())
+        if end:
+            dt += timedelta(days=1)
+        return int(dt.timestamp() * 1000)
     m = _TIME_RE.match(label)
     if m and m.group(1) in _MONTHS:
         year = now.year

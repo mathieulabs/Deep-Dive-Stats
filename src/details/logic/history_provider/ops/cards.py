@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ..shared import Config, Period, datetime, get_rollover_offset_ms, get_time_range_ms, mw, timedelta
 from ... import rollover_hour
+from .....utils import get_logical_day_sql, logical_day_number
 from ...logger import log_error
 from ...logger import log_swallowed
 
@@ -55,10 +56,16 @@ def fetch_added_history(
         is_hourly = range_type in [Period.TODAY, Period.YESTERDAY] or (end_ms - start_ms <= 2 * 86400 * 1000)
         ms_per_bin = 600000 if is_hourly else 86400000
 
+    def bin_sql(column):
+        # Days are Anki days in local time (a day with a clock change lasts 23 or 25 hours).
+        if is_hourly:
+            return f"CAST((({column} - {offset_ms}) / {ms_per_bin}) AS INT)"
+        return get_logical_day_sql(column)
+
     if is_deleted:
         query = f"""
             SELECT
-                CAST(((cid - {offset_ms}) / {ms_per_bin}) AS INT) as bin_idx,
+                {bin_sql("cid")} as bin_idx,
                 COUNT(DISTINCT cid) as count
             FROM revlog
             LEFT JOIN cards ON revlog.cid = cards.id
@@ -77,7 +84,7 @@ def fetch_added_history(
     else:
         query = f"""
             SELECT
-                CAST(((id - {offset_ms}) / {ms_per_bin}) AS INT) as bin_idx,
+                {bin_sql("id")} as bin_idx,
                 COUNT(*) as count
             FROM cards
             WHERE id >= {start_ms} AND id < {end_ms}
@@ -96,8 +103,12 @@ def fetch_added_history(
     history = []
     months_en = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    end_idx = int((end_ms - 1 - offset_ms) / ms_per_bin)
-    start_idx = int((start_ms - offset_ms) / ms_per_bin)
+    if is_hourly:
+        end_idx = int((end_ms - 1 - offset_ms) / ms_per_bin)
+        start_idx = int((start_ms - offset_ms) / ms_per_bin)
+    else:
+        end_idx = logical_day_number(end_ms - 1)
+        start_idx = logical_day_number(start_ms)
 
     use_asc = override_start_ms is not None
     bin_range = range(start_idx, end_idx + 1) if use_asc else range(end_idx, start_idx - 1, -1)
@@ -108,16 +119,15 @@ def fetch_added_history(
 
     for b_idx in bin_range:
         count = row_map.get(b_idx, 0)
-        ms = (b_idx * ms_per_bin) + offset_ms
-        dt = datetime.fromtimestamp(ms / 1000)
 
         if is_hourly:
+            dt = datetime.fromtimestamp(((b_idx * ms_per_bin) + offset_ms) / 1000)
             date_str = dt.strftime("%Y-%m-%d %H:%M")
             pretty_date = f"{months_en[dt.month-1]} {dt.day:02d}, {dt.strftime('%H:%M')}"
         else:
-            l_date = (dt - timedelta(hours=rollover_hour())).strftime("%Y-%m-%d")
-            date_str = l_date
-            pretty_date = f"{months_en[dt.month-1]} {dt.day:02d}, {dt.year}"
+            day = datetime(1970, 1, 1) + timedelta(days=b_idx)
+            date_str = day.strftime("%Y-%m-%d")
+            pretty_date = f"{months_en[day.month-1]} {day.day:02d}, {day.year}"
 
         history.append(
             {

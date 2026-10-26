@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from aqt import mw
 
 from .config import ConfigManager
 from .const import DEFAULT_ROLLOVER_HOUR, Config
+
+_EPOCH_DAY = date(1970, 1, 1)
 
 try:
     from anki.consts import REVLOG_RESCHED
@@ -56,9 +58,9 @@ def rollover_hour():
 
 
 def get_rollover_offset_ms():
-    """Returns the UTC milliseconds offset for the local rollover hour.
-    Makes sure SQL binning (revlog.id - offset) / ms_per_day aligns with logical days.
-    """
+    """The rollover hour as a UTC offset in ms, for today's time zone. Only for bins of
+    a fixed length (hours, minutes): days use get_logical_day_sql, which follows clock
+    changes."""
     off_h = rollover_hour()
     now = datetime.now()
     rollover_dt = now.replace(hour=off_h, minute=0, second=0, microsecond=0)
@@ -75,13 +77,39 @@ def get_daystart_epoch_sql(column_name: str, is_ms: bool = True) -> str:
     SQLite returns local midnight written as if it were UTC: turned back into a date with
     datetime.fromtimestamp() it lands on the previous day west of UTC (the Americas), and it
     never matches the day keys built in Python anywhere but in UTC.
+
+    The rollover hours are taken off the local time, not off UTC: off UTC, a review made
+    in the first hours after a clock change took the other offset and landed on the
+    wrong day (the night after the switch to winter time counted for the next day).
     """
     off_h = rollover_hour()
     unixepoch = " 'unixepoch', "
     offset_str = f" '-{off_h} hours', " if off_h else ""
     col_modifier = f"{column_name} / 1000" if is_ms else column_name
 
-    return f"(CAST(STRFTIME('%s', {col_modifier}, {unixepoch}{offset_str}'localtime', 'start of day', 'utc') AS INT) * 1000)"
+    return f"(CAST(STRFTIME('%s', {col_modifier},{unixepoch}'localtime',{offset_str}'start of day', 'utc') AS INT) * 1000)"
+
+
+def get_logical_day_sql(column_name: str, is_ms: bool = True) -> str:
+    """SQL fragment giving the Anki day a timestamp column falls in, as a day number
+    (days since 1970-01-01 of its date), in local time with the rollover hour.
+
+    Consecutive days are consecutive numbers, also across a clock change: an offset
+    taken once (for "now") put the reviews of the first hours after the change on the
+    wrong day."""
+    off_h = rollover_hour()
+    offset_str = f" '-{off_h} hours'," if off_h else ""
+    col_modifier = f"{column_name} / 1000" if is_ms else column_name
+    return f"CAST(julianday(DATE({col_modifier}, 'unixepoch', 'localtime',{offset_str} 'start of day')) - 2440587.5 AS INT)"
+
+
+def logical_day_number(ms: int) -> int:
+    """Python side of get_logical_day_sql: the Anki day number of a timestamp (ms)."""
+    if ms < 0:
+        # Windows can't convert times before 1970 (OSError); nothing was reviewed then.
+        return -1
+    day = (datetime.fromtimestamp(ms / 1000) - timedelta(hours=rollover_hour())).date()
+    return (day - _EPOCH_DAY).days
 
 
 def day_end_with_rollover(date: datetime = None):

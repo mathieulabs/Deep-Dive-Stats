@@ -68,7 +68,7 @@ def _persist_pinned_widget_settings(dialog: "WidgetSettingsDialog") -> None:
         for behavior_key in WIDGET_BEHAVIOR_KEYS:
             if behavior_key in dialog.widget_def:
                 widget[behavior_key] = dialog.widget_def[behavior_key]
-            elif behavior_key in ("line_opacity", "bar_gradient", "show_grid", "legend_mode", "radio_ranges", "filter_modes"):
+            elif behavior_key in ("line_opacity", "bar_gradient", "show_grid", "legend_mode", "radio_ranges", "filter_modes", "own_colors"):
                 widget.pop(behavior_key, None)  # back to the global value
 
         if (widget.get("radio_ranges"), widget.get("filter_modes")) != old_ranges:

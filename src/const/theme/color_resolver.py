@@ -66,8 +66,34 @@ def _resolve_data_colors_for_context(cfg_dict, widget_or_context=None) -> dict:
         return cfg_dict
 
 
+# A widget (chart card, Deep Dive section, stat card) with its own colors carries them in
+# this attribute, {color key: hex}; every chart inside it uses them before the shared ones.
+OWN_COLORS_ATTR = "_deepdivestats_own_colors"
+
+
+def own_color_for(widget_or_context, color_key: str):
+    """The color `color_key` has in the nearest widget (this one or a parent) with its own
+    colors, or None: that widget has no own color for it, or there is no such widget."""
+    w = widget_or_context if hasattr(widget_or_context, "parentWidget") else None
+    for _depth in range(64):
+        if w is None:
+            return None
+        try:
+            own = getattr(w, OWN_COLORS_ATTR, None)
+            if isinstance(own, dict):
+                value = own.get(color_key)
+                return value if isinstance(value, str) and value.startswith("#") else None
+            w = w.parentWidget()
+        except RuntimeError:  # deleted on the C++ side
+            return None
+    return None
+
+
 def get_color(cfg_dict: dict, color_key: str, widget_or_context=None) -> str:
     """Resolve a color from config with fallback to defaults, with optional context."""
+    own = own_color_for(widget_or_context, color_key)
+    if own:
+        return own
     eff_cfg = _resolve_data_colors_for_context(cfg_dict, widget_or_context)
     fallback = COLOR_DEFAULTS.get(color_key, '#888888')
     value = eff_cfg.get(color_key, fallback)

@@ -24,6 +24,8 @@ from ...widgets.stats_cards import (
     get_stat_card_info,
     iter_dashboard_stat_cards,
 )
+from ...widgets.stats_cards.logic.own_color import dashboard_card_color
+from ....const.theme.color_resolver import OWN_COLORS_ATTR
 from aqt.qt import QSplitter
 from ....qss import set_qss
 
@@ -91,6 +93,10 @@ def setup_dashboard_and_overlays(dialog):
                 stat_type=spec["stat_type"],
                 parent=dialog.stats_container,
             )
+            own = dashboard_card_color(dialog.addon_config.config, spec["config_key"])
+            if own:
+                setattr(card, OWN_COLORS_ATTR, {spec["stat_type"]: own})
+                card.base_color = own
             setattr(dialog, spec["attr"], card)
 
         # All at once: adding them one by one laid every row out again for each card.

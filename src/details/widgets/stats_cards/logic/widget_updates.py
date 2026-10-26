@@ -6,6 +6,7 @@ from ...chart_utils import is_night_mode
 from ...chart_utils.formatting import fmt_num
 from ..ui.style import theme_title_color, resolve_visual_profile, resolve_adaptive_text_colors, value_contrast_reference
 from ....logic.logger import log_swallowed
+from .own_color import own_card_color
 
 
 def _color_key(value):
@@ -74,6 +75,9 @@ def refresh_theme(widget, conf=None, *, load_config_fn=None):
         color_key = STAT_KEY_TO_COLOR_KEY.get(widget.config_key)
         if color_key:
             widget.base_color = get_color(active_conf, color_key, "pinned")
+    own = own_card_color(widget)
+    if own:
+        widget.base_color = own
 
     widget._apply_inline_layout_mode()
     profile = resolve_visual_profile(active_conf, widget.is_pinned)
@@ -134,6 +138,8 @@ def update_val(
 ):
     old_loading = widget._is_loading
     widget._is_loading = (value == "...")
+    if color and own_card_color(widget):
+        color = own_card_color(widget)
     previous_color = _color_key(getattr(widget, "base_color", None))
     next_color = _color_key(color) if color is not None else previous_color
 

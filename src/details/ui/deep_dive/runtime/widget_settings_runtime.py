@@ -95,7 +95,7 @@ def open_dd_widget_settings(manager, section_key, widget):
 
     if dialog.exec():
         # Keep per-widget behavior toggles edited via dialog in persisted local settings.
-        _style_keys = ("line_opacity", "bar_gradient", "show_grid", "legend_mode", "radio_ranges", "filter_modes")
+        _style_keys = ("line_opacity", "bar_gradient", "show_grid", "legend_mode", "radio_ranges", "filter_modes", "own_colors")
         for key in ("show_average", "show_cumulative", "avg_on_active_days", "chart_opacity", "show_legend", "tooltip_hidden") + _style_keys:
             if key in dialog_widget_def:
                 local_style[key] = dialog_widget_def[key]

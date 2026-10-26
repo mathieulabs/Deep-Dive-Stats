@@ -19,6 +19,7 @@ class ContextMixin:
     def fetch_pinned_context(addon_config, deck_id=None, range_type=Period.YEAR, custom_days=7, custom_type="relative", start_date_str="", end_date_str="", widget_settings=None):
         """Everything a pinned widget shows for one deck and period. Runs in a background
         thread: the aggregation is done here, not on the UI thread."""
+        from .global_provider import HistoryProvider
         is_deleted = (deck_id == -1)
 
         did_limit = HistoryProvider._get_did_limit(addon_config, deck_id)
@@ -122,10 +123,12 @@ class ContextMixin:
 
     @staticmethod
     def fetch_all_decks_context(addon_config, range_type=Period.YEAR, min_rev_id=None, min_card_id=None):
+        from .global_provider import HistoryProvider
         return fetch_all_decks_context_impl(HistoryProvider, addon_config, range_type=range_type, min_rev_id=min_rev_id, min_card_id=min_card_id)
 
     @staticmethod
     def fetch_fsrs_stats(addon_config, deck_id=None, is_deleted=False, did_limit=None):
+        from .global_provider import HistoryProvider
         return fetch_fsrs_stats_impl(HistoryProvider, addon_config, deck_id=deck_id, is_deleted=is_deleted, did_limit=did_limit)
 
 

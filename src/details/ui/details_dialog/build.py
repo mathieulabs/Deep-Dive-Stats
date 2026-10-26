@@ -27,6 +27,15 @@ from .visual_menu import populate_visual_menu
 
 from ....qss import set_qss
 
+def layout_button_icons(side):
+    """Icons of the three layout buttons. The arrows point where the table goes: with the
+    table on the right, left grows it and right hides it; with the table at the bottom, up
+    and down."""
+    if side:
+        return ("chevron-left", "columns", "chevron-right")
+    return ("chevron-up", "rows", "chevron-down")
+
+
 def setup_dialog_ui(dialog):
     dialog.main_layout = QVBoxLayout(dialog)
     dialog.main_layout.setContentsMargins(14, 10, 14, 10)
@@ -282,11 +291,10 @@ def setup_dialog_ui(dialog):
     btn_border = palette.get("border_strong", btn_border)
 
     # Three states: the table alone, the charts with the table drawer open, the charts alone.
-    for i, (icon_name, tooltip) in enumerate([
-        ("chevron-left", "Full Table"),
-        ("columns" if dialog.side_view else "rows", "Charts with table drawer"),
-        ("chevron-right", "Full Deep Dive")
-    ]):
+    for i, (icon_name, tooltip) in enumerate(zip(
+        layout_button_icons(dialog.side_view),
+        ("Full Table", "Charts with table drawer", "Full Deep Dive"),
+    )):
         btn = QPushButton("", parent=dialog.layout_toggle_container)
         btn.setIcon(get_svg_icon(icon_name, size=16))
         btn.setProperty("icon_name", icon_name)
@@ -374,7 +382,7 @@ def setup_dialog_ui(dialog):
     from . import links as _links
     for _attr, _icon, _tip, _url_name in (
         ("support_btn", "heart", "Support on Ko-fi", "SUPPORT_URL"),
-        ("rate_btn", "star", "Rate this add-on", "RATE_URL"),
+        ("rate_btn", "thumbs-up", "Rate this add-on", "RATE_URL"),
         ("github_btn", "github", "GitHub", "GITHUB_URL"),
     ):
         if not getattr(_links, _url_name):
@@ -388,6 +396,9 @@ def setup_dialog_ui(dialog):
         _btn.setProperty("class", "toolbar_btn")
         set_qss(_btn, "QPushButton { min-width: 30px; padding: 0; }")
         _btn.clicked.connect(lambda _=False, _n=_url_name: _links.open_link(getattr(_links, _n)))
+        if _attr == "rate_btn":
+            from .rate_prompt import mark_rated
+            _btn.clicked.connect(lambda _=False: mark_rated())
         setattr(dialog, _attr, _btn)
         dialog.right_button_layout.addWidget(_btn)
 

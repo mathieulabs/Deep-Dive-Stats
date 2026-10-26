@@ -22,6 +22,7 @@ class HistoryFetchMixin:
         end_date_str="",
         align_with_added=False,
     ):
+        from .global_provider import HistoryProvider
         return fetch_history_impl(
             HistoryProvider,
             addon_config,

@@ -8,6 +8,7 @@ from .exclusion import exclusion_signature
 class StorageMixin:
     @staticmethod
     def clear():
+        from .global_cache import GlobalHistoryCache
         if GlobalHistoryCache._instance:
             GlobalHistoryCache._instance.cache.clear()
             # Clearing the data does not necessarily mean is_initialized = False, but an empty cache is effectively uninitialized.
@@ -44,7 +45,7 @@ class StorageMixin:
                     "last_max_rev_id": self.last_max_rev_id,
                     "last_max_card_id": self.last_max_card_id,
                     "last_logical_date": getattr(self, "last_logical_date", None),
-                    "version": 14,  # 14: day keys are the real instant of local midnight (fix west of UTC)
+                    "version": 16,  # 16: young/mature retention counted like Anki (interval >= 1 day or review type); 15: rollover after local time
                     "excluded": exclusion_signature(),
                 }
                 payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
@@ -117,7 +118,7 @@ class StorageMixin:
             with open(load_path, "rb") as f:
                 data = pickle.load(f)
 
-            if not isinstance(data, dict) or data.get("version", 0) < 14:
+            if not isinstance(data, dict) or data.get("version", 0) < 16:
                 self._log("Cache file validation failed or old version. Forcing rebuild.")
                 return False
 
@@ -150,6 +151,7 @@ class StorageMixin:
     @staticmethod
     def clear_all_cache(callback=None):
         """Deletes all cache files and resets in-memory state."""
+        from .global_cache import GlobalHistoryCache
         instance = GlobalHistoryCache()
         target_dir = instance.target_dir
 

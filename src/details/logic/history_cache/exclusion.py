@@ -28,9 +28,23 @@ def exclusion_signature():
         from ....utils import rollover_hour
         # Daily bins follow the rollover hour: a new hour makes the saved cache stale.
         sig.append(f"r:{rollover_hour()}")
+        # And the time zone: days counted in another one (travel, a new computer) are shifted.
+        sig.append(f"tz:{_timezone_signature()}")
     except Exception:
         log_swallowed()
     return sig
+
+
+def _timezone_signature():
+    """UTC offsets (minutes) in mid-January and mid-July of this year: differs between
+    time zones, including their summer time rules."""
+    from datetime import datetime
+
+    year = datetime.now().year
+    return ",".join(
+        str(int(datetime(year, month, 15, 12).astimezone().utcoffset().total_seconds() // 60))
+        for month in (1, 7)
+    )
 
 
 def drop_total_targets(targets, did, excluded):

@@ -12,6 +12,7 @@ class StatsMixin:
         """Fetch global stats directly via SQL SUM/COUNT.
         Ultra-lightweight: No daily grouping.
         """
+        from .global_provider import HistoryProvider
         if did_limit is None:
             did_limit = HistoryProvider._get_did_limit(addon_config, deck_id)
 
@@ -25,10 +26,10 @@ class StatsMixin:
                 COUNT(*) as reviews,
                 COALESCE(SUM(revlog.time), 0) as time_ms,
                 COALESCE(SUM(CASE WHEN revlog.ease > 1 THEN 1 ELSE 0 END), 0) as passed,
-                COALESCE(SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 THEN 1 ELSE 0 END), 0) as rev_young,
-                COALESCE(SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 AND revlog.ease > 1 THEN 1 ELSE 0 END), 0) as pass_young,
-                COALESCE(SUM(CASE WHEN revlog.lastIvl >= 21 THEN 1 ELSE 0 END), 0) as rev_mat,
-                COALESCE(SUM(CASE WHEN revlog.lastIvl >= 21 AND revlog.ease > 1 THEN 1 ELSE 0 END), 0) as pass_mat,
+                COALESCE(SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl < 21 THEN 1 ELSE 0 END), 0) as rev_young,
+                COALESCE(SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl < 21 AND revlog.ease > 1 THEN 1 ELSE 0 END), 0) as pass_young,
+                COALESCE(SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl >= 21 THEN 1 ELSE 0 END), 0) as rev_mat,
+                COALESCE(SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl >= 21 AND revlog.ease > 1 THEN 1 ELSE 0 END), 0) as pass_mat,
                 COUNT(DISTINCT {get_daystart_epoch_sql('CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END', is_ms=True)}) as active_days
             FROM revlog
             LEFT JOIN cards ON revlog.cid = cards.id
@@ -64,6 +65,7 @@ class StatsMixin:
 
         Returns {"learning": [b1, b2, b3, b4], "young": [...], "mature": [...]}.
         """
+        from .global_provider import HistoryProvider
         if is_deleted:
             did_limit = "AND (CASE WHEN cards.odid > 0 THEN cards.odid ELSE cards.did END) IS NULL"
         elif did_limit is None:

@@ -57,9 +57,9 @@ class RefreshMixin:
         if not self.is_initialized or self._is_refreshing or getattr(self, "_is_initializing", False):
             self.refresh_incremental(callback=callback, force_full=True)
             return
-        from . import GlobalHistoryCache
 
         def worker():
+            from .global_cache import GlobalHistoryCache
             with self._lock:
                 GlobalHistoryCache._refresh_snapshot_charts(self.cache, self.hier_map)
             return GlobalHistoryCache._populate_fsrs_cache()
@@ -247,6 +247,7 @@ class RefreshMixin:
             hier_data = self._get_hierarchy_context()
 
             def worker():
+                from .global_cache import GlobalHistoryCache
                 _w_start = time.perf_counter()
                 log_debug("Background DB worker STARTED.", tag="CACHE")
                 from ....config import ConfigManager
@@ -440,6 +441,7 @@ class RefreshMixin:
                             )
 
                     def _snap_job():
+                        from .global_cache import GlobalHistoryCache
                         _s_start = time.perf_counter()
                         m_val = None if was_full else self.last_max_rev_id
                         snap_dirty = None

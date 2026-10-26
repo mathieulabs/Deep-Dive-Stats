@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from aqt.qt import QLabel
 from ...chart_utils.zoom_mixin import preserve_zoom
+from ...chart_utils.own_colors import apply_own_colors
 from .styler import apply_style
 from .wrapper import _wrap
 from .utils import _addon_config
@@ -136,10 +137,8 @@ class WidgetFactory:
             from ...chart_utils.browser_click import set_pinned_deck
             set_pinned_deck(inner, deck_id)
 
-            if wtype == "stat_card":
-                return inner
-
-            if inner.objectName() == "pinned_widget_card":
+            if wtype == "stat_card" or inner.objectName() == "pinned_widget_card":
+                apply_own_colors(inner, widget_def.get("own_colors"))
                 return inner
 
             color = getattr(inner, "color", None)
@@ -147,6 +146,7 @@ class WidgetFactory:
                  color = inner.base_color
 
             wrapped = _wrap(inner, label, base_color=color, wtype=wtype, widget_id=widget_def.get("id"), saved_w=widget_def.get("width"), saved_h=widget_def.get("height"), parent=parent)
+            apply_own_colors(wrapped, widget_def.get("own_colors"))
             return wrapped
         except Exception as e:
             l = QLabel(f"Error: {e}")
@@ -222,6 +222,8 @@ class WidgetFactory:
             with _zoom_link_held(), _keep_chart_zoom(inner, widget_def, deck_id):
                 success = updater(inner, widget_def, deck_id, cache=cache, fail_if_not_cached=fail_if_not_cached, cfg=cfg)
             if success:
+                # Builders read the shared colors again on update: put the widget's own back.
+                apply_own_colors(wrapper, widget_def.get("own_colors"))
                 if wrapper.objectName() == "pinned_widget_card" and hasattr(wrapper, "apply_size"):
                     wrapper.apply_size(widget_def.get("width"), widget_def.get("height"))
 

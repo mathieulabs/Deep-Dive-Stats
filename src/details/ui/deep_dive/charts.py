@@ -140,7 +140,10 @@ class DeepDiveChartsMixin:
         return create_retention_chart_view(self, retention_data)
 
     def _show_empty_charts(self):
-        """Setting: keep Deep Dive charts that have no data (default off: they are left out)."""
+        """Setting: keep Deep Dive charts that have no data (default off: they are left out).
+        Also True while a section with no data is built hidden (see populate_runtime)."""
+        if getattr(self, "_force_empty_build", False):
+            return True
         try:
             from .. import Config
             return bool(self.addon_config.config.get(Config.SHOW_EMPTY_CHARTS, False))

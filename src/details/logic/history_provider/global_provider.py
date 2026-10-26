@@ -6,7 +6,6 @@ from .core import HistoryProviderCore
 from .did_limit import DidLimitMixin
 from .history import HistoryFetchMixin
 from .stats import StatsMixin
-import sys
 
 
 class HistoryProvider(
@@ -18,11 +17,3 @@ class HistoryProvider(
     HistoryProviderCore,
 ):
     pass
-
-
-for _mod in ("did_limit", "history", "stats", "cards", "context"):
-    _full_name = f"{__package__}.{_mod}"
-    _loaded = sys.modules.get(_full_name)
-    if _loaded is not None:
-        _loaded.HistoryProvider = HistoryProvider
-

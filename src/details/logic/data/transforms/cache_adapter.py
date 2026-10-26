@@ -1,19 +1,23 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Cache-adapter helpers for time-view transforms."""
-from datetime import datetime
+from datetime import date, datetime
 from functools import lru_cache
+
+_EPOCH_DAY = date(1970, 1, 1)
 
 
 @lru_cache(maxsize=4096)
-def _day_start_ms(day):
-    return int(datetime.strptime(day, "%Y-%m-%d").timestamp() * 1000)
+def _day_start_and_number(day, off_h):
+    """(start ms at the rollover hour, local time; day number) of a "YYYY-MM-DD" day."""
+    d = datetime.strptime(day, "%Y-%m-%d")
+    return int(d.replace(hour=off_h).timestamp() * 1000), (d.date() - _EPOCH_DAY).days
 
 
 def adapter_from_cache(ghc, range_type, spark_precision, start_ms=None, end_ms=None, excluded_dids=None):
     """The cached daily history, cut to [start_ms, end_ms), in the row format of
     fetch_data (one row per deck), for the deck table of the time view."""
-    from ... import Period, rollover_hour, get_rollover_offset_ms
+    from ... import Period, rollover_hour
 
     # Bins and labels for sparklines, using the same logic as database.py.
     if start_ms is None or end_ms is None:
@@ -60,9 +64,6 @@ def adapter_from_cache(ghc, range_type, spark_precision, start_ms=None, end_ms=N
     from .....utils import split_excluded
     _ex_ids, _ex_deleted = split_excluded(excluded_dids)
     excluded_set = set(_ex_ids)
-    offset_ms = get_rollover_offset_ms()
-    ms_per_day = 86400 * 1000
-
     from datetime import timedelta
     off_h = rollover_hour()
     lb_date = (datetime.fromtimestamp(start_ms / 1000) - timedelta(hours=off_h)).strftime("%Y-%m-%d")
@@ -94,8 +95,9 @@ def adapter_from_cache(ghc, range_type, spark_precision, start_ms=None, end_ms=N
             # Compare date strings first (much cheaper than strptime) and only parse dates inside the bounds.
             if lb_date <= logical <= ub_date:
                 try:
-                    # item_ms must add the offset_hour back to reach the exact Anki logical day start
-                    item_ms = _day_start_ms(item["logical_date"]) + (off_h * 3600000)
+                    # The Anki day starts at the rollover hour of its date, local time (midnight
+                    # + N hours in ms would be an hour off on the day of a clock change).
+                    item_ms, day_number = _day_start_and_number(item["logical_date"], off_h)
 
                     if start_ms <= item_ms < end_ms:
                         s_time += item.get("time_ms", 0)
@@ -113,8 +115,7 @@ def adapter_from_cache(ghc, range_type, spark_precision, start_ms=None, end_ms=N
                         # A history opened in the Deep Dive also has its empty days (to draw the
                         # gaps): only the days with reviews are active days.
                         if item.get("reviews", 0):
-                            day_idx = int((item_ms - offset_ms) / ms_per_day)
-                            active_day_indices.append(str(day_idx))
+                            active_day_indices.append(str(day_number))
                 except Exception: continue
 
         if s_rev == 0: continue

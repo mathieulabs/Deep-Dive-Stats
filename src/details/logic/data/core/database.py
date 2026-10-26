@@ -4,7 +4,8 @@
 
 from .....utils import excluded_days_clause
 from aqt import mw
-from ... import REVLOG_RESCHED, get_rollover_offset_ms
+from ... import REVLOG_RESCHED
+from .....utils import get_logical_day_sql
 from .forecast import deck_new_limit
 
 
@@ -14,8 +15,6 @@ def fetch_data(start_ms, end_ms, prev_start_ms, prev_end_ms, did_limit, range_ty
     """
     from ...logger import log_debug
 
-    offset_ms = get_rollover_offset_ms()
-    ms_per_day = 86400 * 1000
 
     # Increase GROUP_CONCAT limit to avoid truncation for very large collections/long history
     mw.col.db.execute("PRAGMA group_concat_max_len = 100000")
@@ -25,15 +24,15 @@ def fetch_data(start_ms, end_ms, prev_start_ms, prev_end_ms, did_limit, range_ty
                SUM(CASE WHEN revlog.time > 0 THEN revlog.time ELSE 0 END), 
                COUNT(revlog.id), 
                SUM(CASE WHEN revlog.ease > 1 THEN 1 ELSE 0 END),
-               SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 AND revlog.ease > 1 THEN 1 ELSE 0 END),
-               SUM(CASE WHEN revlog.lastIvl >= 1 AND revlog.lastIvl < 21 THEN 1 ELSE 0 END),
-               SUM(CASE WHEN revlog.lastIvl >= 21 AND revlog.ease > 1 THEN 1 ELSE 0 END),
-               SUM(CASE WHEN revlog.lastIvl >= 21 THEN 1 ELSE 0 END),
+               SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl < 21 AND revlog.ease > 1 THEN 1 ELSE 0 END),
+               SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl < 21 THEN 1 ELSE 0 END),
+               SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl >= 21 AND revlog.ease > 1 THEN 1 ELSE 0 END),
+               SUM(CASE WHEN revlog.ease > 0 AND NOT (revlog.type = 3 AND revlog.factor = 0) AND (revlog.type = 1 OR revlog.lastIvl <= -86400 OR revlog.lastIvl >= 1) AND revlog.lastIvl >= 21 THEN 1 ELSE 0 END),
                SUM(CASE WHEN revlog.ease = 1 THEN 1 ELSE 0 END), -- Again
                SUM(CASE WHEN revlog.ease = 2 THEN 1 ELSE 0 END), -- Hard
                SUM(CASE WHEN revlog.ease = 3 THEN 1 ELSE 0 END), -- Good
                SUM(CASE WHEN revlog.ease = 4 THEN 1 ELSE 0 END), -- Easy
-               GROUP_CONCAT(DISTINCT CAST(((CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END - {offset_ms}) / {ms_per_day}) AS INT)) -- List of Active Day indices
+               GROUP_CONCAT(DISTINCT {get_logical_day_sql('(CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END)')}) -- List of Active Day indices
         FROM revlog
         LEFT JOIN cards ON revlog.cid = cards.id
         WHERE revlog.type < {REVLOG_RESCHED}

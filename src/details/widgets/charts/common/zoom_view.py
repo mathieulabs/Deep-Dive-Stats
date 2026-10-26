@@ -135,6 +135,18 @@ def _blended_points(zv, layers, plot_left, plot_w):
     return out, top
 
 
+def cumulative_edge_blend(zv, count):
+    """(first, last) for add_smooth_line: how far the first and last points of the running
+    total line are past the plot edges, in bins (0 on the edge, 1 when about to go)."""
+    if zv.get("cum_blend") or count < 3:
+        return 0.0, 0.0
+    off = float(zv["offset"])
+    view = float(zv["view"])
+    first = max(0.0, min(1.0, off))
+    last = max(0.0, min(1.0, (count - 1) - off - (view - 1.0)))
+    return first, last
+
+
 def cumulative_points(zv, cumulative_values, plot_left, plot_w):
     """[(x, value from 0 to top)] for the running total line, and top."""
     if zv.get("cum_blend"):

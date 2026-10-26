@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from __future__ import annotations
 
-from aqt.qt import QCheckBox, QColor, QColorDialog, QGroupBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from aqt.qt import QCheckBox, QColor, QGroupBox, QVBoxLayout
 
 from ... import Config
 from .components import SettingsSlider
@@ -38,43 +38,22 @@ def setup_facecard_settings(dialog) -> None:
         )
         or ""
     )
-    color_row = QHBoxLayout()
-    color_row.addWidget(QLabel("Title Color"))
-    color_row.addStretch()
-    dialog.title_color_btn = QPushButton()
-    dialog.title_color_btn.setFixedWidth(70)
-    dialog.title_color_auto_btn = QPushButton("Auto")
-    dialog.title_color_auto_btn.setToolTip("Back to the theme color")
-    color_row.addWidget(dialog.title_color_btn)
-    color_row.addWidget(dialog.title_color_auto_btn)
+    from .widget_colors import _color_row, auto_title_color
 
-    def _paint_title_btn():
-        c = dialog.title_color
-        if c and QColor(c).isValid():
-            dialog.title_color_btn.setText("")
-            dialog.title_color_btn.setStyleSheet(f"background-color: {c};")
-        else:
-            dialog.title_color_btn.setText("Auto")
-            dialog.title_color_btn.setStyleSheet("")
-
-    def _pick_title_color():
-        start = QColor(dialog.title_color) if dialog.title_color else QColor("#a1a1aa")
-        col = QColorDialog.getColor(start, dialog, "Title Color")
-        if col.isValid():
-            dialog.title_color = col.name()
-            _paint_title_btn()
-            dialog.apply_live_changes()
-
-    def _auto_title_color():
-        dialog.title_color = ""
-        _paint_title_btn()
+    def _set_title_color(color):
+        dialog.title_color = color
         dialog.apply_live_changes()
 
-    dialog._paint_title_btn = _paint_title_btn
-    dialog.title_color_btn.clicked.connect(_pick_title_color)
-    dialog.title_color_auto_btn.clicked.connect(_auto_title_color)
-    _paint_title_btn()
-    layout.addLayout(color_row)
+    _swatch, dialog._paint_title_btn = _color_row(
+        dialog,
+        layout,
+        "Title Color",
+        current_fn=lambda: dialog.title_color if QColor(dialog.title_color).isValid() else auto_title_color(dialog),
+        is_default_fn=lambda: not (dialog.title_color and QColor(dialog.title_color).isValid()),
+        set_fn=_set_title_color,
+        reset_fn=lambda: _set_title_color(""),
+        reset_tip="Back to the theme color",
+    )
 
     dialog.hover_effect_cb = QCheckBox("Show Hover Border")
     dialog.hover_effect_cb.setChecked(

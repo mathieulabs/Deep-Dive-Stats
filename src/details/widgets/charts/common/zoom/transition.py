@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 import inspect
-from datetime import datetime
+from datetime import datetime, timedelta
 from .....logic.logger import log_swallowed
 
 
@@ -99,8 +99,12 @@ def widen_zoom_window(rows, start, end, factor=0.15, date_keys=("logical_date", 
 
 
 def build_adaptive_fetch_bounds(first_dt, last_dt, offset_seconds=0):
-    start_ms = int((first_dt.timestamp() + float(offset_seconds or 0)) * 1000)
-    end_ms = int((last_dt.timestamp() + float(offset_seconds or 0)) * 1000) + DAY_MS
+    """[start, end) in epoch ms of the Anki days first_dt .. last_dt (dates as naive local
+    datetimes at midnight, offset_seconds = rollover hour). Added on the local time, so a
+    day with a clock change keeps its 23 or 25 hours."""
+    offset = timedelta(seconds=float(offset_seconds or 0))
+    start_ms = int((first_dt + offset).timestamp() * 1000)
+    end_ms = int((last_dt + offset + timedelta(days=1)).timestamp() * 1000)
     return start_ms, end_ms
 
 

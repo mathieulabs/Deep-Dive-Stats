@@ -7,7 +7,6 @@ from .population import PopulationMixin
 from .refresh import RefreshMixin
 from .storage import StorageMixin
 from .warmup import WarmupMixin
-import sys
 
 
 class GlobalHistoryCache(
@@ -20,11 +19,3 @@ class GlobalHistoryCache(
     GlobalHistoryCacheCore,
 ):
     pass
-
-
-for _mod in ("core", "init", "context", "refresh", "population", "storage", "warmup"):
-    _full_name = f"{__package__}.{_mod}"
-    _loaded = sys.modules.get(_full_name)
-    if _loaded is not None:
-        _loaded.GlobalHistoryCache = GlobalHistoryCache
-

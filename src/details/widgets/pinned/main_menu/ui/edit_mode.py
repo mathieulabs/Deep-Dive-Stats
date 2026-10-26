@@ -28,6 +28,7 @@ from aqt.qt import (
     QRectF,
     Qt,
     QToolButton,
+    sip,
 )
 
 from ..imports import Config, ConfigManager
@@ -494,6 +495,11 @@ class _Positioner(QObject):
         self.place()
 
     def place(self):
+        if sip.isdeleted(self._outline) or sip.isdeleted(self._bar):
+            # Edit mode ended: the outline and the bar are gone, so is the need to place them.
+            self._card.removeEventFilter(self)
+            self.deleteLater()
+            return
         try:
             self._outline.setGeometry(self._card.rect())
             self._outline.raise_()
@@ -648,17 +654,13 @@ def _style_bar(bar, colors, card):
 def apply_edit_mode(manager, cfg=None):
     """Show, restyle or hide the edit handles on every live pinned card."""
     enabled = is_edit_mode(manager)
-    try:
-        from aqt.qt import sip
-    except Exception:
-        sip = None
     colors = _colors(manager, cfg) if enabled else None
     all_defs = _defs() if enabled else []
     defs_by_id = {d.get("id"): d for d in all_defs}
     known = set(defs_by_id)
     for widget_id, card in list((getattr(manager, "_active_widgets", None) or {}).items()):
         try:
-            if card is None or (sip is not None and sip.isdeleted(card)):
+            if card is None or sip.isdeleted(card):
                 continue
             existing = card.findChild(QFrame, BAR_NAME, Qt.FindChildOption.FindDirectChildrenOnly)
             if not enabled or widget_id not in known:

@@ -50,6 +50,7 @@ from .colors import (
     visual_delta_ratio_impl,
 )
 from .layout_ops import (
+    _CONT_BOX_COLS,
     compute_grid_info_impl,
     continuous_hit_test_impl,
     get_continuous_layout_impl,
@@ -392,9 +393,11 @@ class HeatmapWidget(ChartAnimationMixin, QWidget):
             if self.view_mode == "continuous":
                 (_cell, spacing, step, gap_width, label_space, _mt, start_x,
                  months) = self._get_continuous_layout()
+                # The fixed box, not the grid inside it, so the controls don't move.
                 cols = sum(m[3] for m in months)
-                right = start_x + cols * step + max(0, len(months) - 1) * gap_width - spacing
-                return (start_x - label_space, right)
+                box_x = start_x - (_CONT_BOX_COLS - cols) * step / 2.0
+                right = box_x + _CONT_BOX_COLS * step + max(0, len(months) - 1) * gap_width - spacing
+                return (box_x - label_space, right)
             _cell, spacing, start_x, _sy, label_space = self._get_grid_geometry()
             step = _cell + spacing
             return (start_x - label_space, start_x + 53 * step - spacing)

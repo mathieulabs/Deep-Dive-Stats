@@ -81,7 +81,7 @@ def refresh_ui_icons(dialog):
     if hasattr(dialog, "support_btn"):
         dialog.support_btn.setIcon(get_svg_icon("heart", color=icon_col, size=16))
     if hasattr(dialog, "rate_btn"):
-        dialog.rate_btn.setIcon(get_svg_icon("star", color=icon_col, size=16))
+        dialog.rate_btn.setIcon(get_svg_icon("thumbs-up", color=icon_col, size=16))
     if hasattr(dialog, "github_btn"):
         dialog.github_btn.setIcon(get_svg_icon("github", color=icon_col, size=16))
     if hasattr(dialog, "export_btn"):

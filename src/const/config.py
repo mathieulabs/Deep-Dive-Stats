@@ -137,6 +137,7 @@ class Config:
     DASH_STAT_ROW_NUMS = 'Dash_Stat_Row_Nums'
     DASH_STAT_LABELS = 'Dash_Stat_Labels'
     DASH_STAT_STYLES = 'Dash_Stat_Styles'
+    DASH_STAT_COLORS = 'Dash_Stat_Colors'  # {stat key: hex} picked for one Deep Dive stat card
     LOCKED_EFFECTS = 'Locked_Effects'
     # Global Stat Colors
     COLOR_TIME = 'Color_Time'
@@ -369,6 +370,7 @@ class Config:
         DASH_STAT_ROW_NUMS: {},
         DASH_STAT_LABELS: {},
         DASH_STAT_STYLES: {},
+        DASH_STAT_COLORS: {},
         LOCKED_EFFECTS: ['Dash_Show_Streak', 'Dash_Show_Active_Days'],
         COLOR_TIME: '#8ab4f8',
         COLOR_AVG_TIME: '#06b6d4',

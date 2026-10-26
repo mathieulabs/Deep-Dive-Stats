@@ -23,6 +23,7 @@ from ....chart_utils.theme import get_theme_colors
 from ....common import create_hbox_container
 from ......qss import set_qss
 from .....logic.logger import log_swallowed
+from ......const.theme.color_resolver import own_color_for
 
 class _PinnedHeatmapNavControls(QWidget):
     """Theme-refreshable nav controls container (same live-refresh contract as charts)."""
@@ -768,7 +769,8 @@ def _apply_heatmap_runtime_visuals(chart, widget_def):
             chart.set_show_future(next_show_future)
 
     if Config.HEATMAP_COLOR in widget_def:
-        next_color = widget_def.get(Config.HEATMAP_COLOR, "#3b82f6")
+        # Its own color first, else the shared one (the pinned one with a separate theme).
+        next_color = own_color_for(chart, Config.HEATMAP_COLOR) or get_color(widget_def, Config.HEATMAP_COLOR, "pinned")
         if not isinstance(next_color, str) or not next_color.strip():
             next_color = "#3b82f6"
         if _color_token(getattr(chart, "base_color", None)) != _color_token(next_color):
@@ -833,7 +835,6 @@ def _update_heatmap(inner, widget_def, deck_id=None, cache=None, fail_if_not_cac
         current_nav_pos = c.get(Config.HEATMAP_NAV_POS, "top_right")
     else:
         if cfg is None:
-            from ..utils import _addon_config
             cfg = _addon_config()
         current_nav_pos = cfg.config.get(Config.HEATMAP_NAV_POS, "top_right")
     if hasattr(chart, "property"):

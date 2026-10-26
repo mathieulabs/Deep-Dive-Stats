@@ -9,7 +9,7 @@ from .charts_widgets import rebuild_charts_widgets
 from ..block_order import apply_block_layout_order
 from .deck_prewarm import prewarm_deck_data
 from .defs import collect_pinned_defs, handle_empty_pinned_defs, remove_stale_widgets
-from .finalize import finalize_rebuild
+from .finalize import finalize_rebuild, show_overlay
 from .overlay_state import ensure_overlay_and_rebuild_mode, reset_layout_for_full_rebuild
 from .prelude import (
     build_current_state,
@@ -55,15 +55,7 @@ def rebuild_overlay_inner(manager, deck_id):
         if not manager._overlay.isVisible():
             if getattr(manager, "_review_return_fast_path", False) and not getattr(manager, "_review_return_phase_b_active", False):
                 return
-            def _deferred_resume_show():
-                if not manager._overlay:
-                    return
-                manager._overlay.show()
-                manager._overlay.setProperty("needs_init_geom", True)
-                manager.sync_overlay()
-                manager._settle_sync_timer.start(320)
-
-            QTimer.singleShot(0, _deferred_resume_show)
+            QTimer.singleShot(0, lambda: show_overlay(manager, 320))
         return
 
     manager._last_state = current_state

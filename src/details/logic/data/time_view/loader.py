@@ -4,7 +4,8 @@
 
 from .....utils import excluded_days_clause
 from aqt import mw
-from ... import REVLOG_RESCHED, Period, excluded_decks_clause, get_rollover_offset_ms
+from ... import REVLOG_RESCHED, Period, excluded_decks_clause
+from .....utils import get_logical_day_sql
 from ..core.time_utils import get_time_range_ms
 from ..core.database import fetch_data
 from ..transforms import process_deck_tree, calculate_totals
@@ -127,10 +128,8 @@ def load_stats_data(range_type, excluded_dids, spark_precision, show_trends,
         results, prev_stats_map, deck_limits, remaining_new_map, bin_labels, retention_maps, bin_count
     )
 
-    offset_ms = get_rollover_offset_ms()
-    ms_per_day = 86400000
     total_active_days_query = f"""
-        SELECT COUNT(DISTINCT CAST(((CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END - {offset_ms}) / {ms_per_day}) AS INT))
+        SELECT COUNT(DISTINCT {get_logical_day_sql('(CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END)')})
         FROM revlog
         LEFT JOIN cards ON revlog.cid = cards.id
         WHERE revlog.type < {REVLOG_RESCHED}

@@ -13,7 +13,8 @@ def reset_heatmap(dialog) -> None:
 
 
 def reset_heatmap_pinned(dialog) -> None:
-    """Defaults for the pinned widget heatmap."""
+    """Defaults for the pinned widget heatmap. The color is not reset here: it is in the
+    Colors section, with its own reset button, like for the other charts."""
     defaults = Config.DEFAULT_CONFIG
 
     if hasattr(dialog, "scale_slider"):
@@ -42,11 +43,6 @@ def reset_heatmap_pinned(dialog) -> None:
     if hasattr(dialog, "click_browser_cb"):
         dialog.click_browser_cb.setChecked(defaults.get(Config.HEATMAP_CLICK_BROWSER, True))
 
-    if hasattr(dialog, "_get_heatmap_color_baseline"):
-        dialog.current_color = dialog._get_heatmap_color_baseline()
-    else:
-        dialog.current_color = defaults.get(Config.HEATMAP_COLOR, "#3b82f6")
-    dialog._update_color_button()
     if hasattr(dialog, "opacity_slider"):
         dialog.opacity_slider.setValue(defaults.get(Config.HEATMAP_EMPTY_OPACITY, 50))
     if hasattr(dialog, "filled_opacity_slider"):
@@ -79,7 +75,8 @@ def reset_heatmap_pinned(dialog) -> None:
 
 
 def reset_heatmap_grid(dialog) -> None:
-    """Defaults for the deep dive grid-embedded heatmap."""
+    """Defaults for the deep dive grid-embedded heatmap (the color too is left to the
+    Colors section)."""
     if hasattr(dialog, "hide_labels_cb"):
         dialog.hide_labels_cb.setChecked(True)
     if hasattr(dialog, "show_legend_cb"):
@@ -94,11 +91,6 @@ def reset_heatmap_grid(dialog) -> None:
     if hasattr(dialog, "click_browser_cb"):
         dialog.click_browser_cb.setChecked(True)
 
-    if hasattr(dialog, "_get_heatmap_color_baseline"):
-        dialog.current_color = dialog._get_heatmap_color_baseline()
-    else:
-        dialog.current_color = "#3b82f6"
-    dialog._update_color_button()
     if hasattr(dialog, "opacity_slider"):
         dialog.opacity_slider.setValue(50)
     if hasattr(dialog, "filled_opacity_slider"):

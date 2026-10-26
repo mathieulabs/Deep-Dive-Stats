@@ -20,6 +20,12 @@ def open_bug_report():
     QDesktopServices.openUrl(QUrl(BUG_REPORT_URL))
 
 
+def _copy_debug_info(parent):
+    from .details.ui.config.debug_info import copy_debug_info
+
+    copy_debug_info(parent=parent)
+
+
 def register_hooks():
     from .details.logic import log_info
     from .const import CURRENT_VERSION
@@ -51,6 +57,7 @@ def register_hooks():
         gui_hooks.profile_will_close.append(DeepDiveLogger.flush)
     except Exception:
         log_swallowed()
+    gui_hooks.profile_will_close.append(_close_dialog_for_profile_close)
     gui_hooks.profile_will_close.append(_discard_parked_dialog)
     gui_hooks.profile_did_open.append(_seed_rollover)
     gui_hooks.operation_did_execute.append(_on_operation_for_rollover)
@@ -198,10 +205,7 @@ def add_toolbar_action():
                     pass
         GlobalHistoryCache.clear_all_cache(callback=on_reinit_done)
 
-    clear_action = menu.addAction("Clear Cache")
-    clear_action.triggered.connect(on_clear_cache)
-
-    def on_view_logs():
+    def on_troubleshooting():
         import os
         from .details.logic import DeepDiveLogger
         from .details.ui.theme.icons import get_svg_icon
@@ -224,7 +228,7 @@ def add_toolbar_action():
             content = f"Error reading logs: {e}"
 
         dlg = QDialog(mw)
-        dlg.setWindowTitle("Deep Dive Debug Logs")
+        dlg.setWindowTitle("Deep Dive Troubleshooting")
         dlg.resize(900, 600)
 
         layout = QVBoxLayout(dlg)
@@ -263,19 +267,22 @@ def add_toolbar_action():
 
         btn_row = QHBoxLayout()
 
-        copy_btn = QPushButton(" Copy All")
-        copy_btn.setIcon(get_svg_icon("copy", size=16, context_ref=dlg))
-        def do_copy():
-            QApplication.clipboard().setText(text_edit.toPlainText())
-            copy_btn.setText(" Copied")
-            copy_btn.setIcon(get_svg_icon("check", size=16, context_ref=dlg))
-        copy_btn.clicked.connect(do_copy)
-        btn_row.addWidget(copy_btn)
-
         report_btn = QPushButton(" Report a Bug")
         report_btn.setIcon(get_svg_icon("bug", size=16, context_ref=dlg))
-        report_btn.clicked.connect(open_bug_report)
+        report_btn.setToolTip("Copies the debug info, then opens the bug report page: paste it there")
+
+        def do_report():
+            _copy_debug_info(dlg)
+            open_bug_report()
+
+        report_btn.clicked.connect(do_report)
         btn_row.addWidget(report_btn)
+
+        debug_btn = QPushButton(" Copy Debug Info")
+        debug_btn.setIcon(get_svg_icon("file-text", size=16, context_ref=dlg))
+        debug_btn.setToolTip("Versions, settings and the latest errors, to paste in a bug report")
+        debug_btn.clicked.connect(lambda _=False: _copy_debug_info(dlg))
+        btn_row.addWidget(debug_btn)
 
         btn_row.addStretch()
 
@@ -295,8 +302,7 @@ def add_toolbar_action():
                 QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
-                from .details.logic.history_cache import GlobalHistoryCache
-                GlobalHistoryCache.clear_all_cache()
+                on_clear_cache()
                 dlg.accept()
         clear_cache_btn.clicked.connect(do_clear_cache)
         btn_row.addWidget(clear_cache_btn)
@@ -332,11 +338,8 @@ def add_toolbar_action():
         layout.addLayout(btn_row)
         dlg.exec()
 
-    view_logs_action = menu.addAction("View Debug Logs")
-    view_logs_action.triggered.connect(on_view_logs)
-
-    report_action = menu.addAction("Report a Bug")
-    report_action.triggered.connect(open_bug_report)
+    troubleshooting_action = menu.addAction("Troubleshooting...")
+    troubleshooting_action.triggered.connect(on_troubleshooting)
 
     action.setMenu(menu)
     mw._deep_dive_menu = menu
@@ -491,6 +494,25 @@ def _on_anki_theme_change():
     QTimer.singleShot(0, _restyle)
 
 
+def _close_dialog_for_profile_close(*_args):
+    """Close the Deep Dive window before its profile's collection goes away: left open, it
+    kept reading a closed collection (and Anki reports it as a window not closed)."""
+    global _current_dialog
+    dlg = _current_dialog
+    if dlg is None:
+        return
+    try:
+        if dlg.isVisible():
+            dlg.close()  # parks it (see _on_dialog_finished); _discard_parked_dialog runs next
+        if _current_dialog is dlg:
+            _current_dialog = None
+            dlg.deleteLater()
+    except RuntimeError:
+        _current_dialog = None  # already deleted
+    except Exception:
+        log_swallowed()
+
+
 def _discard_parked_dialog(*_args):
     global _parked_dialog, _parked_signature
     dlg = _parked_dialog
@@ -642,6 +664,7 @@ def on_show_details():
             except Exception:
                 log_swallowed()
             _current_dialog = reused
+            _show_rate_prompt(_current_dialog)
             _current_dialog.show()
             _current_dialog.raise_()
             _current_dialog.activateWindow()
@@ -668,6 +691,7 @@ def on_show_details():
         _current_dialog._deepdivestats_built_night_mode = _anki_night_mode()
 
         _current_dialog.finished.connect(_on_dialog_finished)
+        _show_rate_prompt(_current_dialog)
 
         _current_dialog.show()
     except Exception as e:
@@ -684,6 +708,15 @@ def on_show_details():
                 MainMenuWidgetManager.instance().set_external_refresh_suspended(False, reason="details_open")
         except Exception:
             log_swallowed()
+
+def _show_rate_prompt(dialog):
+    try:
+        from .details.ui.details_dialog.rate_prompt import on_open
+
+        on_open(dialog)
+    except Exception:
+        log_swallowed()
+
 
 def _on_dialog_finished(result):
     global _current_dialog

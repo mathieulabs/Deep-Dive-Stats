@@ -19,6 +19,7 @@ WIDGET_BEHAVIOR_KEYS = (
     "template",
     "radio_ranges",
     "filter_modes",
+    "own_colors",  # {color key: hex} when "Own colors" is on (chart_utils/own_colors.py)
 )
 
 PINNED_UNLINK_STYLE_KEYS = (

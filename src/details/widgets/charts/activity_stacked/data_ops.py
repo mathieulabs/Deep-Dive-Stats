@@ -64,7 +64,8 @@ def refresh_data_colors_impl(widget):
             "cram": get_color(cfg, Config.COLOR_CRAM, widget),
         }
         for sc in widget.series_config:
-            key = sc.get("key")
+            key = str(sc.get("key") or "")
+            key = key[: -len("_count")] if key.endswith("_count") else key  # series keys are "young_count", ...
             if key in color_map:
                 sc["color"] = color_map[key]
         widget.update()

@@ -85,6 +85,7 @@ from ..logic.widget_updates import (
 )
 from ..logic.widget_persistence import (
     pick_card_color as pick_card_color_impl,
+    set_card_color as set_card_color_impl,
     persist_lock_state as persist_lock_state_impl,
 )
 from ..logic.config_io import (
@@ -430,11 +431,21 @@ class StatCardWidget(QFrame):
         event.ignore()
 
     def _pick_color(self):
-        """Open a QColorDialog and persist the chosen color in the active color scope."""
+        """Pick the card's color: its own one when it has own colors, else the shared one
+        of its stat (see logic/widget_persistence.set_card_color)."""
         pick_card_color_impl(
             self,
             read_config_fn=lambda: self.addon_config,
-            write_config_fn=lambda conf: write_addon_config(__name__, conf),
+            write_updates_fn=lambda updates: write_addon_config_vals(__name__, updates),
+            refresh_fn=self.refresh_theme,
+        )
+
+    def _reset_color(self):
+        """Back to the shared color of the stat."""
+        set_card_color_impl(
+            self,
+            None,
+            conf=self.addon_config,
             write_updates_fn=lambda updates: write_addon_config_vals(__name__, updates),
             refresh_fn=self.refresh_theme,
         )

@@ -93,6 +93,17 @@ def apply_split_orientation(dialog, side):
     if sp.orientation() != want:
         sp.setOrientation(want)
         _sync_table_drawer(dialog)
+        _update_layout_icons(dialog, side)
+
+
+def _update_layout_icons(dialog, side):
+    from ..details_dialog.build import layout_button_icons
+
+    btns = getattr(dialog, "layout_btns", None) or []
+    for btn, name in zip(btns, layout_button_icons(side)):
+        btn.setProperty("icon_name", name)
+    if btns and hasattr(dialog, "refresh_ui_icons"):
+        dialog.refresh_ui_icons()
 
 
 def effective_side_view(dialog):
@@ -258,7 +269,7 @@ def update_responsive_toolbar(dialog):
             act.setIcon(get_svg_icon("settings", color=icon_col, size=16))
             act.triggered.connect(dialog.settings_btn.click)
             menu.addAction(act)
-            for _n, _txt, _ic in (("support_btn", "Support", "heart"), ("rate_btn", "Rate", "star"), ("github_btn", "GitHub", "github")):
+            for _n, _txt, _ic in (("support_btn", "Support", "heart"), ("rate_btn", "Rate", "thumbs-up"), ("github_btn", "GitHub", "github")):
                 if hasattr(dialog, _n):
                     act = QAction(_txt, menu)
                     act.setIcon(get_svg_icon(_ic, color=icon_col, size=16))

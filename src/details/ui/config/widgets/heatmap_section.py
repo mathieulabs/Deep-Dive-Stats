@@ -2,12 +2,10 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from __future__ import annotations
 
-from aqt.qt import QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from aqt.qt import QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout
 
 from ... import Config
-from ...theme.icons import get_svg_icon
 from .components import SettingsSlider
-from .....qss import set_qss
 
 
 def setup_heatmap_settings(dialog) -> None:
@@ -99,33 +97,8 @@ def setup_heatmap_settings(dialog) -> None:
         dialog.content_layout, HEATMAP_TOOLTIP_FIELDS, dialog.addon_config.get(Config.HEATMAP_TOOLTIP_HIDDEN, [])
     )
 
-    group_colors = QGroupBox("Colors && Opacity")
+    group_colors = QGroupBox("Opacity && Intensity")
     layout_colors = QVBoxLayout(group_colors)
-
-    if hasattr(dialog, "_get_effective_heatmap_color"):
-        dialog.current_color = dialog._get_effective_heatmap_color()
-    else:
-        dialog.current_color = dialog.addon_config.get(Config.HEATMAP_COLOR, "#3b82f6")
-    color_lay = QHBoxLayout()
-    color_lay.addWidget(QLabel("Activity Color:"))
-    dialog.color_btn = QPushButton(parent=group_colors)
-    dialog.color_btn.setFixedWidth(60)
-    dialog.color_btn.clicked.connect(dialog._select_color)
-    dialog._update_color_button()
-    color_lay.addWidget(dialog.color_btn)
-
-    dialog.reset_color_btn = QPushButton(parent=group_colors)
-    dialog.reset_color_btn.setIcon(get_svg_icon("rotate-ccw", size=14, context_ref=dialog))
-    dialog.reset_color_btn.setFixedSize(24, 24)
-    dialog.reset_color_btn.setToolTip("Reset to Default")
-    set_qss(dialog.reset_color_btn,
-        "QPushButton { background: transparent; border: none; } "
-        "QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }"
-    )
-    dialog.reset_color_btn.clicked.connect(dialog._reset_color)
-    color_lay.addWidget(dialog.reset_color_btn)
-    color_lay.addStretch()
-    layout_colors.addLayout(color_lay)
 
     dialog.opacity_slider = SettingsSlider(
         "Empty Opacity",

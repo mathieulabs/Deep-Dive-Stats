@@ -93,6 +93,12 @@ class ReviewDotsChart(QWidget):
     def _get_margins(self):
         return _MARGIN_L, _MARGIN_R
 
+    def refresh_data_colors(self):
+        from ....ui import Config, get_chart_color
+
+        kinds = (Config.COLOR_LEARN, Config.COLOR_YOUNG, Config.COLOR_MATURE, Config.COLOR_RELEARN, Config.COLOR_CRAM)
+        self.set_style(get_chart_color(Config.COLOR_BAR, self), [get_chart_color(k, self) for k in kinds])
+
     def set_style(self, bar_color, kind_colors):
         self._bar_color = QColor(bar_color)
         self._kind_colors = [QColor(c) for c in kind_colors]

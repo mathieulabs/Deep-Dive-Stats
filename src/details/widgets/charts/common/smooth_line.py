@@ -3,13 +3,17 @@
 """Slightly rounded polyline for cumulative ("Total") lines."""
 
 
-def add_smooth_line(path, points, smoothing=1.0):
+def add_smooth_line(path, points, smoothing=1.0, edge_blend=(0.0, 0.0)):
     """Append segments to path (already at points[0]) with softened corners.
 
     Monotone cubic (Fritsch-Butland tangents, scaled by smoothing, 1.0 = full): the
     curve never dips or overshoots between two points, flat stretches stay flat, and
     each point has one tangent shared by the segments on both sides, so there is no
     small corner where they meet.
+
+    edge_blend (first, last), 0 to 1: how far the first / last point has gone out of
+    view. The tangent of its neighbour moves towards the one it gets once that point is
+    dropped, so the curve does not change shape at once when it is.
     """
     n = len(points)
     if n < 3:
@@ -38,6 +42,15 @@ def add_smooth_line(path, points, smoothing=1.0):
     for i, j in ((0, 0), (last, last - 1)):
         if ds[j] == 0 or ms[i] * ds[j] < 0:
             ms[i] = 0.0
+    # Without the outer point, its neighbour becomes an end: its tangent is then the
+    # slope of its own segment (see above).
+    b_first, b_last = edge_blend
+    if b_first > 0.0:
+        b = min(1.0, b_first)
+        ms[1] += (ds[1] - ms[1]) * b
+    if b_last > 0.0:
+        b = min(1.0, b_last)
+        ms[last - 1] += (ds[last - 2] - ms[last - 1]) * b
     cubic = path.cubicTo
     for i in range(last):
         h3 = hs[i] / 3.0

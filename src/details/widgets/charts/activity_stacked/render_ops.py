@@ -32,7 +32,15 @@ from ..common.metric.chrome import (
     draw_cached_scaffold as _draw_cached_scaffold,
     mode_switch_blend,
 )
-from ..common.zoom_view import dense_bar_ratio, zoom_view_bar, bar_slot, cumulative_points, get_zoom_view, zoom_view_margins
+from ..common.zoom_view import (
+    bar_slot,
+    cumulative_edge_blend,
+    cumulative_points,
+    dense_bar_ratio,
+    get_zoom_view,
+    zoom_view_bar,
+    zoom_view_margins,
+)
 
 
 def paint_event_impl(widget, event):
@@ -354,7 +362,7 @@ def paint_event_impl(widget, event):
 
         if points:
             path.moveTo(points[0])
-            add_smooth_line(path, points)
+            add_smooth_line(path, points, edge_blend=cumulative_edge_blend(zv, len(points)) if zv is not None else (0.0, 0.0))
             fill_path = QPainterPath(path)
             fill_path.lineTo(points[-1].x(), margin_top + avail_h)
             fill_path.lineTo(points[0].x(), margin_top + avail_h)

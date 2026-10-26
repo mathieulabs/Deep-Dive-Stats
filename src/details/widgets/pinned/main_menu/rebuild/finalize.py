@@ -1,8 +1,23 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from aqt.qt import QTimer
+
+from ..imports import mw
 from .....logic.logger import log_swallowed
 
+
+def show_overlay(manager, settle_ms):
+    """Show the pinned widgets, unless Anki has left the deck list or the deck screen
+    meanwhile. They sit on the main web view, which is also the review screen: a show
+    deferred from the deck list (Ctrl+Z there opens the review again) put them over the
+    card."""
+    overlay = manager._overlay
+    if not overlay or mw.state not in ("deckBrowser", "overview"):
+        return
+    overlay.show()
+    overlay.setProperty("needs_init_geom", True)
+    manager.sync_overlay()
+    manager._settle_sync_timer.start(settle_ms)
 
 
 def finalize_rebuild(manager, has_widgets, overview_light_mode, review_return_light_mode, review_return_phase_b_mode, should_full_rebuild, deck_id):
@@ -21,21 +36,15 @@ def finalize_rebuild(manager, has_widgets, overview_light_mode, review_return_li
                     manager._clear_browser_heatmap_snapshot_overlay()
                 except Exception:
                     log_swallowed()
-                manager._overlay.show()
-                manager._overlay.setProperty("needs_init_geom", True)
-                manager.sync_overlay()
-                manager._settle_sync_timer.start(320)
+                show_overlay(manager, 320)
             QTimer.singleShot(0, _deferred_show)
         else:
             try:
                 manager._clear_browser_heatmap_snapshot_overlay()
             except Exception:
                 log_swallowed()
-            manager._overlay.show()
-            manager._overlay.setProperty("needs_init_geom", True)
-            # Force initial sync to render patches; JS message can be delayed.
-            manager.sync_overlay()
-            manager._settle_sync_timer.start(220)
+            # Synced right away to render the patches; the JS message can come late.
+            show_overlay(manager, 220)
 
         # Apply the theme to all widgets after a rebuild, except in phase A of review return: stat cards are stale anyway and phase B refreshes styles with correct data.
         if not review_return_light_mode or review_return_phase_b_mode:

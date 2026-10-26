@@ -88,6 +88,7 @@ class GlobalHistoryCacheCore:
     @property
     def target_dir(self):
         # user_files survives add-on updates (the add-on folder itself is replaced).
+        from .global_cache import GlobalHistoryCache
         addon_path = GlobalHistoryCache._get_addon_path()
         cache_dir = os.path.join(addon_path, "user_files", "cache")
         # If a plain FILE (not dir) exists at that path, remove it

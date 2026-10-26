@@ -7,7 +7,8 @@ import time
 from aqt import mw
 from .empty_deck import did_limit_has_no_cards
 from .revlog_slices import scan_slices, sliced_all
-from ... import REVLOG_RESCHED, sql_id_list, get_rollover_offset_ms
+from ... import REVLOG_RESCHED, sql_id_list
+from .....utils import get_logical_day_sql, logical_day_number
 
 _streak_cache = {}  # key -> (timestamp, result)
 _all_streaks_cache = {}  # did_limit -> (timestamp, result)
@@ -56,8 +57,7 @@ def _compute_streaks_from_days(days, end_ms):
     if not days:
         return 0, 0
 
-    start_of_day_offset = get_rollover_offset_ms()
-    last_day_idx = int((end_ms - start_of_day_offset) / 86400000)
+    last_day_idx = logical_day_number(end_ms)
 
     current_streak = 0
     if days[0] == last_day_idx or days[0] == last_day_idx - 1:
@@ -99,8 +99,6 @@ def get_deck_streaks(deck_id, start_ms=0, end_ms=None, excluded_dids=None):
         if now - ts < _STREAK_CACHE_TTL:
             return result
 
-    start_of_day_offset = get_rollover_offset_ms()
-
     if deck_id is not None:
         dids = mw.col.decks.deck_and_child_ids(deck_id)
         did_limit = f"AND (CASE WHEN cards.odid > 0 THEN cards.odid ELSE cards.did END) IN {sql_id_list(dids)}"
@@ -113,7 +111,7 @@ def get_deck_streaks(deck_id, start_ms=0, end_ms=None, excluded_dids=None):
     else:
         slices = scan_slices(start_ms, end_ms)
         rows = sliced_all(lambda part: f"""
-            SELECT DISTINCT CAST(((CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) - {start_of_day_offset}) / 86400000 AS INT)
+            SELECT DISTINCT {get_logical_day_sql("(CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END)")}
             FROM revlog
             LEFT JOIN cards ON revlog.cid = cards.id
             WHERE revlog.type < {REVLOG_RESCHED}
@@ -142,12 +140,11 @@ def get_all_deck_streaks(did_limit=""):
             return result
 
     end_ms = int(now * 1000)
-    start_of_day_offset = get_rollover_offset_ms()
 
     slices = scan_slices()
     rows = sliced_all(lambda part: f"""
         SELECT (CASE WHEN cards.odid > 0 THEN cards.odid ELSE cards.did END),
-               CAST(((CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END) - {start_of_day_offset}) / 86400000 AS INT) as day_idx
+               {get_logical_day_sql("(CASE WHEN revlog.id > 1000000000000 THEN revlog.id ELSE revlog.id * 1000 END)")} as day_idx
         FROM revlog
         LEFT JOIN cards ON revlog.cid = cards.id
         WHERE revlog.type < {REVLOG_RESCHED}
