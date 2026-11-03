@@ -50,15 +50,9 @@ Paths and the profile name are redacted, so you can attach the relevant lines.
 
 ## Translations
 
-The translations may contain mistakes. To report one, open an issue with the language,
-the current text and the correct one. A pull request is welcome too.
+Some translations may be wrong. You can open an issue or a pull request to fix them.
 
-The texts are in `src/i18n/<language>.json`, keyed by the English text. To add a
-language, run `python dev_tools/check_translations.py --new <code>`, fill in the file
-and add the language to `LANGUAGES` in `src/i18n/__init__.py` (with `PLURAL_FORMS` when it
-does not have two plural forms, and `_NUMBER_STYLE` for how it writes numbers). An empty entry
-shows the English text. `python dev_tools/check_translations.py --sync` adds new texts
-to every file, and the build checks that the `{placeholders}` match.
+Texts live in `src/i18n/<language>.json`.
 
 ## Build
 
