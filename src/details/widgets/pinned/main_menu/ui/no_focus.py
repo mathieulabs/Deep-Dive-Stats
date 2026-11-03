@@ -19,10 +19,14 @@ _AREA = "pinned_overlay"
 
 
 def _in_area(w):
+    """In the pinned area itself, not in a window opened from it (a widget's settings
+    window has the widget as parent: its text boxes must take the focus)."""
     p = w
     while p is not None:
         if p.objectName() == _AREA:
             return True
+        if p.isWindow():
+            return False
         p = p.parentWidget()
     return False
 
@@ -58,7 +62,10 @@ def clear_focus_policies(area):
     if area is None:
         return
     try:
+        window = area.window()
         for w in area.findChildren(QWidget):
+            if w.window() is not window:
+                continue  # a window opened from the area (settings...), not the area
             if w.focusPolicy() != Qt.FocusPolicy.NoFocus:
                 w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         focused = QApplication.focusWidget()
