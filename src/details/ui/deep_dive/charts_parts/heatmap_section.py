@@ -108,7 +108,12 @@ def build_heatmap_section(
     multi_hue_intensity = manager.addon_config.config.get(Config.HEATMAP_MULTI_HUE_INTENSITY, False)
 
     current_mode = [manager._get_dd_widget_setting("heatmap", "heatmap_mode", "year")]
-    if isinstance(current_mode[0], bool) or current_mode[0] not in ["year", "365", "continuous"]:
+    if current_mode[0] == "years":
+        # Not offered for this collection (see years_mode_available): the year view instead.
+        from ....widgets.charts.heatmap.years_ops import years_mode_available as _yma
+        if not _yma():
+            current_mode[0] = "year"
+    if isinstance(current_mode[0], bool) or current_mode[0] not in ["year", "365", "continuous", "years"]:
         current_mode[0] = "year"
 
     now = datetime.now()
@@ -136,6 +141,11 @@ def build_heatmap_section(
         vibrance=vibrance,
         multi_hue_intensity=multi_hue_intensity,
     )
+    # A Deep Dive card has its own height: the all years view fits into it (and scrolls
+    # when even the smallest cells do not fit), instead of asking for more height.
+    heatmap.years_fit_height = True
+    heatmap.years_fold = int(manager.addon_config.config.get(Config.HEATMAP_YEARS_FOLD, 3) or 0)
+    heatmap.years_no_gap = bool(manager.addon_config.config.get(Config.HEATMAP_YEARS_NO_GAP, False))
     manager.heatmap_chart = heatmap
     heatmap.set_metric(manager.addon_config.config.get(Config.HEATMAP_METRIC, "reviews"))
     heatmap.set_show_legend(
@@ -279,6 +289,36 @@ def build_heatmap_section(
     set_qss(mode_year_btn, mode_btn_style)
     mode_year_btn.setFixedSize(20, 20)
 
+    # Every year at once, one row per year (see charts.heatmap.years_ops).
+    sep_year_years = QLabel("|", parent=nav_controls)
+    sep_year_years.setObjectName("heatmap_sep_year_years")
+    set_qss(sep_year_years, sep_style)
+    mode_years_btn = QPushButton("YRS", parent=nav_controls)
+    mode_years_btn.setObjectName("heatmap_mode_years")
+    mode_years_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    mode_years_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    mode_years_btn.setFlat(True)
+    set_qss(mode_years_btn, mode_btn_style)
+    mode_years_btn.setFixedSize(28, 20)
+
+    def _toggle_years_gap(no_gap):
+        no_gap = bool(no_gap)
+        manager.addon_config.set_value(Config.HEATMAP_YEARS_NO_GAP, no_gap)
+        heatmap.set_years_no_gap(no_gap)
+        try:
+            # The pinned heatmaps follow the same global option.
+            from ....widgets.pinned.main_menu.manager import MainMenuWidgetManager
+
+            if MainMenuWidgetManager.instance_exists():
+                _pcm = getattr(MainMenuWidgetManager.instance(), "_config_manager", None)
+                if _pcm is not None and _pcm.config is not manager.addon_config.config:
+                    _pcm.config[Config.HEATMAP_YEARS_NO_GAP] = no_gap
+        except Exception:
+            pass
+
+    from ....widgets.charts.heatmap.years_gap_button import make_years_gap_button
+    years_gap_btn = make_years_gap_button(nav_controls, heatmap, mode_btn_style, tokens["text_secondary"], _toggle_years_gap)
+
     def _refresh_seps(cont_v, mode365_v, year_v):
         sep_cont_365.setVisible(cont_v and mode365_v)
         sep_365_year.setVisible(mode365_v and year_v)
@@ -286,8 +326,10 @@ def build_heatmap_section(
 
     def refresh_mode_styles():
         year_lbl.setVisible(current_mode[0] == "year")
-        btn_prev.setVisible(True)
-        btn_next.setVisible(True)
+        # Every year is shown at once in the years view: nothing to browse.
+        btn_prev.setVisible(current_mode[0] != "years")
+        btn_next.setVisible(current_mode[0] != "years")
+        years_gap_btn.setVisible(current_mode[0] == "years")
         mode_btn_active_style = f"""
                 QPushButton {{
                     background: {active_bg};
@@ -306,6 +348,7 @@ def build_heatmap_section(
             (mode_cont_btn, "continuous"),
             (mode_365_btn, "365"),
             (mode_year_btn, "year"),
+            (mode_years_btn, "years"),
         ):
             is_active = current_mode[0] == mode
             btn.setProperty("heatmap_mode_active", bool(is_active))
@@ -369,6 +412,7 @@ def build_heatmap_section(
     mode_year_btn.clicked.connect(lambda: switch_mode("year"))
     mode_365_btn.clicked.connect(lambda: switch_mode("365"))
     mode_cont_btn.clicked.connect(lambda: switch_mode("continuous"))
+    mode_years_btn.clicked.connect(lambda: switch_mode("years"))
 
     show_365 = manager.addon_config.config.get(Config.HEATMAP_SHOW_365_MODE, True)
     show_cont = manager.addon_config.config.get(Config.HEATMAP_SHOW_CONTINUOUS_MODE, True)
@@ -377,12 +421,19 @@ def build_heatmap_section(
     mode_365_btn.setVisible(show_365)
     mode_cont_btn.setVisible(show_cont)
     mode_year_btn.setVisible(show_year)
+    from ....widgets.charts.heatmap.years_ops import years_mode_available
+    show_years = bool(manager.addon_config.config.get(Config.HEATMAP_SHOW_YEARS_MODE, True)) and years_mode_available()
+    mode_years_btn.setVisible(show_years)
+    sep_year_years.setVisible(show_years and (show_cont or show_365 or show_year))
     _refresh_seps(show_cont, show_365, show_year)
 
     switch_mode(current_mode[0])
 
     header_widget, top_header_lay, _ = create_chart_header(parent=manager.dialog)
 
+    header_lay.addWidget(mode_years_btn)
+    header_lay.addWidget(years_gap_btn)
+    header_lay.addWidget(sep_year_years)
     header_lay.addWidget(mode_cont_btn)
     header_lay.addWidget(sep_cont_365)
     header_lay.addWidget(mode_365_btn)

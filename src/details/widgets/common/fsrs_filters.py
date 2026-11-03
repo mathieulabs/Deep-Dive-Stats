@@ -1,30 +1,30 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ...animations.chart_policy import local_chart_animation_batch
+from ....i18n import num, tr, tr_n, N_, tr_name
 
 DEFAULT_FSRS_FILTER_IDX = 2
 FSRS_FILTER_MODES = ("1_month", "50_percent", "95_percent", "all")
-FSRS_FILTER_LABELS_SHORT = ("1m", "50%", "95%", "all")
-FSRS_FILTER_LABELS_LONG = ("1 month", "50%", "95%", "all")
+FSRS_FILTER_LABELS_SHORT = (N_("1m"), "50%", "95%", N_("all"))
+FSRS_FILTER_LABELS_LONG = (N_("1 month"), "50%", "95%", N_("all"))
 
 
 # The four radio buttons can be changed per chart (Stability and Review Intervals).
 # Modes: "d<N>" and "1_month" cap the axis at N days, "<N>_percent" / "p<N>" cap it at
 # that share of the cards, "all" shows everything. Order here is the display order.
 FSRS_FILTER_CHOICES = (
-    ("d7", "1 week", "1w"),
-    ("d14", "2 weeks", "2w"),
-    ("1_month", "1 month", "1m"),
-    ("d90", "3 months", "3m"),
-    ("d365", "1 year", "1y"),
-    ("50_percent", "50%", "50%"),
-    ("p80", "80%", "80%"),
-    ("p90", "90%", "90%"),
-    ("95_percent", "95%", "95%"),
-    ("p99", "99%", "99%"),
-    ("all", "all", "all"),
+    ("d7", N_("1 week"), N_("1w")),
+    ("d14", N_("2 weeks"), N_("2w")),
+    ("1_month", N_("1 month"), N_("1m")),
+    ("d90", N_("3 months"), N_("3m")),
+    ("d365", N_("1 year"), N_("1y")),
+    ("50_percent", N_("50%"), N_("50%")),
+    ("p80", N_("80%"), N_("80%")),
+    ("p90", N_("90%"), N_("90%")),
+    ("95_percent", N_("95%"), N_("95%")),
+    ("p99", N_("99%"), N_("99%")),
+    ("all", N_("all"), N_("all")),
 )
-_FSRS_PRESET_MODES = {m for m, _l, _s in FSRS_FILTER_CHOICES}
 _FSRS_CANONICAL = {"d31": "1_month", "p50": "50_percent", "p95": "95_percent"}
 
 
@@ -64,9 +64,9 @@ def fsrs_mode_labels(mode):
     """(long, short) label of a mode."""
     for m, long_, short in FSRS_FILTER_CHOICES:
         if m == mode:
-            return long_, short
+            return tr_name(long_), tr_name(short)
     kind, n = parse_fsrs_mode(mode)
-    return (f"{n} days", f"{n}d") if kind == "days" else (f"{n}%", f"{n}%")
+    return (tr_n("{n} day", "{n} days", n), tr("{n}d", n=n)) if kind == "days" else (num(f"{n}%"), num(f"{n}%"))
 
 
 def normalize_fsrs_filter_modes(modes):

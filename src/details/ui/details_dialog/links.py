@@ -5,12 +5,15 @@
 SUPPORT_URL: Ko-fi page (heart button). RATE_URL: AnkiWeb's rating form (thumbs-up button
 and rating banner).
 GITHUB_URL: project page. A button is only shown when its URL is set.
+TRANSLATIONS_URL: the README's Translations section.
 """
 from ...logic.logger import log_swallowed
 
 SUPPORT_URL = "https://ko-fi.com/mathieu_"
 RATE_URL = "https://ankiweb.net/shared/review/1498951013"  # AnkiWeb's own "Rate This" link
 GITHUB_URL = "https://github.com/mathieulabs/Deep-Dive-Stats"
+# README section on reporting a wrong translation (linked under the language setting).
+TRANSLATIONS_URL = GITHUB_URL + "#translations"
 
 
 def open_link(url):

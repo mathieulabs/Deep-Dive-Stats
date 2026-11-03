@@ -15,6 +15,7 @@ from ....charts.common.zoom import (
     get_timespan_transition_meta,
     should_use_timespan_transition,
 )
+from ......i18n import N_
 
 def _build_review_intervals(widget_def, deck_id, cache=None, parent=None, cfg=None):
     from .....logic.metrics import ReviewIntervalsDataProvider
@@ -53,7 +54,7 @@ def _build_review_intervals(widget_def, deck_id, cache=None, parent=None, cfg=No
         Config.DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS,
         Config.DEEP_DIVE_PINNED_SHOW_STATS,
         parent=parent,
-        title=pinned_title(widget_def, "REVIEW INTERVALS"),
+        title=pinned_title(widget_def, N_("Review Intervals")),
         title_object_name="pinned_header",
     )
 

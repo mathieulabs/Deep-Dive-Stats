@@ -29,6 +29,19 @@ def _end_chart_drag(mime_type, accepted):
         log_swallowed()
 
 
+def _is_pinned(widget):
+    """True for a widget of the pinned area (not the Deep Dive window's)."""
+    try:
+        from ..main_menu.manager import MainMenuWidgetManager
+
+        if not MainMenuWidgetManager.instance_exists():
+            return False
+        overlay = MainMenuWidgetManager.instance()._overlay
+        return overlay is not None and overlay.isAncestorOf(widget)
+    except Exception:
+        return False
+
+
 class DragInitiator:
     """
     Handles the boilerplate logic for starting a drag operation on a widget.
@@ -55,6 +68,15 @@ class DragInitiator:
         drag.setPixmap(pixmap)
         drag.setHotSpot(event.pos())
 
-        result = drag.exec(Qt.DropAction.MoveAction)
+        pinned = _is_pinned(widget)
+        if pinned:
+            # The room above / below the boxes opens when the drag gets near there
+            # (see drag_layout.section_gap) and always closes at the end.
+            from ..main_menu.runtime.overlay_margins import set_drag_room
+        try:
+            result = drag.exec(Qt.DropAction.MoveAction)
+        finally:
+            if pinned:
+                set_drag_room(False)
         _end_chart_drag(mime_type, result == Qt.DropAction.MoveAction)
         return True

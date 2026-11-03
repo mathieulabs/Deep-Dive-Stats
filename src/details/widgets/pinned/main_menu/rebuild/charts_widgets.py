@@ -184,6 +184,12 @@ def rebuild_charts_widgets(
                         manager._trigger_async_widget_update(widget, wdef_norm, deck_id)
 
             if widget:
+                # Its place on its line (dragged onto the empty part of a line): saved, and
+                # put back on every build, not only while the widget object lives.
+                try:
+                    widget._col_offset = int(wdef.get("col_offset", 0) or 0)
+                except (TypeError, ValueError):
+                    widget._col_offset = 0
                 signature = manager._widget_signature(wdef_norm, deck_id, max_ids)
                 if created_now:
                     manager._widget_update_signatures[wid] = signature
@@ -207,7 +213,10 @@ def rebuild_charts_widgets(
                                 else:
                                     delay_ms = 120 + ((widget_index - overview_sync_budget + 1) * 60)
                             else:
-                                delay_ms = (widget_index - overview_sync_budget + 1) * 60
+                                # All in the same tick, so the charts animate together. A delay per
+                                # index made the last ones (often the heatmap) start several hundred
+                                # ms after the others; these updates only read cached data anyway.
+                                delay_ms = 60
                             manager._schedule_deferred_widget_update(
                                 widget=widget,
                                 widget_def=wdef_norm,
@@ -315,6 +324,14 @@ def rebuild_charts_widgets(
                 widget.customContextMenuRequested.connect(
                     lambda pos, w=widget, wid=wid: manager._show_context_menu(w, wid, pos)
                 )
+                from ....common.more_button import attach_more_button
+                from ....common.guided_tour import attach_guided_tour
+                if wtype != "text_label":  # text fills the whole widget: no room for "⋯"
+                    from ..ui.card_chips import attach_card_chips
+
+                    attach_card_chips(manager, widget, wdef)
+                    attach_more_button(widget)
+                attach_guided_tour(widget)
 
     for box_map in (getattr(manager, "_chart_boxes", {}), getattr(manager, "_text_boxes", {})):
         for box in box_map.values():

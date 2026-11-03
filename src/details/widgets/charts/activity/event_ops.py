@@ -18,6 +18,7 @@ from ..common.metric import (
     set_zoom_range_impl,
     update_avg_hover_state,
 )
+from .....i18n import tr
 
 
 def mouse_move_event_impl(widget, event):
@@ -95,7 +96,7 @@ def mouse_move_event_impl(widget, event):
             else:
                 lines.append(
                     {
-                        "text": ("Time" if widget._is_time_mode() else "Reviews"),
+                        "text": (tr("Time") if widget._is_time_mode() else tr("Reviews")),
                         "header": True,
                         "value": widget._format_metric_value(val, with_unit=False, compact=False),
                     }
@@ -107,7 +108,7 @@ def mouse_move_event_impl(widget, event):
                 lines.append(
                     {
                         "id": "total",
-                        "text": f"Total: {widget._format_metric_value(running_total, compact=False)}",
+                        "text": tr("Total: {value}", value=widget._format_metric_value(running_total, compact=False)),
                         "bold": True,
                     }
                 )

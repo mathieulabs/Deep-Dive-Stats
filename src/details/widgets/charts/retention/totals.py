@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Review totals of each retention series, as a tooltip on its checkbox."""
 from ...chart_utils.formatting import fmt_num
+from .....i18n import tr, tr_name
 
 
 def bind_totals(chart, checkboxes):
@@ -14,9 +15,12 @@ def bind_totals(chart, checkboxes):
         totals = chart.series_totals()
         for key, cb in checkboxes.items():
             try:
-                label = chart.SERIES_CONFIG[key]["label"]
+                label = tr_name(chart.SERIES_CONFIG[key]["label"])
                 passed, reviews = totals.get(key, (0, 0))
-                cb.setToolTip(f"{label}: {fmt_num(reviews)} reviews, {fmt_num(passed)} passed" if reviews > 0 else label)
+                cb.setToolTip(
+                    tr("{name}: {reviews} reviews, {passed} passed", name=label, reviews=fmt_num(reviews), passed=fmt_num(passed))
+                    if reviews > 0 else label
+                )
             except RuntimeError:
                 return
 

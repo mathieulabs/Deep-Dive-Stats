@@ -14,9 +14,11 @@ from .time_units import apply_time_unit as _apply_time_unit
 from ....chart_utils.formatting import fmt_num
 from ....stats_cards.logic.constants import ANIM_DISABLED_DURATION_MS, ROLL_ANIM_DURATION_MS
 from ....stats_cards.logic.model import DECK_STATE_FIELDS, HISTORY_DERIVED_FIELDS, STAT_VALUE_FIELD_BINDINGS
+from .....animations.effect_guard import effect_nested
 from .....animations.motion import animations_enabled
 from .....logic.tabs import DEFAULT_DETAILS_TABS
 from .....logic.logger import log_swallowed
+from ......i18n import num, tr, tr_n, tr_name
 
 
 _CONFIG_KEY_TO_FIELD: dict = {}
@@ -86,13 +88,13 @@ def _span_description(tab: dict) -> str:
             start = str(tab.get("start_date", "") or "")
             end = str(tab.get("end_date", "") or "")
             if start and end:
-                return f"Custom dates: {start} to {end}"
+                return tr("Custom dates: {start} to {end}", start=start, end=end)
             if start and tab.get("to_today"):
-                return f"Custom dates: {start} to today"
-            return "Custom absolute range"
+                return tr("Custom dates: {start} to today", start=start)
+            return tr("Custom absolute range")
         days = int(tab.get("days", 7) or 7)
-        return f"Custom relative range ({days} days)"
-    return f"Project time span: {str(tab.get('title', '') or '').strip()}"
+        return tr_n("Custom relative range ({n} day)", "Custom relative range ({n} days)", days)
+    return tr("Project time span: {name}", name=tr_name(str(tab.get("title", "") or "").strip()))
 
 
 def get_available_span_tokens(cfg=None):
@@ -104,13 +106,14 @@ def get_available_span_tokens(cfg=None):
         range_val = tab.get("range")
         if not label or range_val is None:
             continue
+        # A default tab name is suggested translated; both names work in a template.
         if range_val == Period.CUSTOM:
-            entries.append((label, _span_description(tab)))
+            entries.append((tr_name(label), _span_description(tab)))
             continue
         if range_val in added_ranges:
             continue
         added_ranges.add(range_val)
-        entries.append((label, _span_description(tab)))
+        entries.append((tr_name(label), _span_description(tab)))
     return entries
 
 
@@ -144,13 +147,15 @@ def _span_lookup(cfg=None):
         range_val = tab.get("range")
         if not label or range_val is None:
             continue
-        lookup[label.lower()] = (
+        spec = (
             int(range_val),
             int(tab.get("days", 7) or 7),
             str(tab.get("custom_type", "relative") or "relative"),
             str(tab.get("start_date", "") or ""),
             str(tab.get("end_date", "") or ""),
         )
+        lookup[label.lower()] = spec
+        lookup.setdefault(tr_name(label).lower(), spec)
     return lookup
 
 
@@ -177,10 +182,10 @@ def _resolve_span_spec(
 
 
 def get_available_deck_override_tokens():
-    tokens = [("current", "Current widget deck"), ("all", "All decks"), ("deleted", "Deleted cards")]
+    tokens = [("current", tr("Current widget deck")), ("all", tr("All decks")), ("deleted", tr("Deleted cards"))]
     try:
         decks = list(mw.col.decks.all_names_and_ids() or [])
-        tokens.extend((str(d.name), f"Deck {d.name}") for d in decks if getattr(d, "name", None))
+        tokens.extend((str(d.name), tr("Deck {name}", name=d.name)) for d in decks if getattr(d, "name", None))
     except Exception:
         log_swallowed()
     return tokens
@@ -318,7 +323,7 @@ def _build_runtime_payload(
             if var == "avg_time" and value == "N/A":
                 # No review yet: a sentence like "({avg_time}/card)" reads "(0s/card)", as in
                 # Anki's own line, not "(N/A/card)".
-                value = "0s"
+                value = tr("{value}s", value=0)
         entries.append(
             {
                 "raw": m.group(0),
@@ -349,16 +354,53 @@ def _only_static_changes(old_payload, new_payload):
 
 def _format_roll_value(kind, value, decimals, prefix, suffix):
     if kind == "percent":
-        return f"{value:.{decimals}f}%"
+        return num(f"{value:.{decimals}f}%")
     if decimals > 0:
-        number_text = f"{value:,.{decimals}f}"
+        number_text = fmt_num(value, decimals)
     else:
         number_text = fmt_num(int(round(value)))
     return f"{prefix}{number_text}{suffix}"
 
 
+_FONT_SIZE_RE = re.compile(r"(font-size\s*:\s*)([0-9]*\.?[0-9]+)(\s*)(pt|px)", re.IGNORECASE)
+
+
 class AutoSizeRichLabel:
     """Mixin: makes a QLabel auto-size its height to fit rich text content."""
+
+    def zoomed_text(self, text):
+        """The text at Anki's interface zoom (set_zoom): its font sizes, and the label's
+        own size for the text that has none, times the zoom. At 100 % it is unchanged."""
+        z = float(getattr(self, "_zoom", 1.0) or 1.0)
+        if abs(z - 1.0) < 1e-3 or not text or not str(text).strip():
+            return text
+        text = _FONT_SIZE_RE.sub(lambda m: f"{m.group(1)}{float(m.group(2)) * z:.2f}{m.group(3)}{m.group(4)}", str(text))
+        if not text.lstrip().startswith("<"):
+            text = html.escape(text).replace("\n", "<br>")
+        font = self.font()
+        if font.pointSizeF() > 0:
+            base = f"{font.pointSizeF() * z:.2f}pt"
+        else:
+            base = f"{max(1, font.pixelSize()) * z:.2f}px"
+        return f'<div style="font-size:{base};">{text}</div>'
+
+    def set_zoom(self, zoom):
+        """Follow Anki's interface zoom like the other pinned widgets (see zoomed_text)."""
+        try:
+            z = min(3.0, max(0.5, float(zoom or 1.0)))
+        except (TypeError, ValueError):
+            z = 1.0
+        if abs(z - float(getattr(self, "_zoom", 1.0) or 1.0)) < 1e-3:
+            return
+        try:
+            self.ensurePolished()  # the base size is the stylesheet font, not the app default
+        except Exception:
+            log_swallowed()
+        self._zoom = z
+        raw = getattr(self, "_raw_text", None)
+        if raw is not None:
+            self.setText(raw)
+        self.updateGeometry()
 
     def _build_text_document(self):
         from aqt.qt import QTextDocument
@@ -374,8 +416,7 @@ class AutoSizeRichLabel:
         doc.setDefaultFont(self.font())
         doc.setDocumentMargin(0)
         text = getattr(self, "_measurement_text", None)
-        if text is None:
-            text = self.text()
+        text = self.text() if text is None else self.zoomed_text(text)
         if text.strip().startswith("<"):
             doc.setHtml(text)
         else:
@@ -391,6 +432,8 @@ class AutoSizeRichLabel:
         measurement_text = getattr(self, "_measurement_text", None)
         if measurement_text is None:
             measurement_text = self.text() or " "
+        else:
+            measurement_text = self.zoomed_text(measurement_text)
 
         candidates = []
         try:
@@ -482,9 +525,9 @@ def _make_text_label_widget(text, parent=None):
             self._fade_swapped_text = False
             self._fade_payload = None
             self._measurement_text = None
-            self._fade_effect = QGraphicsOpacityEffect(self)
-            self._fade_effect.setOpacity(1.0)
-            self.setGraphicsEffect(self._fade_effect)
+            # Only while the text fades (see _set_fade_opacity): left on, it drew the text off
+            # screen at every repaint, and it nested inside the fades of the line around it.
+            self._fade_effect = None
             self._roll_anim = QPropertyAnimation(self, b"rollProgress")
             self._roll_anim.setDuration(ROLL_ANIM_DURATION_MS if animations_enabled("pinned") else ANIM_DISABLED_DURATION_MS)
             self._roll_anim.setStartValue(0.0)
@@ -519,7 +562,8 @@ def _make_text_label_widget(text, parent=None):
                 self._apply_fade_progress(self._fade_progress)
 
         def setText(self, text):
-            super().setText(text)
+            self._raw_text = text
+            super().setText(self.zoomed_text(text))
             # Roll animation frames change the digits only; the box is refitted on
             # the final text (setText is called again when the roll ends).
             if not getattr(self, "_roll_active", False):
@@ -570,7 +614,7 @@ def _make_text_label_widget(text, parent=None):
             self._fade_active = False
             self._fade_payload = None
             self._fade_swapped_text = False
-            self._fade_effect.setOpacity(1.0)
+            self._set_fade_opacity(1.0)
             self._roll_entries = []
             self._pending_payload = None
             self._runtime_payload = payload
@@ -617,7 +661,21 @@ def _make_text_label_widget(text, parent=None):
                 opacity = 1.0 - (0.55 * (t * 2.0))
             else:
                 opacity = 0.45 + (0.55 * ((t - 0.5) * 2.0))
-            self._fade_effect.setOpacity(max(0.0, min(1.0, float(opacity))))
+            self._set_fade_opacity(max(0.0, min(1.0, float(opacity))))
+
+        def _set_fade_opacity(self, opacity):
+            """The text's opacity during a fade; the effect only exists while it is below 1."""
+            if opacity >= 0.999:
+                if self.graphicsEffect() is not None:
+                    self.setGraphicsEffect(None)  # deletes the effect
+                self._fade_effect = None
+                return
+            if self._fade_effect is None:
+                if effect_nested(self):
+                    return  # inside another fade (see effect_guard): no fade of its own
+                self._fade_effect = QGraphicsOpacityEffect(self)
+                self.setGraphicsEffect(self._fade_effect)
+            self._fade_effect.setOpacity(opacity)
 
         def _finish_payload_fade(self):
             self._fade_active = False
@@ -625,7 +683,7 @@ def _make_text_label_widget(text, parent=None):
             self._fade_payload = None
             self._fade_swapped_text = False
             self._runtime_payload = payload
-            self._fade_effect.setOpacity(1.0)
+            self._set_fade_opacity(1.0)
             final_text = str(payload.get("resolved", "") or " ")
             self._measurement_text = final_text
             self.setText(final_text)
@@ -672,6 +730,9 @@ def _make_text_label_widget(text, parent=None):
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     label.setTextFormat(Qt.TextFormat.RichText)
     label.setObjectName("pinned_text_label_inner")
+    # The mouse goes to the card around it: a rich text label otherwise takes the press
+    # (for links), so the text widget could not be dragged like the others.
+    label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
     label.setContentsMargins(4, 4, 4, 4)
 
     sp = label.sizePolicy()
@@ -684,11 +745,20 @@ def _make_text_label_widget(text, parent=None):
     return label
 
 
+def shown_template(template):
+    """The template as shown: the default one of new profiles in the interface language."""
+    from ......const.config import TEXT_WIDGET_DEFAULT_SENTENCE, TEXT_WIDGET_DEFAULT_TEMPLATE
+
+    if template == TEXT_WIDGET_DEFAULT_TEMPLATE:
+        return template.replace(TEXT_WIDGET_DEFAULT_SENTENCE, tr_name(TEXT_WIDGET_DEFAULT_SENTENCE))
+    return template
+
+
 def _build_text_label(widget_def, deck_id, cache=None, parent=None, cfg=None):
     if cfg is None:
         cfg = _addon_config()
 
-    template = widget_def.get("template", "")
+    template = shown_template(widget_def.get("template", ""))
     span = widget_def.get("time_span", Period.TOTAL)
     days = widget_def.get("custom_days", 7)
     custom_type = widget_def.get("custom_type", "relative")
@@ -718,7 +788,7 @@ def _update_text_label(label, widget_def, deck_id, cache=None, fail_if_not_cache
     if cfg is None:
         cfg = _addon_config()
 
-    template = widget_def.get("template", "")
+    template = shown_template(widget_def.get("template", ""))
     span = widget_def.get("time_span", Period.TOTAL)
     days = widget_def.get("custom_days", 7)
     custom_type = widget_def.get("custom_type", "relative")

@@ -8,6 +8,41 @@ import traceback
 from datetime import datetime, timedelta
 from logging.handlers import MemoryHandler, RotatingFileHandler
 
+from ...const.addon_dir import addon_removed
+
+class _BatchHandler(MemoryHandler):
+    """MemoryHandler that closes debug.log after writing each batch.
+
+    A log file left open for the whole session locks user_files on Windows, and Anki moves
+    that folder aside when the add-on is updated or reinstalled ("Access denied"). Batches
+    are rare enough that reopening the file for each one costs nothing.
+    """
+
+    def flush(self):
+        if addon_removed():
+            # Anki is replacing the add-on: writing would create its folder back.
+            self.acquire()
+            try:
+                self.buffer.clear()
+            finally:
+                self.release()
+            return
+        super().flush()
+        target = self.target
+        if target is None:
+            return
+        target.acquire()
+        try:
+            stream = getattr(target, "stream", None)
+            if stream is not None:
+                target.stream = None
+                stream.close()
+        except Exception:
+            pass
+        finally:
+            target.release()
+
+
 class DeepDiveLogger:
     _logger = None
     _memory_handler = None
@@ -26,7 +61,7 @@ class DeepDiveLogger:
             os.path.abspath(__file__)
         ))))
         log_dir = os.path.join(addon_path, "user_files")
-        if not os.path.exists(log_dir):
+        if not os.path.exists(log_dir) and not addon_removed():
             os.makedirs(log_dir, exist_ok=True)
         return log_dir
 
@@ -105,8 +140,9 @@ class DeepDiveLogger:
 
         # A bare FileHandler flushes to disk on every emit, which blocks whichever thread logs.
         # Buffer up to 200 records in memory and write in batches, or immediately on WARNING and
-        # above (rare, and the lines worth keeping if Anki crashes right after).
-        buffered_handler = MemoryHandler(
+        # above (rare, and the lines worth keeping if Anki crashes right after). The file is
+        # closed again after each batch (see _BatchHandler).
+        buffered_handler = _BatchHandler(
             capacity=200,
             flushLevel=logging.WARNING,
             target=handler,

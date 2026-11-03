@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+
+from .....i18n import N_
 BREAKDOWN_BASE_KEYS = ("mature", "young", "relearn", "learn", "cram")
 REVIEW_TYPE_CHOICES = (
-    ("learn", "Learning"),
-    ("young", "Young"),
-    ("mature", "Mature"),
-    ("relearn", "Relearning"),
-    ("cram", "Filtered / custom study"),
+    ("learn", N_("Learning")),
+    ("young", N_("Young")),
+    ("mature", N_("Mature")),
+    ("relearn", N_("Relearning")),
+    ("cram", N_("Filtered / custom study")),
 )
 HIDDEN_TYPES_KEY = "hidden_review_types"
 

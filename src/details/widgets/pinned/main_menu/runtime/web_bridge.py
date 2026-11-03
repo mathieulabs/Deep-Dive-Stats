@@ -160,6 +160,12 @@ def inject_placeholder(manager, content, is_browser):
 
     m_top = 15 if is_browser else 0
     js = f"""
+        <style>
+        /* The pinned widgets change the page height (a heatmap opening its years...): when
+           that brings the scrollbar in or out, the whole page shifted sideways. The room
+           for it is kept on both sides, so the page stays centred and still. */
+        html {{ scrollbar-gutter: stable both-edges; }}
+        </style>
         <div id="pinned-placeholder" style="width: 100%; height: {curr_h}px; background: transparent; margin-top: {m_top}px; margin-bottom: 10px;"></div>
         <script>
         (function() {{
@@ -281,6 +287,8 @@ def event_filter(manager, obj, event, super_event_filter):
         elif event.type() == QEvent.Type.DragLeave:
             hide_marker(obj)
             manager._drag_cross = None
+            from ..ui.drag_layout import drag_left
+            drag_left()
             return False
         elif event.type() == QEvent.Type.Drop:
             wid = event.mimeData().data(MIME_CHART_ID).data().decode()

@@ -9,7 +9,7 @@ cards. While dragging, the target line is outlined and a bar shows where the
 widget will land.
 """
 
-from aqt.qt import QApplication, QColor, QFrame, QPainter, QPalette, QPen, QRectF, Qt, QTimer
+from aqt.qt import QApplication, QColor, QFrame, QPainter, QPalette, QPen, QRect, QRectF, Qt, QTimer
 
 from ... import WidgetRegistry
 from ...drag_drop.engine import ReorderEngine
@@ -130,8 +130,21 @@ def chart_drag_over(manager, container, box_id, box_kind, pos, source_id):
     src = find_def(source_id)
     if src is None:
         return "reject", None, None
+    from . import drag_layout as gaps
+    from ......i18n import tr
+
+    # In the gap between two boxes: a new box there (any kind of widget).
+    overlay = getattr(manager, "_overlay", None)
+    found = gaps.section_gap(manager, container.mapTo(overlay, pos), source_id) if overlay is not None else None
+    if found is not None:
+        cross, bar = found
+        manager._drag_cross = cross
+        hide_marker(container)
+        gaps.show_gap(overlay, bar, tr("New line"))
+        return "cross", None, None
     fam = family(src)
     if fam == "stat" or (fam == "text") != (box_kind == "text"):
+        gaps.hide_gaps()
         hide_marker(container)
         return "reject", None, None
     boxes = getattr(manager, "_text_boxes" if box_kind == "text" else "_chart_boxes", None) or {}
@@ -143,7 +156,24 @@ def chart_drag_over(manager, container, box_id, box_kind, pos, source_id):
                 rows.append((idx, row_w, ml))
     if not rows:
         hide_marker(container)
+        gaps.hide_gaps()
         return "reject", None, None
+
+    # In the gap between two lines: a new line there.
+    from ..runtime.overlay_margins import row_content_rect
+
+    lines = sorted(((idx, row_content_rect(row_w, ml)) for idx, row_w, ml in rows), key=lambda r: r[1].top())
+    fam_name = "text" if box_kind == "text" else "chart"
+    line = gaps.line_gap(lines, pos.y(), source_id, box_id, fam_name)
+    if line is not None:
+        new_row, gap_y = line
+        manager._drag_cross = {"id": source_id, "kind": "newline", "box": box_id, "row": new_row}
+        hide_marker(container)
+        left = min(r.left() for _i, r in lines)
+        right = max(r.right() for _i, r in lines)
+        gaps.show_gap(container, QRect(left, gap_y - 2, right - left, 4), tr("New line"))
+        return "cross", None, None
+    gaps.hide_gaps()
 
     y = pos.y()
     idx, row_w, ml = min(
@@ -153,14 +183,25 @@ def chart_drag_over(manager, container, box_id, box_kind, pos, source_id):
         ),
     )
     manager._drag_cross = None
+    local = pos - row_w.pos()
+
+    # On the empty part of a line (left or right of its widgets, with room for this one):
+    # the widget goes right there, the empty space stays beside it.
+    spot = gaps.free_spot(manager, ml, row_w, local, source_id)
+    if spot is not None:
+        manager._drag_cross = {"id": source_id, "kind": "place", "box": box_id, "row": idx,
+                               "side": spot["side"], "k": spot["k"]}
+        hide_marker(container)
+        gaps.show_spot(container, spot["rect"].translated(row_w.pos()))
+        return "cross", ml, row_w
+
     if box_id == box_of(src) and idx == row_of(src):
         hide_marker(container)
         return "same", ml, row_w
 
-    local = pos - row_w.pos()
     anchor, bar_x = landing(ml, local, source_id, grid=True)
     manager._drag_cross = {"id": source_id, "box": box_id, "row": idx, "anchor": anchor}
-    show_marker(container, row_w.geometry(), bar_x + row_w.x())
+    show_marker(container, row_content_rect(row_w, ml), bar_x + row_w.x())
     return "cross", ml, row_w
 
 
@@ -187,6 +228,48 @@ def stat_drag_over(container, pos, source_id):
     if target is None or src is None or family(src) != "stat":
         return False
     box, row = target
+    from . import drag_layout as gaps
+    from ......i18n import tr
+
+    try:
+        from ..manager import MainMenuWidgetManager
+        manager = MainMenuWidgetManager.instance()
+        overlay = manager._overlay
+    except Exception:
+        manager = overlay = None
+    # In the gap between two boxes: a new box there.
+    found = gaps.section_gap(manager, container.mapTo(overlay, pos), source_id) if overlay is not None else None
+    if found is not None:
+        cross, bar = found
+        container._drag_cross = cross
+        hide_marker(container)
+        gaps.show_gap(overlay, bar, tr("New line"))
+        return True
+    # In the gap between two lines of stat cards: a new line there.
+    group = container.parentWidget()
+    lines = [(i, r.geometry()) for i, r in enumerate(getattr(group, "_rows", []) or []) if r.isVisible()]
+    y_group = container.mapTo(group, pos).y()
+    line = gaps.line_gap(lines, y_group, source_id, box, "stat", band=gaps.STAT_LINE_BAND)
+    if line is not None:
+        new_row, gap_y = line
+        container._drag_cross = {"id": source_id, "kind": "newline", "box": box, "row": new_row}
+        hide_marker(container)
+        gaps.show_gap(group, QRect(0, gap_y - 2, group.width(), 4), tr("New line"))
+        return True
+    # On the empty part of a line of cards: the card lands right there (snapped).
+    src_w = None
+    try:
+        src_w = (manager._active_widgets or {}).get(source_id) if manager is not None else None
+    except Exception:
+        src_w = None
+    spot = gaps.free_stat_spot(container, pos, source_id, src_w)
+    if spot is not None:
+        container._drag_cross = {"id": source_id, "kind": "place", "box": box, "row": row,
+                                 "side": spot["side"], "k": spot["k"]}
+        hide_marker(container)
+        gaps.show_spot(container, spot["rect"])
+        return True
+    gaps.hide_gaps()
     if box == box_of(src) and row == row_of(src):
         hide_marker(container)
         container._drag_cross = None
@@ -205,9 +288,15 @@ def queue_move(cross):
 
 def flush_pending(manager):
     """Called once the drag loop returned: apply the queued drop, if any."""
+    from . import drag_layout as gaps
+
+    gaps.hide_gaps()
     if not _PENDING:
         return
     cross = _PENDING.pop()
+    if cross.get("kind") in ("newline", "newbox", "place", "movebox"):
+        QTimer.singleShot(0, lambda: gaps.apply(manager, cross))
+        return
     QTimer.singleShot(0, lambda: move_to(manager, cross["id"], cross["box"], cross["row"], cross["anchor"]))
 
 

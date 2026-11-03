@@ -7,6 +7,7 @@ from . import HistoryProvider, Period
 from ..shared.context import get_pinned_context_value
 from .....logic.data.section_fetchers import fetch_section_data
 from .....logic.data.section_fallbacks import resolve_fsrs_payload
+from ......i18n import upper
 
 
 def fetch_fsrs_data(deck_id, cfg=None, fail_if_not_cached=False):
@@ -85,7 +86,7 @@ def build_simple_fsrs_chart(chart_cls, data_key, title, widget_def, deck_id, par
         include_when_no_header_stats=False,
     )
 
-    return _wrap(chart, label.upper() if not header_widget else None,
+    return _wrap(chart, upper(label) if not header_widget else None,
                  header_widget=header_widget,
                  widget_id=widget_def["id"],
                  saved_w=widget_def.get("width"),

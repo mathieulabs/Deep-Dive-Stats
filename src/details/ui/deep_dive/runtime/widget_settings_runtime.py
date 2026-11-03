@@ -4,6 +4,7 @@ import copy
 
 from ... import Config
 from ....logic.logger import log_swallowed
+from .....i18n import N_
 
 
 def get_dd_widget_setting(manager, section_key, setting_key, default=None):
@@ -38,18 +39,18 @@ def open_dd_widget_settings(manager, section_key, widget):
     w_type = type_map.get(section_key, "stat_card" if "stat" in section_key else section_key)
 
     label_map = {
-        "activity": "Activity",
-        "retention": "Retention",
-        "heatmap": "Heatmap",
-        "future_due": "Future Due",
-        "distribution": "Answer Buttons",
-        "hourly": "Hourly Breakdown",
-        "card_counts": "Card Counts",
-        "review_intervals": "Review Intervals",
-        "stability": "Stability",
-        "difficulty": "Difficulty",
-        "retrievability": "Retrievability",
-        "added": "Added",
+        "activity": N_("Activity"),
+        "retention": N_("Retention"),
+        "heatmap": N_("Heatmap"),
+        "future_due": N_("Future Due"),
+        "distribution": N_("Answer Buttons"),
+        "hourly": N_("Hourly Breakdown"),
+        "card_counts": N_("Card Counts"),
+        "review_intervals": N_("Review Intervals"),
+        "stability": N_("Stability"),
+        "difficulty": N_("Difficulty"),
+        "retrievability": N_("Retrievability"),
+        "added": N_("Added"),
     }
 
     suffix = "_g"
@@ -95,8 +96,9 @@ def open_dd_widget_settings(manager, section_key, widget):
 
     if dialog.exec():
         # Keep per-widget behavior toggles edited via dialog in persisted local settings.
-        _style_keys = ("line_opacity", "bar_gradient", "show_grid", "legend_mode", "radio_ranges", "filter_modes", "own_colors")
-        for key in ("show_average", "show_cumulative", "avg_on_active_days", "chart_opacity", "show_legend", "tooltip_hidden") + _style_keys:
+        # (tooltip_hidden too: all its lines ticked again leaves no list, the full tooltip)
+        _style_keys = ("line_opacity", "bar_gradient", "show_grid", "legend_mode", "radio_ranges", "filter_modes", "own_colors", "tooltip_hidden")
+        for key in ("show_average", "show_cumulative", "avg_on_active_days", "chart_opacity", "show_legend") + _style_keys:
             if key in dialog_widget_def:
                 local_style[key] = dialog_widget_def[key]
             elif key in _style_keys:

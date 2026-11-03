@@ -3,11 +3,21 @@
 from aqt.qt import Qt, QTableWidgetItem
 from ...widgets.chart_utils.formatting import fmt_num, stats_precision, TREND_PRECISION
 from .header_menu import show_header_menu as show_header_menu_impl
+from ....i18n import num, parse_num, tr
+
+def pinned_total_role():
+    """Role set on every cell of a Total row kept at the top or bottom whatever the sort.
+    The deck table marks it with UserRole "[[TOTAL]]"; the time table cannot (its UserRole
+    is the period of the row), so it uses this one."""
+    return Qt.ItemDataRole.UserRole + 7
+
 
 class SortableTableWidgetItem(QTableWidgetItem):
     PIN_TOP = True
 
     def __init__(self, text, sort_value=None):
+        if text == "N/A":  # the stats use "N/A" as a value; shown translated
+            text = tr("N/A")
         super().__init__(text)
         self.sort_value = sort_value if sort_value is not None else text
 
@@ -15,8 +25,9 @@ class SortableTableWidgetItem(QTableWidgetItem):
         if not isinstance(other, QTableWidgetItem):
             return super().__lt__(other)
 
-        is_self_total = self.data(Qt.ItemDataRole.UserRole) == "[[TOTAL]]"
-        is_other_total = other.data(Qt.ItemDataRole.UserRole) == "[[TOTAL]]"
+        role = pinned_total_role()
+        is_self_total = self.data(Qt.ItemDataRole.UserRole) == "[[TOTAL]]" or self.data(role) is True
+        is_other_total = other.data(Qt.ItemDataRole.UserRole) == "[[TOTAL]]" or other.data(role) is True
 
         if is_self_total or is_other_total:
             table = self.tableWidget()
@@ -37,9 +48,16 @@ class SortableTableWidgetItem(QTableWidgetItem):
         ov = getattr(other, 'sort_value', other.text())
 
         try:
-            return float(sv) < float(ov)
+            return _sort_number(sv) < _sort_number(ov)
         except (ValueError, TypeError):
             return str(sv).lower() < str(ov).lower()
+
+
+def _sort_number(value):
+    """A cell's sort value as a number; a shown number ("1 234,5", "70,5 %") is read too."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    return parse_num(value)
 
 def get_trend_html(curr, prev, show_trends, bigger_is_better=True, color_good="#4CAF50", color_bad="#F44336", points=False):
     if not show_trends or prev <= 0: return ""
@@ -49,14 +67,15 @@ def get_trend_html(curr, prev, show_trends, bigger_is_better=True, color_good="#
     color = color_good if (diff > 0) == bigger_is_better else color_bad
     symbol = "▲" if diff > 0 else "▼"
     if points:
-        return f' <small style="color:{color}; font-weight:bold;">{symbol}{abs(diff):.{TREND_PRECISION}f} pts</small>'
-    return f' <small style="color:{color}; font-weight:bold;">{symbol}{abs(diff):.{TREND_PRECISION}f}%</small>'
+        points_text = tr("{value} pts", value=num(f"{abs(diff):.{TREND_PRECISION}f}"))
+        return f' <small style="color:{color}; font-weight:bold;">{symbol}{points_text}</small>'
+    return f' <small style="color:{color}; font-weight:bold;">{symbol}{num(f"{abs(diff):.{TREND_PRECISION}f}%")}</small>'
 
 def get_dist_text(count, total, show_counts):
     if total > 0:
         v = count if show_counts else (count / total * 100)
-        return f"{fmt_num(v)}" if show_counts else f"{v:.{stats_precision()}f}%"
-    return "0" if show_counts else "0%"
+        return fmt_num(v) if show_counts else num(f"{v:.{stats_precision()}f}%")
+    return "0" if show_counts else num("0%")
 
 def add_table_item(table, row, col, text, color=None, tooltip="", bold=False, sort_value=None):
     # When toggling visual widgets -> text: remove old widget to avoid overlap.

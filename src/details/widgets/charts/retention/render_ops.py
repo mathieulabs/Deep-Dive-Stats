@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 
 from .bars import draw_review_bars
-from .data_ops import current_value_range
+from .data_ops import CURVE_DIV, current_value_range
 from .series import SERIES_KEYS
 from .smooth import build_paths, control_points, tangents
 from ..common.cache_dpr import cache_dpr, cache_surface, draw_cache, stale_cache
@@ -302,9 +302,13 @@ def draw_series_transition_impl(widget, painter, margin_left, margin_top, plot_w
         new_curve = transition_cache.get("new_curve")
         curve_sub = 0
         if slopes is not None and old_curve and new_curve:
-            curve_sub = 4 if x_step >= 6 else (2 if x_step >= 3 else 0)
+            # About one step every 6 px or less, so the morphing line looks as round as at rest.
+            for sub, min_step in ((16, 48), (8, 24), (4, 6), (2, 3)):
+                if x_step >= min_step:
+                    curve_sub = sub
+                    break
         if curve_sub:
-            curve_step = 4 // curve_sub
+            curve_step = CURVE_DIV // curve_sub
         for i in range(0, sample_count - 1, stride):
             j = min(i + stride, sample_count - 1)
             if i < len(segment_meta) and not segment_meta[i].get("candidate", False):
@@ -339,7 +343,7 @@ def draw_series_transition_impl(widget, painter, margin_left, margin_top, plot_w
             if curve_sub and j == i + 1:
                 sub_pts = []
                 for s in range(curve_sub + 1):
-                    k = i * 4 + s * curve_step
+                    k = i * CURVE_DIV + s * curve_step
                     v = old_curve[k] + (new_curve[k] - old_curve[k]) * p
                     sub_pts.append(
                         QPointF(

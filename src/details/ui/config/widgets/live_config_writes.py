@@ -92,6 +92,10 @@ def apply_heatmap_live_changes(dialog, conf):
         conf[Config.HEATMAP_SHOW_365_MODE] = dialog.show_365_cb.isChecked()
     if hasattr(dialog, "show_year_cb"):
         conf[Config.HEATMAP_SHOW_YEAR_MODE] = dialog.show_year_cb.isChecked()
+    if hasattr(dialog, "show_years_cb"):
+        conf[Config.HEATMAP_SHOW_YEARS_MODE] = dialog.show_years_cb.isChecked()
+    if hasattr(dialog, "years_fold_slider"):
+        conf[Config.HEATMAP_YEARS_FOLD] = int(dialog.years_fold_slider.value())
     if getattr(dialog, "hm_tooltip_checks", None):
         from ....widgets.chart_utils.tooltip_fields import hidden_from_checks
         conf[Config.HEATMAP_TOOLTIP_HIDDEN] = hidden_from_checks(dialog.hm_tooltip_checks)

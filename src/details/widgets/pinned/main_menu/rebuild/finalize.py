@@ -14,7 +14,16 @@ def show_overlay(manager, settle_ms):
     overlay = manager._overlay
     if not overlay or mw.state not in ("deckBrowser", "overview"):
         return
+    if getattr(manager, "_review_return_page_wait", None) is not None:
+        # Back from a review and the page still shows the last card: show on page load
+        # (navigation_flow._hold_overlay_until_page_load).
+        manager._review_return_pending_show = settle_ms
+        return
     overlay.show()
+    overlay.keep_above_page()
+    from ..ui.no_focus import clear_focus_policies
+
+    clear_focus_policies(overlay)
     overlay.setProperty("needs_init_geom", True)
     manager.sync_overlay()
     manager._settle_sync_timer.start(settle_ms)

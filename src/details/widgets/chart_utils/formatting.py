@@ -1,12 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ...ui import Config
+from ....i18n import num, tr, tr_n
 
 def fmt_num(val, prec=None):
     """
-    Formats a number with a thousands separator based on user preference.
-    Defaults to English-style ',' separator if enabled.
+    Formats a number with a thousands separator based on user preference, the way the
+    interface language writes it ("1,234.5" in English, "1 234,5" in French).
     """
+    return num(_fmt_num_en(val, prec))
+
+
+def _fmt_num_en(val, prec=None):
+    """fmt_num() the English way, before num()."""
     if not isinstance(val, (int, float)):
         return str(val)
 
@@ -64,12 +70,10 @@ def fmt_num_trim_zeros(val, prec=1):
     Format a number at the given precision, then trim useless trailing zeros.
     Examples (prec=1): 17.0 -> "17", 17.1 -> "17.1", 1,234.0 -> "1,234"
     """
-    s = fmt_num(val, prec)
-    if not isinstance(s, str):
-        s = str(s)
-    if "." not in s:
-        return s
-    return s.rstrip("0").rstrip(".")
+    s = str(_fmt_num_en(val, prec))
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return num(s)
 
 
 def format_metric_value(value, value_mode="reviews", with_unit=True, per_day=False, axis=False, compact=True):
@@ -83,9 +87,9 @@ def format_metric_value(value, value_mode="reviews", with_unit=True, per_day=Fal
         if axis or (not with_unit):
             out = num
         else:
-            out = f"{num} reviews"
+            out = tr_n("{count} review", "{count} reviews", as_int if is_integral else v, count=num)
         if per_day and not axis:
-            out = f"{out}/day"
+            out = tr("{value}/day", value=out)
         return out
 
     if axis:
@@ -95,22 +99,22 @@ def format_metric_value(value, value_mode="reviews", with_unit=True, per_day=Fal
             # Under a minute, seconds: at one decimal of a minute the ticks of a short
             # session all read "0.1m" or "0m".
             secs = v * 60.0
-            return f"{fmt_num_trim_zeros(secs, 0 if secs >= 10 else 1)}s"
+            return tr("{value}s", value=fmt_num_trim_zeros(secs, 0 if secs >= 10 else 1))
         if v < 60.0:
-            return f"{fmt_num_trim_zeros(v, 1)}m"
+            return tr("{value}m", value=fmt_num_trim_zeros(v, 1))
         h = v / 60.0
-        return f"{fmt_num_trim_zeros(h, 1 if h < 10 else 0)}h"
+        return tr("{value}h", value=fmt_num_trim_zeros(h, 1 if h < 10 else 0))
 
     if v <= 0.0:
-        out = "0 min" if with_unit else "0"
+        out = tr("{value} min", value=0) if with_unit else "0"
     elif v < 60.0:
-        out = f"{fmt_num_trim_zeros(v, 1)} min" if with_unit else fmt_num_trim_zeros(v, 1)
+        out = tr("{value} min", value=fmt_num_trim_zeros(v, 1)) if with_unit else fmt_num_trim_zeros(v, 1)
     else:
         h = v / 60.0
         h_text = fmt_num_trim_zeros(h, (1 if h < 10 else 0) if compact else 2)
-        out = f"{h_text} h" if with_unit else h_text
+        out = tr("{value} h", value=h_text) if with_unit else h_text
     if per_day:
-        out = f"{out}/day"
+        out = tr("{value}/day", value=out)
     return out
 
 
@@ -147,5 +151,5 @@ def fmt_percent_or_na(numer, denom, prec=None):
         n = float(numer or 0)
     except Exception:
         n = 0.0
-    return f"{(n / d) * 100:.{int(prec)}f}%"
+    return num(f"{(n / d) * 100:.{int(prec)}f}%")
 

@@ -6,26 +6,27 @@ from aqt.qt import QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QVBoxLa
 
 from ... import Config
 from .components import SettingsSlider
+from .....i18n import tr
 
 
 def setup_heatmap_settings(dialog) -> None:
-    group_layout = QGroupBox("Layout && appearance")
+    group_layout = QGroupBox(tr("Layout && appearance"))
     layout_playout = QVBoxLayout(group_layout)
 
     if dialog.is_grid:
         row = QHBoxLayout()
-        dialog.hide_labels_cb = QCheckBox("Hide Labels")
+        dialog.hide_labels_cb = QCheckBox(tr("Hide Labels"))
         dialog.hide_labels_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_HIDE_LABELS, False))
         row.addWidget(dialog.hide_labels_cb)
-        dialog.show_legend_cb = QCheckBox("Show Legend")
-        dialog.show_legend_cb.setToolTip("Color legend under the heatmap, with the value each color starts at.")
+        dialog.show_legend_cb = QCheckBox(tr("Show Legend"))
+        dialog.show_legend_cb.setToolTip(tr("Color legend under the heatmap, with the value each color starts at."))
         dialog.show_legend_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_SHOW_LEGEND, True))
         row.addWidget(dialog.show_legend_cb)
         row.addStretch()
         layout_playout.addLayout(row)
     else:
         dialog.scale_slider = SettingsSlider(
-            "Overall Scale",
+            tr("Overall Scale"),
             dialog.addon_config.get(Config.HEATMAP_SCALE, 100),
             50,
             200,
@@ -34,12 +35,12 @@ def setup_heatmap_settings(dialog) -> None:
         layout_playout.addWidget(dialog.scale_slider)
 
         nav_lay = QHBoxLayout()
-        nav_lay.addWidget(QLabel("Navigation Position:"))
+        nav_lay.addWidget(QLabel(tr("Navigation Position:")))
         dialog.nav_combo = QComboBox()
-        dialog.nav_combo.addItem("Top Right", "top_right")
-        dialog.nav_combo.addItem("Top Left", "top_left")
-        dialog.nav_combo.addItem("Bottom Right", "bottom_right")
-        dialog.nav_combo.addItem("Bottom Left", "bottom_left")
+        dialog.nav_combo.addItem(tr("Top Right"), "top_right")
+        dialog.nav_combo.addItem(tr("Top Left"), "top_left")
+        dialog.nav_combo.addItem(tr("Bottom Right"), "bottom_right")
+        dialog.nav_combo.addItem(tr("Bottom Left"), "bottom_left")
         current_nav = dialog.addon_config.get(Config.HEATMAP_NAV_POS, "top_right")
         idx = dialog.nav_combo.findData(current_nav)
         if idx >= 0:
@@ -50,7 +51,7 @@ def setup_heatmap_settings(dialog) -> None:
         toggles_layout = QVBoxLayout()
 
         dialog.rounding_slider = SettingsSlider(
-            "Corner Radius",
+            tr("Corner Radius"),
             dialog.addon_config.get(Config.HEATMAP_ROUNDING, 30),
             0,
             100,
@@ -59,35 +60,35 @@ def setup_heatmap_settings(dialog) -> None:
         toggles_layout.addWidget(dialog.rounding_slider)
 
         row2 = QHBoxLayout()
-        dialog.hide_title_cb = QCheckBox("Hide Title")
+        dialog.hide_title_cb = QCheckBox(tr("Hide Title"))
         dialog.hide_title_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_HIDE_TITLE, True))
         row2.addWidget(dialog.hide_title_cb)
 
-        dialog.hide_labels_cb = QCheckBox("Hide Labels")
+        dialog.hide_labels_cb = QCheckBox(tr("Hide Labels"))
         dialog.hide_labels_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_HIDE_LABELS, False))
         row2.addWidget(dialog.hide_labels_cb)
-        dialog.show_legend_cb = QCheckBox("Show Legend")
-        dialog.show_legend_cb.setToolTip("Color legend under the heatmap, with the value each color starts at.")
+        dialog.show_legend_cb = QCheckBox(tr("Show Legend"))
+        dialog.show_legend_cb.setToolTip(tr("Color legend under the heatmap, with the value each color starts at."))
         dialog.show_legend_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_SHOW_LEGEND, True))
         row2.addWidget(dialog.show_legend_cb)
         toggles_layout.addLayout(row2)
 
         layout_playout.addLayout(toggles_layout)
 
-    dialog.monday_first_cb = QCheckBox("Start Week on Monday")
+    dialog.monday_first_cb = QCheckBox(tr("Start Week on Monday"))
     dialog.monday_first_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_MONDAY_FIRST, False))
     layout_playout.addWidget(dialog.monday_first_cb)
 
-    dialog.future_cb = QCheckBox("Show Future Reviews")
+    dialog.future_cb = QCheckBox(tr("Show Future Reviews"))
     dialog.future_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_SHOW_FUTURE, True))
     layout_playout.addWidget(dialog.future_cb)
 
-    dialog.tinted_future_cb = QCheckBox("Tint Future Reviews")
+    dialog.tinted_future_cb = QCheckBox(tr("Tint Future Reviews"))
     dialog.tinted_future_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_TINTED_FUTURE, False))
     layout_playout.addWidget(dialog.tinted_future_cb)
 
-    dialog.click_browser_cb = QCheckBox("Click to open Browser")
-    dialog.click_browser_cb.setToolTip("Open the Anki Browser for cards reviewed on the clicked day.")
+    dialog.click_browser_cb = QCheckBox(tr("Click to open Browser"))
+    dialog.click_browser_cb.setToolTip(tr("Open the Anki Browser for cards reviewed on the clicked day."))
     dialog.click_browser_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_CLICK_BROWSER, True))
     layout_playout.addWidget(dialog.click_browser_cb)
     dialog.content_layout.addWidget(group_layout)
@@ -97,11 +98,11 @@ def setup_heatmap_settings(dialog) -> None:
         dialog.content_layout, HEATMAP_TOOLTIP_FIELDS, dialog.addon_config.get(Config.HEATMAP_TOOLTIP_HIDDEN, [])
     )
 
-    group_colors = QGroupBox("Opacity && Intensity")
+    group_colors = QGroupBox(tr("Opacity && Intensity"))
     layout_colors = QVBoxLayout(group_colors)
 
     dialog.opacity_slider = SettingsSlider(
-        "Empty Opacity",
+        tr("Empty Opacity"),
         dialog.addon_config.get(Config.HEATMAP_EMPTY_OPACITY, 15),
         0,
         100,
@@ -110,7 +111,7 @@ def setup_heatmap_settings(dialog) -> None:
     layout_colors.addWidget(dialog.opacity_slider)
 
     dialog.filled_opacity_slider = SettingsSlider(
-        "Filled Opacity",
+        tr("Filled Opacity"),
         dialog.addon_config.get(Config.HEATMAP_FILLED_OPACITY, 100),
         0,
         100,
@@ -119,7 +120,7 @@ def setup_heatmap_settings(dialog) -> None:
     layout_colors.addWidget(dialog.filled_opacity_slider)
 
     dialog.vibrance_slider = SettingsSlider(
-        "Saturation",
+        tr("Saturation"),
         dialog.addon_config.get(Config.HEATMAP_VIBRANCE, 100),
         50,
         200,
@@ -128,7 +129,7 @@ def setup_heatmap_settings(dialog) -> None:
     layout_colors.addWidget(dialog.vibrance_slider)
 
     dialog.intensity_curve_slider = SettingsSlider(
-        "Intensity Curve",
+        tr("Intensity Curve"),
         dialog.addon_config.get(Config.HEATMAP_INTENSITY_CURVE, 100),
         50,
         200,
@@ -137,7 +138,7 @@ def setup_heatmap_settings(dialog) -> None:
     layout_colors.addWidget(dialog.intensity_curve_slider)
 
     dialog.hm_levels_slider = SettingsSlider(
-        "Color Levels",
+        tr("Color Levels"),
         dialog.addon_config.get(Config.HEATMAP_COLOR_LEVELS, 20),
         2,
         30,
@@ -145,10 +146,10 @@ def setup_heatmap_settings(dialog) -> None:
     layout_colors.addWidget(dialog.hm_levels_slider)
     dialog.content_layout.addWidget(group_colors)
 
-    group_glass = QGroupBox("Background Box Style")
+    group_glass = QGroupBox(tr("Background Box Style"))
     layout_glass = QVBoxLayout(group_glass)
 
-    dialog.hm_glass_cb = QCheckBox("Show Background Box")
+    dialog.hm_glass_cb = QCheckBox(tr("Show Background Box"))
     dialog.hm_glass_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_SHOW_GLASS, False))
 
     def update_hm_glass(state):
@@ -160,8 +161,8 @@ def setup_heatmap_settings(dialog) -> None:
     layout_glass.addWidget(dialog.hm_glass_cb)
 
     dialog.hm_int_slider = SettingsSlider(
-        "Intensity",
-        dialog.addon_config.get(Config.HEATMAP_GLASS_INTENSITY, 43),
+        tr("Intensity"),
+        dialog.addon_config.get(Config.HEATMAP_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.HEATMAP_GLASS_INTENSITY]),
         0,
         100,
         suffix="%",
@@ -169,7 +170,7 @@ def setup_heatmap_settings(dialog) -> None:
     layout_glass.addWidget(dialog.hm_int_slider)
 
     dialog.hm_border_slider = SettingsSlider(
-        "Border Opacity",
+        tr("Border Opacity"),
         dialog.addon_config.get(Config.HEATMAP_GLASS_BORDER, 0),
         0,
         100,
@@ -181,21 +182,37 @@ def setup_heatmap_settings(dialog) -> None:
     dialog.content_layout.addWidget(group_glass)
 
     if not dialog.is_grid:
-        group_modes = QGroupBox("Mode Visibility")
+        group_modes = QGroupBox(tr("Mode Visibility"))
         layout_modes = QVBoxLayout(group_modes)
 
-        dialog.show_cont_cb = QCheckBox("Show continuous mode (infinite)")
+        dialog.show_cont_cb = QCheckBox(tr("Show continuous mode (infinite)"))
         dialog.show_cont_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_SHOW_CONTINUOUS_MODE, True))
         layout_modes.addWidget(dialog.show_cont_cb)
 
-        dialog.show_365_cb = QCheckBox("Show 365-day mode (365)")
+        dialog.show_365_cb = QCheckBox(tr("Show 365-day mode (365)"))
         dialog.show_365_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_SHOW_365_MODE, True))
         layout_modes.addWidget(dialog.show_365_cb)
 
-        dialog.show_year_cb = QCheckBox("Show year mode (Y)")
+        dialog.show_year_cb = QCheckBox(tr("Show year mode (Y)"))
         dialog.show_year_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_SHOW_YEAR_MODE, True))
         layout_modes.addWidget(dialog.show_year_cb)
 
+        dialog.show_years_cb = QCheckBox(tr("Show all years mode (YRS)"))
+        dialog.show_years_cb.setChecked(dialog.addon_config.get(Config.HEATMAP_SHOW_YEARS_MODE, True))
+        layout_modes.addWidget(dialog.show_years_cb)
+
         dialog.content_layout.addWidget(group_modes)
+
+    # The all years view (YRS): how many years show before the older ones fold.
+    group_years = QGroupBox(tr("All Years Mode"))
+    layout_years = QVBoxLayout(group_years)
+    dialog.years_fold_slider = SettingsSlider(
+        tr("Years shown before the older ones fold (0: all)"),
+        dialog.addon_config.get(Config.HEATMAP_YEARS_FOLD, 3),
+        0,
+        20,
+    )
+    layout_years.addWidget(dialog.years_fold_slider)
+    dialog.content_layout.addWidget(group_years)
 
 

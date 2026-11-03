@@ -3,13 +3,27 @@
 from __future__ import annotations
 
 
+def _box_defaults(dialog):
+    """(intensity, border) defaults of the background box this dialog edits."""
+    from ... import Config
+
+    if getattr(dialog, "is_grid", False):
+        grid = Config.DEFAULT_CONFIG.get(Config.DEEP_DIVE_GRID_STYLE, {}) or {}
+        return grid.get(Config.PINNED_GLASS_INTENSITY, 4), grid.get(Config.PINNED_GLASS_BORDER, 50)
+    d = Config.DEFAULT_CONFIG
+    if getattr(dialog, "type", None) == "text_label":
+        return d.get(Config.TEXT_WIDGET_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.TEXT_WIDGET_GLASS_INTENSITY]), d.get(Config.TEXT_WIDGET_GLASS_BORDER, 50)
+    return d.get(Config.PINNED_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.PINNED_GLASS_INTENSITY]), d.get(Config.PINNED_GLASS_BORDER, 34)
+
+
 def reset_chart_settings(dialog) -> None:
+    intensity, border = _box_defaults(dialog)
     if hasattr(dialog, "glass_cb"):
         dialog.glass_cb.setChecked(True)
     if hasattr(dialog, "int_slider"):
-        dialog.int_slider.setValue(20)
+        dialog.int_slider.setValue(int(intensity))
     if hasattr(dialog, "border_slider"):
-        dialog.border_slider.setValue(50)
+        dialog.border_slider.setValue(int(border))
     if hasattr(dialog, "hover_border_cb"):
         dialog.hover_border_cb.setChecked(True)
     if hasattr(dialog, "avg_cb"):

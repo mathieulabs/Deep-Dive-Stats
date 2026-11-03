@@ -93,7 +93,11 @@ class HeatmapWidget(ChartAnimationMixin, QWidget):
         self.rounding = rounding
         self.intensity_curve = intensity_curve
 
-        self.view_mode = view_mode  # "year", "365", or "continuous"
+        self.view_mode = view_mode  # "year", "365", "continuous" or "years" (every year, see years_ops)
+        self.years_fold = 3  # years view: years shown before folding the older ones (0: never)
+        self.years_no_gap = False  # years view: no space between the years
+        self.years_fit_height = False  # years view in a card of fixed height (Deep Dive)
+        self._years_scroll = 0.0
         self.cont_month_offset = 0  # months shifted from today in continuous mode
         self.empty_white = empty_white
         self.scale = scale
@@ -199,6 +203,10 @@ class HeatmapWidget(ChartAnimationMixin, QWidget):
     @mode_transition_progress.setter
     def mode_transition_progress(self, val):
         self._mode_transition_progress = float(val)
+        if getattr(self, "_height_anim", None) is not None:
+            from .settings import step_height_anim
+
+            step_height_anim(self)
         self.update()
 
     @pyqtProperty(float)
@@ -284,7 +292,14 @@ class HeatmapWidget(ChartAnimationMixin, QWidget):
         return set_end_date_impl(self, date)
 
     def update_data(self, new_data):
-        return update_data_impl(self, new_data)
+        result = update_data_impl(self, new_data)
+        if self.view_mode == "years" and not self.years_fit_height and getattr(self, "_hold_min_height", None) is None:
+            # The number of years (rows) follows the data: the height has to follow too.
+            h = self.heightForWidth(self.width())
+            if h != self.minimumHeight():
+                self.setMinimumHeight(h)
+                self.updateGeometry()
+        return result
 
     def toggle_legend_step(self, step):
         from .settings import toggle_legend_step_impl
@@ -346,6 +361,44 @@ class HeatmapWidget(ChartAnimationMixin, QWidget):
 
     def set_view_mode(self, mode):
         return set_view_mode_impl(self, mode)
+
+    def toggle_years_fold(self):
+        from .settings import toggle_years_fold_impl
+
+        return toggle_years_fold_impl(self)
+
+    def set_years_no_gap(self, no_gap):
+        from .settings import set_years_no_gap_impl
+
+        result = set_years_no_gap_impl(self, no_gap)
+        # The gap button next to YRS shows the state, whoever changed it (button or menu).
+        callback = getattr(self, "on_years_no_gap_changed", None)
+        if callable(callback):
+            try:
+                callback()
+            except RuntimeError:
+                pass
+        return result
+
+    def set_years_fold(self, count):
+        from .settings import set_years_fold_impl
+
+        return set_years_fold_impl(self, count)
+
+    def wheelEvent(self, event):
+        # Years view taller than its card: the wheel scrolls the years. At either end (or
+        # with nothing to scroll) the event goes on to the page, which scrolls instead.
+        if self.view_mode == "years":
+            from .years_ops import scroll_by
+
+            if scroll_by(self, event.angleDelta().y()):
+                self._pixmap_cache = None
+                if getattr(self, "tooltip_window", None) is not None:
+                    self.tooltip_window.hide()
+                self.update()
+                event.accept()
+                return
+        event.ignore()
 
     def shift_continuous(self, delta):
         return shift_continuous_impl(self, delta)
@@ -430,6 +483,10 @@ class HeatmapWidget(ChartAnimationMixin, QWidget):
         return has_height_for_width_impl(self)
 
     def heightForWidth(self, width):
+        if getattr(self, "_height_anim", None) is not None and getattr(self, "_hold_min_height", None) is not None:
+            # The height on its way (settings.step_height_anim): the layout follows it
+            # instead of taking the final height at once.
+            return int(self._hold_min_height)
         return height_for_width_impl(self, width)
 
     def sizeHint(self):

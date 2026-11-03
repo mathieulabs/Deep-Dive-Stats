@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from .dialog_sizing import apply_standard_dialog_sizing, clamp_dialog_height, clamp_dialog_width
+from .dialog_sizing import apply_standard_dialog_sizing, clamp_dialog_height, clamp_dialog_width, show_when_painted
 from .range_options import RANGE_OPTIONS
 from .tab_mutations import (
     append_new_tab,
@@ -25,6 +25,7 @@ __all__ = [
     "no_wheel_filter",
     "install_no_wheel_filters",
     "apply_standard_dialog_sizing",
+    "show_when_painted",
     "clamp_dialog_height",
     "clamp_dialog_width",
     "RANGE_OPTIONS",

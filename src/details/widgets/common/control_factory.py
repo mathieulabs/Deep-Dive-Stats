@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 import re
 
-from aqt.qt import QButtonGroup, QCheckBox, QHBoxLayout, QRadioButton, QSize, QWidget
+from aqt.qt import QButtonGroup, QCheckBox, QHBoxLayout, QRadioButton, QSize, QSizePolicy, QWidget
 from ...logic.logger import log_swallowed
 
 _COMPACT_UNITS = (
@@ -97,6 +97,9 @@ def create_radio_group(
     spacing=10,
 ):
     container = _AdaptiveRadioContainer(parent)
+    # Never wider than its pills: given the spare width of a wide header (fullscreen), it
+    # put a gap between them and the controls before them (Future Due's Backlog).
+    container.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
     layout = QHBoxLayout(container)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(spacing)

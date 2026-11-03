@@ -2,6 +2,8 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from aqt.qt import QFontMetrics
 
+from ....i18n import num
+
 class ChartGeometry:
     MARGIN_LEFT = 35
     MARGIN_TOP = 10
@@ -104,7 +106,8 @@ class ChartGeometry:
             if callable(value_formatter):
                 labels.append(str(value_formatter(val)))
             else:
-                labels.append(f"{int(val):,}")
+                from .formatting import fmt_num
+                labels.append(fmt_num(int(val)))
 
         max_text_w = max((font_metrics.horizontalAdvance(lbl) for lbl in labels), default=0)
         # Keep labels readable but reduce the visual gap between plot and right-axis totals.
@@ -117,8 +120,8 @@ class ChartGeometry:
             safe_lines = max(1, int(grid_lines or 4))
             labels = [str(value_formatter(min_val + (max_val - min_val) * (i / safe_lines))) for i in range(safe_lines + 1)]
         else:
-            labels = [f"{int(max_val)}" if max_val >= 10 else f"{max_val:.1f}"]
+            labels = [f"{int(max_val)}" if max_val >= 10 else num(f"{max_val:.1f}")]
             if min_val > 0:
-                labels.append(f"{int(min_val)}" if min_val >= 10 else f"{min_val:.1f}")
+                labels.append(f"{int(min_val)}" if min_val >= 10 else num(f"{min_val:.1f}"))
         width = max((font_metrics.horizontalAdvance(lbl) for lbl in labels), default=0)
         return max(ChartGeometry.MARGIN_LEFT, width + 12)

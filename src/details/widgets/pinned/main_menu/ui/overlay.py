@@ -21,6 +21,16 @@ class PinnedOverlay(QWidget):
         self._mask_timer = QTimer(self)
         self._mask_timer.setSingleShot(True)
         self._mask_timer.timeout.connect(self.update_mask)
+        if parent is not None:
+            parent.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        from aqt.qt import QEvent, QTimer
+        if obj is self.parentWidget() and event.type() == QEvent.Type.ChildAdded:
+            child = event.child()
+            if isinstance(child, QWidget) and child is not self:
+                QTimer.singleShot(0, self.keep_above_page)
+        return False
 
     def wheelEvent(self, event):
         # A child widget that ignored the event (no Ctrl+zoom) bubbles it here. Scroll the page by
@@ -105,6 +115,36 @@ class PinnedOverlay(QWidget):
             else:
                 visible_region += w.geometry().adjusted(-20, -20, 20, 20)
 
+        # A drag's gap marker (it can sit in the room opened above / below the boxes) and
+        # the box handle: never cut off by the mask.
+        for attr in ("_dd_gap_marker", "_dd_spot_marker"):
+            extra = getattr(self, attr, None)
+            try:
+                if extra is not None and extra.isVisible():
+                    visible_region += extra.geometry().adjusted(-2, -2, 2, 2)
+            except RuntimeError:
+                pass
+        gaps = getattr(self, "_dd_gap_hover", None)
+        try:
+            if gaps is not None:
+                for extra in (gaps.bar, gaps._label):
+                    if extra.isVisible():
+                        visible_region += extra.geometry().adjusted(-2, -2, 2, 2)
+        except RuntimeError:
+            pass
+        hover = getattr(self, "_dd_section_hover", None)
+        try:
+            if hover is not None and hover.grip.isVisible():
+                visible_region += hover.grip.geometry().adjusted(-2, -2, 2, 2)
+        except RuntimeError:
+            pass
+        adder = getattr(self, "_dd_add_hover", None)
+        try:
+            if adder is not None and adder.plus.isVisible():
+                visible_region += adder.plus.geometry().adjusted(-2, -2, 2, 2)
+        except RuntimeError:
+            pass
+
         self.setMask(visible_region)
 
     def resizeEvent(self, event):
@@ -114,6 +154,21 @@ class PinnedOverlay(QWidget):
 
     def paintEvent(self, event):
         pass
+
+    def keep_above_page(self):
+        """Stay above the web view's own drawing surface. The web view makes that surface
+        again when its renderer starts over (first page of a profile, a crashed renderer,
+        a GPU change...), and the new one comes on top: the page then hid the widgets
+        (an empty box showed where they are)."""
+        try:
+            parent = self.parentWidget()
+            if parent is None:
+                return
+            siblings = [c for c in parent.children() if isinstance(c, QWidget) and c.isVisible()]
+            if siblings and siblings[-1] is not self and self in siblings:
+                self.raise_()
+        except RuntimeError:
+            pass
 
 
 

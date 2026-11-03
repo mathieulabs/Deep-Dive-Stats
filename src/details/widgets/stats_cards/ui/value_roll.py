@@ -2,12 +2,14 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 import re
 
+from .....i18n import english_number, tr, tr_name
+
 
 def parse_roll_value(text):
     if not isinstance(text, str):
         return None
-    raw = text.strip()
-    if not raw or raw in ("N/A", "..."):
+    raw = english_number(text.strip())
+    if not raw or raw in ("N/A", "...", tr("N/A")):
         return None
 
     m_pct = re.match(r"^([+-]?\d[\d,]*)(?:\.(\d+))?%$", raw)
@@ -27,14 +29,14 @@ def parse_roll_value(text):
 def is_na_like(text):
     if not isinstance(text, str):
         return False
-    return text.strip().lower() in {"n/a", "na", "...", ""}
+    return text.strip().lower() in {"n/a", "na", "...", "", tr("N/A").lower()}
 
 
 def time_unit_kind(suffix):
     s = (suffix or "").strip().lower().replace(".", "")
-    if s in {"h", "hr", "hrs", "hour", "hours"}:
+    if s in {"h", "hr", "hrs", "hour", "hours"} or s == tr_name("h").lower().replace(".", ""):
         return "hour"
-    if s in {"m", "min", "mins", "minute", "minutes"}:
+    if s in {"m", "min", "mins", "minute", "minutes"} or s == tr_name("min").lower().replace(".", ""):
         return "minute"
     return None
 

@@ -6,6 +6,7 @@ from .. import Config
 from ...logic.refresh import queue_ui_callback, request_details_runtime_refresh
 from ..theme.icons import get_svg_icon
 from ...logic.logger import log_swallowed
+from ....i18n import tr
 
 
 def show_event(dialog, event):
@@ -48,7 +49,8 @@ def save_ui_state(dialog):
     is_active = hasattr(dialog, "layout_toggle_container") and dialog.layout_toggle_container.isVisible()
     if is_active and ddm.last_deck_identifier:
         updates[Config.DETAILS_DEEP_DIVE_IDENTIFIER] = ddm.last_deck_identifier
-        updates[Config.DETAILS_DEEP_DIVE_TITLE] = dialog.expanded_title.text() if hasattr(dialog, "expanded_title") else ""
+        # The internal title (English names like "Total" identify the row), not the shown one.
+        updates[Config.DETAILS_DEEP_DIVE_TITLE] = str(getattr(ddm, "last_title", "") or "")
         updates[Config.DETAILS_DEEP_DIVE_PERIOD_RANGE] = getattr(ddm, "last_period_range", None)
     else:
         updates[Config.DETAILS_DEEP_DIVE_IDENTIFIER] = None
@@ -237,14 +239,14 @@ def update_responsive_toolbar(dialog):
         is_dark = bool(runtime.get("is_dark", bool(get_theme_colors(dialog).get("is_dark"))))
         icon_col = palette.get("text_secondary", "#a1a1aa" if is_dark else "#71717a")
         if not show_view_btn:
-            view_txt = "Switch to Time View" if dialog.view_mode == "deck" else "Switch to Deck View"
+            view_txt = tr("Switch to Time View") if dialog.view_mode == "deck" else tr("Switch to Deck View")
             act = QAction(view_txt, menu)
             act.setIcon(get_svg_icon("activity" if dialog.view_mode == "deck" else "calendar", color=icon_col, size=16))
             act.triggered.connect(dialog.view_toggle_btn.click)
             menu.addAction(act)
             menu.addSeparator()
         if not show_secondary:
-            act = QAction("Trend Lines", menu)
+            act = QAction(tr("Trend Lines"), menu)
             act.setIcon(get_svg_icon("trending-up", color=icon_col, size=16))
             act.setCheckable(True)
             act.setChecked(dialog.trend_toggle.isChecked())
@@ -252,24 +254,25 @@ def update_responsive_toolbar(dialog):
             menu.addAction(act)
             from ..details_dialog.visual_menu import populate_visual_menu
 
-            visuals_menu = menu.addMenu("Visuals")
+            visuals_menu = menu.addMenu(tr("Visuals"))
             visuals_menu.setIcon(get_svg_icon("bar-chart-2", color=icon_col, size=16))
             populate_visual_menu(dialog, visuals_menu)
             menu.addSeparator()
         if not show_primary:
-            act = QAction("Export Data...", menu)
+            act = QAction(tr("Export Data..."), menu)
             act.setIcon(get_svg_icon("save", color=icon_col, size=16))
             act.triggered.connect(dialog.export_btn.click)
             menu.addAction(act)
-            act = QAction("Deck Options", menu)
+            act = QAction(tr("Deck Options"), menu)
             act.setIcon(get_svg_icon("palette", color=icon_col, size=16))
             act.triggered.connect(dialog.deck_opts_btn.click)
             menu.addAction(act)
-            act = QAction("Settings", menu)
+            act = QAction(tr("Settings"), menu)
+            act.setMenuRole(QAction.MenuRole.NoRole)  # macOS would otherwise move it into the app menu as Preferences/Quit
             act.setIcon(get_svg_icon("settings", color=icon_col, size=16))
             act.triggered.connect(dialog.settings_btn.click)
             menu.addAction(act)
-            for _n, _txt, _ic in (("support_btn", "Support", "heart"), ("rate_btn", "Rate", "thumbs-up"), ("github_btn", "GitHub", "github")):
+            for _n, _txt, _ic in (("support_btn", tr("Support"), "heart"), ("rate_btn", tr("Rate"), "thumbs-up"), ("github_btn", "GitHub", "github")):
                 if hasattr(dialog, _n):
                     act = QAction(_txt, menu)
                     act.setIcon(get_svg_icon(_ic, color=icon_col, size=16))

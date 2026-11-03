@@ -13,6 +13,7 @@ from ....charts.common.zoom import (
     get_timespan_transition_meta,
     should_use_timespan_transition,
 )
+from ......i18n import N_
 
 
 
@@ -47,7 +48,7 @@ def _build_stability(widget_def, deck_id, cache=None, parent=None, cfg=None):
         Config.DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS,
         Config.DEEP_DIVE_PINNED_SHOW_STATS,
         parent=parent,
-        title=pinned_title(widget_def, "CARD STABILITY"),
+        title=pinned_title(widget_def, N_("Card Stability")),
         title_object_name="pinned_header",
     )
 

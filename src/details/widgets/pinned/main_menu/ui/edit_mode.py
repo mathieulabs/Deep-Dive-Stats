@@ -45,6 +45,7 @@ from ..block_order import (
 from ... import WidgetRegistry
 from ......qss import set_qss
 from .....logic.logger import log_swallowed
+from ......i18n import tr
 
 BAR_NAME = "pinned_edit_bar"
 FRAME_NAME = "pinned_edit_frame"
@@ -193,7 +194,7 @@ def describe_position(widget_def, defs=None):
     line = rows.index(_row_of(widget_def)) + 1 if _row_of(widget_def) in rows else 1
     boxes = sorted({_box_of(d) for d in defs if _family(d) == fam})
     box_idx = boxes.index(box) + 1 if box in boxes else 1
-    return f"Line {line} · Box {box_idx}"
+    return tr("Line {line} · Box {box}", line=line, box=box_idx)
 
 
 # operations
@@ -244,7 +245,7 @@ def shift_column(manager, widget_id, delta):
             if not moved:
                 live._col_offset = int(col)
                 _relayout(live)
-                _tell(live, "No room to shift on this line")
+                _tell(live, tr("No room to shift on this line"))
                 return
             live.setGeometry(old_geo)
             # Enable move animations before the final relayout so the card glides.
@@ -563,29 +564,29 @@ def _show_menu(manager, card, widget_id, button):
     menu.addSeparator()
 
     new_line_ok = can_new_line(cur, defs)
-    share_tip = "Available when this widget shares its line with another one"
-    add("\u2191  Line: move up", lambda: move_row(manager, widget_id, -1), _row_of(cur) > 0)
-    add("\u2193  Line: move down", lambda: move_row(manager, widget_id, 1), can_move_down(cur, defs))
-    add("\uff0b  Line: put alone on a new line above", lambda: put_on_new_line(manager, widget_id, False), new_line_ok, share_tip)
-    add("\uff0b  Line: put alone on a new line below", lambda: put_on_new_line(manager, widget_id, True), new_line_ok, share_tip)
+    share_tip = tr("Available when this widget shares its line with another one")
+    add("\u2191  " + tr("Line: move up"), lambda: move_row(manager, widget_id, -1), _row_of(cur) > 0)
+    add("\u2193  " + tr("Line: move down"), lambda: move_row(manager, widget_id, 1), can_move_down(cur, defs))
+    add("\uff0b  " + tr("Line: put alone on a new line above"), lambda: put_on_new_line(manager, widget_id, False), new_line_ok, share_tip)
+    add("\uff0b  " + tr("Line: put alone on a new line below"), lambda: put_on_new_line(manager, widget_id, True), new_line_ok, share_tip)
     if _family(cur) != "stat":
         menu.addSeparator()
-        add("\u2190  Shift left on the line", lambda: shift_column(manager, widget_id, -1))
-        add("\u2192  Shift right on the line", lambda: shift_column(manager, widget_id, 1))
+        add("\u2190  " + tr("Shift left on the line"), lambda: shift_column(manager, widget_id, -1))
+        add("\u2192  " + tr("Shift right on the line"), lambda: shift_column(manager, widget_id, 1))
     menu.addSeparator()
     new_box_ok = can_new_box(cur, defs)
-    box_tip = "Available when this box has other widgets"
-    add("\u25a3  Box: put in a new box above", lambda: put_in_new_box(manager, widget_id, False), new_box_ok, box_tip)
-    add("\u25a3  Box: put in a new box below", lambda: put_in_new_box(manager, widget_id, True), new_box_ok, box_tip)
-    add("\u25a3  Box: move to the previous box", lambda: move_to_neighbour_box(manager, widget_id, -1), can_move_box(manager, cur, -1, defs))
-    add("\u25a3  Box: move to the next box", lambda: move_to_neighbour_box(manager, widget_id, 1), can_move_box(manager, cur, 1, defs))
+    box_tip = tr("Available when this box has other widgets")
+    add("\u25a3  " + tr("Box: put in a new box above"), lambda: put_in_new_box(manager, widget_id, False), new_box_ok, box_tip)
+    add("\u25a3  " + tr("Box: put in a new box below"), lambda: put_in_new_box(manager, widget_id, True), new_box_ok, box_tip)
+    add("\u25a3  " + tr("Box: move to the previous box"), lambda: move_to_neighbour_box(manager, widget_id, -1), can_move_box(manager, cur, -1, defs))
+    add("\u25a3  " + tr("Box: move to the next box"), lambda: move_to_neighbour_box(manager, widget_id, 1), can_move_box(manager, cur, 1, defs))
     menu.addSeparator()
     add(
-        "↺  Reset position",
+        "↺  " + tr("Reset position"),
         lambda: reset_position(manager, widget_id),
         _row_of(cur) != 0 or int(cur.get("col_offset", 0) or 0) != 0,
     )
-    add("\u2713  Done editing layout (Esc)", lambda: set_edit_mode(manager, False))
+    add("\u2713  " + tr("Done editing layout (Esc)"), lambda: set_edit_mode(manager, False))
     menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 
 
@@ -604,10 +605,10 @@ def _build_bar(manager, card, widget_id, colors):
     pos_label.setObjectName("pinned_edit_pos")
     lay.addWidget(pos_label)
     quick = [
-        _tool_button(bar, "↑", "Move up a line", lambda _b: move_row(manager, widget_id, -1)),
-        _tool_button(bar, "↓", "Move down a line", lambda _b: move_row(manager, widget_id, 1)),
-        _tool_button(bar, "←", "Shift left", lambda _b: shift_column(manager, widget_id, -1)),
-        _tool_button(bar, "→", "Shift right", lambda _b: shift_column(manager, widget_id, 1)),
+        _tool_button(bar, "↑", tr("Move up a line"), lambda _b: move_row(manager, widget_id, -1)),
+        _tool_button(bar, "↓", tr("Move down a line"), lambda _b: move_row(manager, widget_id, 1)),
+        _tool_button(bar, "←", tr("Shift left"), lambda _b: shift_column(manager, widget_id, -1)),
+        _tool_button(bar, "→", tr("Shift right"), lambda _b: shift_column(manager, widget_id, 1)),
     ]
     for b in quick:
         lay.addWidget(b)
@@ -615,12 +616,12 @@ def _build_bar(manager, card, widget_id, colors):
         _tool_button(
             bar,
             "…",
-            "New line, new box, other box, reset",
+            tr("New line, new box, other box, reset"),
             lambda b: _show_menu(manager, card, widget_id, b),
             name="pinned_edit_more",
         )
     )
-    done = _tool_button(bar, "✓", "Done editing layout", lambda _b: set_edit_mode(manager, False), name="pinned_edit_done")
+    done = _tool_button(bar, "✓", tr("Done editing layout"), lambda _b: set_edit_mode(manager, False), name="pinned_edit_done")
     lay.addWidget(done)
     bar._quick_buttons = quick
     bar._pos_label = pos_label

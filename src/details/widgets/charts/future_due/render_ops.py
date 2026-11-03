@@ -179,6 +179,22 @@ def draw_bars_impl(widget, painter, plot_w, plot_h, margin_left, margin_top):
         width_ratio=0.9,
     )
 
+    # While bars move between two datasets, a bar's backlog colour fades between what it was
+    # and what it becomes (instead of every orange bar turning blue at once).
+    backlog_weight = None
+    flags = getattr(widget, "_backlog_flags", None)
+    if widget._data_transition_active and flags is not None:
+        old_f, new_f = flags
+        n = max(len(old_f), len(new_f))
+        if getattr(widget, "_transition_align_right", False):
+            old_f = [False] * (n - len(old_f)) + list(old_f)
+            new_f = [False] * (n - len(new_f)) + list(new_f)
+        else:
+            old_f = list(old_f) + [False] * (n - len(old_f))
+            new_f = list(new_f) + [False] * (n - len(new_f))
+        p = max(0.0, min(1.0, float(t)))
+        backlog_weight = [(1.0 - p) * float(a) + p * float(b) for a, b in zip(old_f, new_f)]
+
     painter.setPen(Qt.PenStyle.NoPen)
     for i in range(points_count):
         day, _next_day = widget._get_bin_day_range(i, points_count)
@@ -198,7 +214,18 @@ def draw_bars_impl(widget, painter, plot_w, plot_h, margin_left, margin_top):
         y = margin_top + plot_h - bar_h
         bar_center_x = x + (cur_w / 2.0)
 
-        if day < 0:
+        if backlog_weight is not None and i < len(backlog_weight):
+            w = backlog_weight[i]
+            ratio = (bar_center_x - margin_left) / max(1.0, float(plot_w))
+            c = build_discrete_gradient_color(base_color, ratio=ratio, dark=dark)
+            if w > 0.0:
+                c = QColor(
+                    int(round(c.red() + (backlog_color.red() - c.red()) * w)),
+                    int(round(c.green() + (backlog_color.green() - c.green()) * w)),
+                    int(round(c.blue() + (backlog_color.blue() - c.blue()) * w)),
+                    int(round(c.alpha() + (backlog_color.alpha() - c.alpha()) * w)),
+                )
+        elif day < 0:
             c = QColor(backlog_color)
         else:
             ratio = (bar_center_x - margin_left) / max(1.0, float(plot_w))

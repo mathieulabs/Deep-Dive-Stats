@@ -47,6 +47,20 @@ def _timezone_signature():
     )
 
 
+def deck_targets(did, deck_names, excluded):
+    """The cache keys a deck's data counts in: the deck (by id), each of its parent decks
+    (by name; not the deck's own full name, or the deck would count twice) and the
+    all-decks keys (unless the deck is excluded from them). A deck with no name (deleted,
+    -1) counts in itself and the all-decks keys only."""
+    t = {did, None, "[[TOTAL]]"}
+    name = deck_names.get(did)
+    if name:
+        parts = name.split("::")
+        for i in range(1, len(parts)):
+            t.add("::".join(parts[:i]))
+    return drop_total_targets(t, did, excluded)
+
+
 def drop_total_targets(targets, did, excluded):
     """Remove the all-decks keys of `targets` when `did` is excluded."""
     if did in excluded:

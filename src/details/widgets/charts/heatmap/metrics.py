@@ -8,20 +8,22 @@ into one count. With several measures, each one is scaled on its own and the cel
 shows their average.
 """
 
+from .....i18n import N_, tr_name
+
 METRICS = (
-    ("reviews", "Reviews"),
-    ("time", "Time spent"),
-    ("correct", "Correct answers"),
-    ("failed", "Failed answers"),
-    ("retention", "Retention %"),
-    ("avg_time", "Average time per review"),
+    ("reviews", N_("Reviews")),
+    ("time", N_("Time spent")),
+    ("correct", N_("Correct answers")),
+    ("failed", N_("Failed answers")),
+    ("retention", N_("Retention %")),
+    ("avg_time", N_("Average time per review")),
 )
 TYPE_METRICS = (
-    ("new", "New cards"),
-    ("young", "Young reviews"),
-    ("mature", "Mature reviews"),
-    ("relearn", "Relearning"),
-    ("cram", "Filtered"),
+    ("new", N_("New cards")),
+    ("young", N_("Young reviews")),
+    ("mature", N_("Mature reviews")),
+    ("relearn", N_("Relearning")),
+    ("cram", N_("Filtered")),
 )
 METRIC_LABELS = dict(METRICS + TYPE_METRICS)
 METRIC_KEYS = tuple(k for k, _ in METRICS)
@@ -84,8 +86,8 @@ def component_value(comp, entry):
 def component_label(comp):
     key, types = comp
     if key == "types":
-        return " + ".join(METRIC_LABELS[t] for t in types)
-    return METRIC_LABELS.get(key, key)
+        return " + ".join(tr_name(METRIC_LABELS[t]) for t in types)
+    return tr_name(METRIC_LABELS.get(key, key))
 
 
 def metric_value(metric, entry, scales=None):

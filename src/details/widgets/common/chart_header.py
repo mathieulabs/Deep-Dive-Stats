@@ -39,6 +39,7 @@ class ElidedTitleLabel(QLabel):
         p.end()
 
 from .adaptive_stats_widget import AdaptiveStatsWidget
+from ....i18n import upper
 
 
 def resolve_chart_stats_state(config_manager, bottom_stats_key, all_stats_key):
@@ -80,7 +81,7 @@ def create_chart_header(
     if title:
         title_text = str(title or "")
         if uppercase_title:
-            title_text = title_text.upper()
+            title_text = upper(title_text)
         title_label = ElidedTitleLabel(title_text, parent=header)
         if title_object_name:
             title_label.setObjectName(title_object_name)

@@ -7,6 +7,7 @@ from ..common import get_review_button_colors, init_chart_widget_state
 from .data_ops import refresh_data_colors_impl, tooltip_text_impl
 from .event_ops import enter_event_impl, mouse_double_click_event_impl, show_event_impl
 from .render_ops import paint_event_impl
+from .....i18n import tr
 
 
 class SegmentedBarWidget(ChartAnimationMixin, QWidget):
@@ -18,7 +19,7 @@ class SegmentedBarWidget(ChartAnimationMixin, QWidget):
         self.center_text = center_text
         self._animate_on_show = bool(animate)
         self.colors = self._pick_colors(get_review_button_colors(self, as_qcolor=True))
-        self.labels = list(labels) if labels else ["Again", "Hard", "Good", "Easy"]
+        self.labels = list(labels) if labels else [tr("Again"), tr("Hard"), tr("Good"), tr("Easy")]
         self.setMinimumWidth(50)
         self.setMinimumHeight(16)
         self.doubleClicked = None

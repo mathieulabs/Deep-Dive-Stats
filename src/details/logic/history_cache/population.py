@@ -33,17 +33,11 @@ class PopulationMixin:
     def _refresh_snapshot_charts(cache, hier_map, min_rev_id=None, dirty_dids=None):
         """Re-calculate Snapshots (Counts, Hourly, FutureDue, ReviewIntervals) efficiently."""
         all_decks_info = {d.id: d.name for d in mw.col.decks.all_names_and_ids()}
-        from .exclusion import excluded_dids, drop_total_targets
+        from .exclusion import deck_targets, excluded_dids
         _excl = excluded_dids()
 
         def get_targets(did):
-            t = {did, None, "[[TOTAL]]"}
-            name = all_decks_info.get(did)
-            if name:
-                parts = name.split("::")
-                for i in range(1, len(parts)):
-                    t.add("::".join(parts[:i]))
-            return drop_total_targets(t, did, _excl)
+            return deck_targets(did, all_decks_info, _excl)
 
         # TOTAL hourly is the sum of the per-day hourly bins, which the delta merge keeps
         # exact (new days added, touched days summed, undone days replaced), so

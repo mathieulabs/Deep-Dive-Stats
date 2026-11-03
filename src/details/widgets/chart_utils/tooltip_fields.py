@@ -7,29 +7,31 @@ lists the ids the user switched off; everything else stays visible, so the
 default (empty list) is the full tooltip.
 """
 
+from ....i18n import tr, N_, tr_name
+
 # (id, label) shown as checkboxes in the settings dialogs.
 HEATMAP_TOOLTIP_FIELDS = (
-    ("reviews", "Reviews"),
-    ("pending", "Today pending"),
-    ("details", "Answer buttons / extra details"),
-    ("time", "Time"),
-    ("retention", "Retention"),
+    ("reviews", N_("Reviews")),
+    ("pending", N_("Today pending")),
+    ("details", N_("Answer buttons / extra details")),
+    ("time", N_("Time")),
+    ("retention", N_("Retention")),
 )
 
 ACTIVITY_TOOLTIP_FIELDS = (
-    ("total", "Running total"),
-    ("mature", "Mature"),
-    ("young", "Young"),
-    ("relearn", "Relearning"),
-    ("learn", "Learning"),
-    ("cram", "Filtered"),
+    ("total", N_("Running total")),
+    ("mature", N_("Mature")),
+    ("young", N_("Young")),
+    ("relearn", N_("Relearning")),
+    ("learn", N_("Learning")),
+    ("cram", N_("Filtered")),
 )
 
 RETENTION_TOOLTIP_FIELDS = (
-    ("all", "All"),
-    ("young", "Young"),
-    ("mature", "Mature"),
-    ("true", "True retention"),
+    ("all", N_("All")),
+    ("young", N_("Young")),
+    ("mature", N_("Mature")),
+    ("true", N_("True retention")),
 )
 
 CHART_TOOLTIP_FIELDS = {
@@ -47,16 +49,16 @@ def filter_tooltip_lines(widget, lines):
     return [ln for ln in lines if ln.get("header") or ln.get("id") not in hidden]
 
 
-def build_tooltip_group(parent_layout, fields, hidden, title="Tooltip"):
+def build_tooltip_group(parent_layout, fields, hidden, title=None):
     """Add a group of checkboxes (checked = shown). Returns {id: QCheckBox}."""
     from aqt.qt import QCheckBox, QGroupBox, QVBoxLayout
 
-    group = QGroupBox(title)
+    group = QGroupBox(title or tr("Tooltip"))
     box = QVBoxLayout(group)
     checks = {}
     hidden = set(hidden or ())
     for fid, label in fields:
-        cb = QCheckBox(label)
+        cb = QCheckBox(tr_name(label))
         cb.setChecked(fid not in hidden)
         box.addWidget(cb)
         checks[fid] = cb

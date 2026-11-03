@@ -5,6 +5,7 @@ from aqt.qt import QAction
 
 from .. import Config
 from ...widgets.charts.heatmap.metrics import METRICS, TYPE_KEYS, TYPE_METRICS, build_metric, metric_parts
+from ....i18n import tr, tr_name
 
 
 def apply_heatmap_display(heatmap, key, value):
@@ -23,11 +24,11 @@ def add_heatmap_display_actions(menu, cfg, on_change):
     their average. on_change(config_key, value) saves the option and applies it.
     """
     chosen = set(metric_parts(cfg.get(Config.HEATMAP_METRIC, "reviews")) or ["reviews"])
-    sub = menu.addMenu("Heatmap Shows")
+    sub = menu.addMenu(tr("Heatmap Shows"))
 
     def add_checks(items):
         for key, label in items:
-            act = QAction(label, sub)
+            act = QAction(tr_name(label), sub)
             act.setCheckable(True)
             act.setChecked(key in chosen)
             act.triggered.connect(
@@ -35,13 +36,13 @@ def add_heatmap_display_actions(menu, cfg, on_change):
             )
             sub.addAction(act)
 
-    hint = sub.addAction("Check several to combine them")
+    hint = sub.addAction(tr("Check several to combine them"))
     hint.setEnabled(False)
     add_checks(METRICS)
     sub.addSeparator()
-    header = sub.addAction("Card types")
+    header = sub.addAction(tr("Card types"))
     header.setEnabled(False)
-    all_types = QAction("All card types", sub)
+    all_types = QAction(tr("All card types"), sub)
     all_types.setCheckable(True)
     all_types.setChecked(not (chosen & set(TYPE_KEYS)))
     all_types.triggered.connect(
@@ -50,7 +51,7 @@ def add_heatmap_display_actions(menu, cfg, on_change):
     sub.addAction(all_types)
     add_checks(TYPE_METRICS)
 
-    inv = QAction("Invert Intensity", menu)
+    inv = QAction(tr("Invert Intensity"), menu)
     inv.setCheckable(True)
     inv.setChecked(bool(cfg.get(Config.HEATMAP_INVERT_INTENSITY, False)))
     inv.triggered.connect(lambda checked=False: on_change(Config.HEATMAP_INVERT_INTENSITY, bool(checked)))

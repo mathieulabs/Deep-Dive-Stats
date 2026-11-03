@@ -9,6 +9,7 @@ from ....widgets.common import create_hbox_container
 from ....widgets.common.chart_header import ElidedTitleLabel
 from ....widgets.pinned.widget_factory.styler import apply_style
 from ....widgets.pinned.widget_factory.wrapper import ResizableWrapper
+from .....i18n import upper
 
 
 def _create_section_header_widget(parent):
@@ -42,7 +43,7 @@ def _wrap_section_header_controls(dialog, header_layout):
 
 
 def _create_section_title_label(parent, label_text, toggle_callback):
-    label = ElidedTitleLabel(label_text.upper(), parent=parent)
+    label = ElidedTitleLabel(upper(label_text), parent=parent)
     label.shrink_to = 0.88
     label.setObjectName("pinned_header")
     label.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -109,6 +110,12 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
                 if generic in global_style:
                     for specific in specifics:
                         composite_config[specific] = global_style[generic]
+            if Config.PINNED_GLASS_INTENSITY in global_style:
+                # Stat cards keep their own linear scale: same look as the boxes.
+                from .....const.glass_scale import box_glass_k
+                composite_config[Config.FACECARDS_GLASS_INTENSITY] = int(
+                    round(box_glass_k(global_style[Config.PINNED_GLASS_INTENSITY]) * 100)
+                )
 
         class DummyConfigManager:
             def __init__(self, c): self.config = c
@@ -215,9 +222,6 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
             elif "stats" in (wid or "").lower(): min_h = 100
             else: min_h = 200
 
-        # Widgets can optionally report their type via inner_widget lookup for better min_h defaults
-        # (handled inside ResizableWrapper.apply_size)
-
         from ....widgets.chart_utils.geometry import ChartGeometry
         if section_key in ChartGeometry.STATS_EXTRA_HEIGHT:
             wid = section_key
@@ -233,6 +237,12 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
 
         if hasattr(widget_or_layout, "set_show_stats"):
             widget_or_layout.set_show_stats(show_bottom_stats and show_all_stats)
+
+        from ....widgets.common.more_button import attach_more_button
+        pin = None
+        if context_menu.pin_info(section_key) is not None:
+            pin = lambda k=section_key: context_menu.pin_section(k)
+        attach_more_button(container, pin=pin)
 
         return container
 

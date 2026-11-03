@@ -3,6 +3,15 @@
 from .. import Config
 from ..theme.icons import get_svg_icon
 from ...logic.logger import log_swallowed
+from ....i18n import tr, tr_name
+
+
+def _tab_targets(start_tab):
+    """Tab names to look for: start_tab is the English name, the tab shows the translation."""
+    if start_tab is None or isinstance(start_tab, int):
+        return set()
+    name = str(start_tab).strip()
+    return {name.lower(), tr_name(name).strip().lower()}
 
 
 def open_settings(dialog, start_tab=None):
@@ -14,10 +23,10 @@ def open_settings(dialog, start_tab=None):
         if existing_cfg is not None:
             try:
                 if start_tab is not None:
-                    target = str(start_tab).strip().lower() if not isinstance(start_tab, int) else None
+                    target = _tab_targets(start_tab)
                     if target:
                         for i in range(existing_cfg.tabs_widget.count()):
-                            if existing_cfg.tabs_widget.tabText(i).strip().lower() == target:
+                            if existing_cfg.tabs_widget.tabText(i).strip().lower() in target:
                                 existing_cfg.tabs_widget.setCurrentIndex(i)
                                 break
                 existing_cfg.raise_()
@@ -54,9 +63,9 @@ def open_settings(dialog, start_tab=None):
                 idx = max(0, min(config_dialog.tabs_widget.count() - 1, int(start_tab)))
                 config_dialog.tabs_widget.setCurrentIndex(idx)
             else:
-                target = str(start_tab).strip().lower()
+                target = _tab_targets(start_tab)
                 for i in range(config_dialog.tabs_widget.count()):
-                    if config_dialog.tabs_widget.tabText(i).strip().lower() == target:
+                    if config_dialog.tabs_widget.tabText(i).strip().lower() in target:
                         config_dialog.tabs_widget.setCurrentIndex(i)
                         break
         except Exception:
@@ -108,15 +117,15 @@ def toggle_view(dialog):
     """Toggle between time-range view and deck view."""
     if dialog.view_mode == "time":
         dialog.view_mode = "deck"
-        dialog.view_toggle_btn.setText(" View by Time")
+        dialog.view_toggle_btn.setText(' ' + tr('View by Time'))
         dialog.view_toggle_btn.setIcon(get_svg_icon("calendar", context_ref=dialog))
-        dialog.search_bar.setPlaceholderText("Search decks...")
+        dialog.search_bar.setPlaceholderText(tr("Search decks..."))
         dialog.load_deck_view(prefer_cached=True)
     else:
         dialog.view_mode = "time"
-        dialog.view_toggle_btn.setText(" View by Deck")
+        dialog.view_toggle_btn.setText(' ' + tr('View by Deck'))
         dialog.view_toggle_btn.setIcon(get_svg_icon("activity", context_ref=dialog))
-        dialog.search_bar.setPlaceholderText("Filter rows...")
+        dialog.search_bar.setPlaceholderText(tr("Filter rows..."))
         dialog.load_tabs(prefer_cached=True)
 
     if hasattr(dialog, "search_bar"):

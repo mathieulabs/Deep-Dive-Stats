@@ -4,6 +4,7 @@ from aqt.qt import QWidget
 
 from ...chart_utils.tooltip import hide_tooltip_targets, hide_tooltips_on_window_deactivate, show_tooltip_near
 from ...chart_utils.formatting import fmt_num
+from .....i18n import tr
 
 
 def resize_event_impl(widget, event):
@@ -22,7 +23,7 @@ def mouse_move_event_impl(widget, event):
         value = bar["val"]
         lines = [
             {"text": f"{group_name} - {btn_name}", "header": True},
-            {"text": "Value", "value": fmt_num(value)},
+            {"text": tr("Value"), "value": fmt_num(value)},
         ]
         show_tooltip_near(
             widget,

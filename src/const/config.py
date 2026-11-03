@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from .base import ADAPTIVE_CHART_BINNING, CHART_BINNING_SCALE
+from ..i18n import N_
+
+# The text widget of new profiles. Saved in English like every default name; shown in the
+# interface language while unchanged (builders/text_label.py shown_template).
+TEXT_WIDGET_DEFAULT_SENTENCE = N_("Studied {reviews:Today} cards in {total_time:Today} today ({avg_time:Today}/card)")
+TEXT_WIDGET_DEFAULT_TEMPLATE = '<span style=" font-size:11pt;">' + TEXT_WIDGET_DEFAULT_SENTENCE + '</span>'
 
 
 class Config:
@@ -93,6 +99,7 @@ class Config:
     TOOLBAR_STYLE_NONE = 'none'
     TOOLBAR_BUTTON_TEXT = 'Toolbar_Button_Text'
     OPEN_SHORTCUT = 'Open_Shortcut'
+    LANGUAGE = 'Language'
 
     SHOW_TRENDS = 'Show_Trends'
     STATS_PRECISION = 'Stats_Precision'
@@ -104,6 +111,10 @@ class Config:
     PINNED_GLASS_INTENSITY = 'Pinned_Glass_Intensity'
     PINNED_GLASS_BLUR = 'Pinned_Glass_Blur'
     PINNED_GLASS_BORDER = 'Pinned_Glass_Border'
+    # Set once the old default box intensity (24) was raised (see ConfigManager._normalize_config).
+    PINNED_GLASS_DEFAULT_RAISED = 'Pinned_Glass_Default_Raised'
+    # Set once the box intensities were moved to the even slider scale (see surface.py).
+    GLASS_SCALE_EVEN = 'Glass_Scale_Even'
     PINNED_HOVER_BORDER = 'Pinned_Hover_Border'
     TEXT_WIDGET_SHOW_GLASS = 'Text_Widget_Show_Glass'
     TEXT_WIDGET_GLASS_INTENSITY = 'Text_Widget_Glass_Intensity'
@@ -200,12 +211,19 @@ class Config:
     HEATMAP_SHOW_365_MODE = 'Heatmap_Show_365_Mode'
     HEATMAP_SHOW_CONTINUOUS_MODE = 'Heatmap_Show_Continuous_Mode'
     HEATMAP_SHOW_YEAR_MODE = 'Heatmap_Show_Year_Mode'
+    HEATMAP_SHOW_YEARS_MODE = 'Heatmap_Show_Years_Mode'  # the "all years" view (YRS)
+    HEATMAP_YEARS_FOLD = 'Heatmap_Years_Fold'  # years shown before the older ones fold (0: never)
+    HEATMAP_YEARS_NO_GAP = 'Heatmap_Years_No_Gap'  # all years view: no space between the years
     HEATMAP_TOOLTIP_HIDDEN = 'Heatmap_Tooltip_Hidden'
     PINNED_POSITION_TOP = 'Pinned_Position_Top'
     PINNED_CHARTS_COLLAPSIBLE = 'Pinned_Charts_Collapsible'
+    PINNED_EMPTY_HINT = 'Pinned_Empty_Hint'  # "Add a widget" card when nothing is pinned
+    PINNED_CARD_LABELS = 'Pinned_Card_Labels'  # period / deck labels next to the charts' titles
     PINNED_MARGIN_SIDE = 'Pinned_Margin_Side'
     PINNED_MARGIN_TOP = 'Pinned_Margin_Top'
     PINNED_MARGIN_BOTTOM = 'Pinned_Margin_Bottom'
+    PINNED_SECTION_SPACING = 'Pinned_Section_Spacing'
+    PINNED_GAPS = 'Pinned_Gaps'  # {gap key: px}: the spaces changed by dragging them
     PINNED_POSITION_TOP_DECK = 'Pinned_Position_Top_Deck'
     PINNED_USE_ACTIVE_THEME = 'Pinned_Use_Active_Theme'
     PINNED_USE_SEPARATE_THEME = 'Pinned_Use_Separate_Theme'
@@ -300,36 +318,38 @@ class Config:
         # Default main-screen layout for new profiles: stat cards on top, the
         # heatmap under them (no title), a text line, then the charts.
         PINNED_WIDGETS: [
-            {"id": "5eef47a9-d929-4e72-b108-1f54cc335ec9", "type": "stat_card", "label": "Total Time",
+            {"id": "5eef47a9-d929-4e72-b108-1f54cc335ec9", "type": "stat_card", "label": N_("Total Time"),
              "stat_key": "Dash_Show_Time", "time_span": -1},
-            {"id": "eb78cd9a-adb9-4b11-a942-dc7a6b03b8a2", "type": "stat_card", "label": "Reviews",
+            {"id": "eb78cd9a-adb9-4b11-a942-dc7a6b03b8a2", "type": "stat_card", "label": N_("Reviews"),
              "stat_key": "Dash_Show_Reviews", "use_custom_style": False},
-            {"id": "0174e131-09c3-48bf-b37a-4ad5a83dca01", "type": "stat_card", "label": "Streak",
+            {"id": "0174e131-09c3-48bf-b37a-4ad5a83dca01", "type": "stat_card", "label": N_("Streak"),
              "stat_key": "Dash_Show_Streak"},
-            {"id": "ad8c9164-68a5-44b0-b0fc-ded18b86d124", "type": "stat_card", "label": "Active Days",
+            {"id": "ad8c9164-68a5-44b0-b0fc-ded18b86d124", "type": "stat_card", "label": N_("Active Days"),
              "stat_key": "Dash_Show_Active_Days", "time_span": -1},
-            {"id": "c31c76a7-345d-4e77-9d0e-13ed3a51618a", "type": "activity", "label": "Activity",
+            {"id": "c31c76a7-345d-4e77-9d0e-13ed3a51618a", "type": "activity", "label": N_("Activity"),
              "stat_key": None, "time_span": 2, "show_time_axis": False, "show_breakdown": True,
              "binning_override": True, "use_custom_style": False, "show_average": True,
              "show_cumulative": True, "chart_opacity": 100},
-            {"id": "30380686-e9cd-4ff0-ad28-ef928620bea2", "type": "card_counts", "label": "Card Counts",
+            {"id": "30380686-e9cd-4ff0-ad28-ef928620bea2", "type": "card_counts", "label": N_("Card Counts"),
              "stat_key": None, "time_span": -1, "separate_suspended": True},
-            {"id": "7bece771-5ccf-40bd-a8b3-0b4bb83e14e5", "type": "retention", "label": "Retention",
+            {"id": "7bece771-5ccf-40bd-a8b3-0b4bb83e14e5", "type": "retention", "label": N_("Retention"),
              "stat_key": None, "time_span": 2, "fit_to_data": True, "visible_series": {"young": True}},
-            {"id": "884edd42-06de-44a6-8b06-458ce84b8126", "type": "text_label", "label": "Text Widget",
+            {"id": "884edd42-06de-44a6-8b06-458ce84b8126", "type": "text_label", "label": N_("Text Widget"),
              "stat_key": None,
-             "template": "<span style=\" font-size:11pt;\">Studied {reviews:Today} cards in {total_time:Today} today ({avg_time:Today}/card)</span>",
+             "template": TEXT_WIDGET_DEFAULT_TEMPLATE,
              "chart_box": 1, "use_custom_style": False, "text_box": 0},
-            {"id": "f53b41ab-3c15-4b4b-a0da-f36f1095f077", "type": "heatmap", "label": "Heatmap",
+            {"id": "f53b41ab-3c15-4b4b-a0da-f36f1095f077", "type": "heatmap", "label": N_("Heatmap"),
              "stat_key": None, "heatmap_mode": "365", "use_custom_style": False, "chart_box": 1},
         ],
         PINNED_GLASS: True,
-        PINNED_GLASS_INTENSITY: 24,
+        # 54: readable over a background image (other add-ons); on Anki's plain background
+        # it looks close to a faint box, the card being near its color.
+        PINNED_GLASS_INTENSITY: 54,
         PINNED_GLASS_BLUR: 0,
         PINNED_GLASS_BORDER: 34,
         PINNED_HOVER_BORDER: True,
         TEXT_WIDGET_SHOW_GLASS: False,
-        TEXT_WIDGET_GLASS_INTENSITY: 20,
+        TEXT_WIDGET_GLASS_INTENSITY: 54,
         TEXT_WIDGET_GLASS_BLUR: 0,
         TEXT_WIDGET_GLASS_BORDER: 50,
         TEXT_WIDGET_HOVER_BORDER: True,
@@ -388,7 +408,7 @@ class Config:
         COLOR_BURIED: '#9e9e9e',
         HEATMAP_GLASS: False,
         HEATMAP_SHOW_GLASS: False,
-        HEATMAP_GLASS_INTENSITY: 43,
+        HEATMAP_GLASS_INTENSITY: 21,
         HEATMAP_GLASS_BLUR: 0,
         HEATMAP_GLASS_BORDER: 0,
         HEATMAP_HIDE_TITLE: True,
@@ -411,13 +431,20 @@ class Config:
         HEATMAP_SHOW_365_MODE: True,
         HEATMAP_SHOW_CONTINUOUS_MODE: True,
         HEATMAP_SHOW_YEAR_MODE: True,
+        HEATMAP_SHOW_YEARS_MODE: True,
+        HEATMAP_YEARS_FOLD: 3,
+        HEATMAP_YEARS_NO_GAP: False,
         HEATMAP_TOOLTIP_HIDDEN: [],
         PINNED_BLOCK_ORDER: ["stats:0", "charts:1", "texts:0", "charts:0"],
         PINNED_POSITION_TOP: True,
         PINNED_CHARTS_COLLAPSIBLE: False,
+        PINNED_EMPTY_HINT: True,
+        PINNED_CARD_LABELS: True,
         PINNED_MARGIN_SIDE: 20,
         PINNED_MARGIN_TOP: 0,
         PINNED_MARGIN_BOTTOM: 20,
+        PINNED_SECTION_SPACING: 10,
+        PINNED_GAPS: {},
         PINNED_POSITION_TOP_DECK: False,
         PINNED_USE_ACTIVE_THEME: True,
         PINNED_USE_SEPARATE_THEME: False,
@@ -449,7 +476,7 @@ class Config:
             "retrievability_g": {"height": 200},
             "added_g": {"height": 200, "col_span": 1},
         },
-        DEEP_DIVE_GRID_STYLE: {"Pinned_Glass": True, "Pinned_Glass_Intensity": 20, "Pinned_Glass_Border": 50},
+        DEEP_DIVE_GRID_STYLE: {"Pinned_Glass": True, "Pinned_Glass_Intensity": 4, "Pinned_Glass_Border": 50},
         DETAILS_VIEW_MODE: "deck",
         EXCLUDED_DECKS: [1],
         EXCLUDED_DATES: [],
@@ -484,4 +511,5 @@ class Config:
         TOOLBAR_BUTTON_STYLE: 'logo',
         TOOLBAR_BUTTON_TEXT: 'Deep Dive',
         OPEN_SHORTCUT: 'Ctrl+Shift+D',
+        LANGUAGE: 'auto',
     }

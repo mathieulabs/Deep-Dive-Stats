@@ -18,22 +18,24 @@ from aqt.qt import (
     Qt,
 )
 from .....qss import set_qss
+from .check_list import CheckListMixin
 from ....logic.logger import log_swallowed
+from .....i18n import tr
 
 
 MAIN_MENU_TOKEN = "main_menu"
 
 
-class PinnedViewSelectorDialog(QDialog):
+class PinnedViewSelectorDialog(CheckListMixin, QDialog):
     """Pick the views where a pinned widget is visible.
 
     - has a 'Main menu' row (MAIN_MENU_TOKEN)
     - with no current selection, everything starts checked
     """
 
-    def __init__(self, current_selection: list[Any] | None, parent=None, title: str = "Select View"):
+    def __init__(self, current_selection: list[Any] | None, parent=None, title: str | None = None):
         super().__init__(parent or mw)
-        self.setWindowTitle(title)
+        self.setWindowTitle(title or tr("Select View"))
         self.resize(420, 520)
 
         try:
@@ -64,10 +66,10 @@ class PinnedViewSelectorDialog(QDialog):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        layout.addWidget(QLabel("Choose where this pinned graph is visible."))
+        layout.addWidget(QLabel(tr("Choose where this pinned graph is visible.")))
 
         self.filter_edit = QLineEdit(self)
-        self.filter_edit.setPlaceholderText("Filter decks...")
+        self.filter_edit.setPlaceholderText(tr("Filter decks..."))
         self.filter_edit.textChanged.connect(self._filter_rows)
         layout.addWidget(self.filter_edit)
 
@@ -96,16 +98,16 @@ class PinnedViewSelectorDialog(QDialog):
         btns = QHBoxLayout(btn_row)
         btns.setContentsMargins(0, 6, 0, 0)
 
-        self.bulk_btn = QPushButton("Select all", self)
+        self.bulk_btn = QPushButton(tr("Select all"), self)
         self.bulk_btn.setObjectName("pinned_view_bulk_btn")
         self._bulk_next_action = "select_all"  # or "deselect_all"
         self.bulk_btn.clicked.connect(self._on_bulk_clicked)
         btns.addWidget(self.bulk_btn)
 
         btns.addStretch()
-        cancel = QPushButton("Cancel", self)
+        cancel = QPushButton(tr("Cancel"), self)
         cancel.clicked.connect(self.reject)
-        save = QPushButton("Save", self)
+        save = QPushButton(tr("Save"), self)
         save.clicked.connect(self._on_save)
         btns.addWidget(cancel)
         btns.addWidget(save)
@@ -146,7 +148,7 @@ class PinnedViewSelectorDialog(QDialog):
                 }
             )
 
-        _add_row("Main menu", MAIN_MENU_TOKEN)
+        _add_row(tr("Main menu"), MAIN_MENU_TOKEN)
 
         try:
             decks = list(mw.col.decks.all_names_and_ids())
@@ -158,54 +160,6 @@ class PinnedViewSelectorDialog(QDialog):
             _add_row(d.name, int(d.id))
 
         self._update_bulk_button_state()
-
-    def _filter_rows(self, text: str):
-        t = (text or "").strip().lower()
-        for r in self._rows:
-            visible = (t in r["label"]) if t else True
-            r["widget"].setVisible(bool(visible))
-        self._update_bulk_button_state()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        # Child widgets may report isVisible()==False until the dialog is shown.
-        # Sync the bulk button after first show so its label/enabled state is correct.
-        self._update_bulk_button_state()
-
-    def _on_bulk_clicked(self):
-        visible_rows = [r for r in self._rows if not r["widget"].isHidden()]
-        if not visible_rows:
-            return
-
-        if self._bulk_next_action == "select_all":
-            for r in visible_rows:
-                r["check"].setChecked(True)
-            self._bulk_next_action = "deselect_all"
-            self.bulk_btn.setText("Deselect all")
-        else:
-            for r in visible_rows:
-                r["check"].setChecked(False)
-            self._bulk_next_action = "select_all"
-            self.bulk_btn.setText("Select all")
-
-    def _update_bulk_button_state(self, *_args):
-        # Use isHidden() instead of isVisible(): isVisible() can be False before the
-        # dialog is shown even when the row is not filtered out.
-        visible_rows = [r for r in self._rows if not r["widget"].isHidden()]
-        if not visible_rows:
-            self._bulk_next_action = "select_all"
-            self.bulk_btn.setText("Select all")
-            self.bulk_btn.setEnabled(False)
-            return
-
-        self.bulk_btn.setEnabled(True)
-        all_checked = all(r["check"].isChecked() for r in visible_rows)
-        if all_checked:
-            self._bulk_next_action = "deselect_all"
-            self.bulk_btn.setText("Deselect all")
-        else:
-            self._bulk_next_action = "select_all"
-            self.bulk_btn.setText("Select all")
 
     def _on_save(self):
         selected: list[Any] = []

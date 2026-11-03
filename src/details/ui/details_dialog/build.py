@@ -26,6 +26,7 @@ from .visual_menu import populate_visual_menu
 
 
 from ....qss import set_qss
+from ....i18n import tr
 
 def layout_button_icons(side):
     """Icons of the three layout buttons. The arrows point where the table goes: with the
@@ -45,7 +46,7 @@ def setup_dialog_ui(dialog):
     top_bar.setContentsMargins(10, 5, 10, 5)
     top_bar.setSpacing(10)
     is_deck_view = dialog.view_mode != 'time'
-    dialog.view_toggle_btn = QPushButton("  View by Deck" if not is_deck_view else "  View by Time", parent=dialog)
+    dialog.view_toggle_btn = QPushButton("  " + (tr("View by Deck") if not is_deck_view else tr("View by Time")), parent=dialog)
     dialog.view_toggle_btn.setIcon(get_svg_icon("activity" if not is_deck_view else "calendar", size=16))
     dialog.view_toggle_btn.setIconSize(QSize(16, 16))
     dialog.view_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -55,10 +56,10 @@ def setup_dialog_ui(dialog):
     dialog.view_toggle_btn.setDefault(False)
     dialog.view_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-    dialog.visual_toggle = QPushButton(" Visuals", parent=dialog)
+    dialog.visual_toggle = QPushButton(' ' + tr('Visuals'), parent=dialog)
     dialog.visual_toggle.setIcon(get_svg_icon("bar-chart-2"))
     dialog.visual_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-    dialog.visual_toggle.setToolTip("Choose which columns are shown as a visual")
+    dialog.visual_toggle.setToolTip(tr("Choose which columns are shown as a visual"))
     visual_menu = StyledMenu(dialog)
     # The menu outlives theme changes: restyle it each time it opens.
     visual_menu.aboutToShow.connect(visual_menu._apply_theme_style)
@@ -70,7 +71,7 @@ def setup_dialog_ui(dialog):
     palette = get_theme_palette(conf) or {}
     is_dark = get_theme_effective_is_dark(conf)
 
-    dialog.settings_btn = QPushButton("  Settings", parent=dialog)
+    dialog.settings_btn = QPushButton('  ' + tr('Settings'), parent=dialog)
     dialog.settings_btn.setIcon(get_svg_icon("settings", size=16))
     dialog.settings_btn.setIconSize(QSize(16, 16))
     dialog.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -78,7 +79,7 @@ def setup_dialog_ui(dialog):
     dialog.settings_btn.setProperty("class", "toolbar_btn")
     dialog.settings_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
-    dialog.deck_opts_btn = QPushButton("  Deck Options", parent=dialog)
+    dialog.deck_opts_btn = QPushButton('  ' + tr('Deck Options'), parent=dialog)
     dialog.deck_opts_btn.setIcon(get_svg_icon("palette", size=16))
     dialog.deck_opts_btn.setIconSize(QSize(16, 16))
     dialog.deck_opts_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -86,7 +87,7 @@ def setup_dialog_ui(dialog):
     dialog.deck_opts_btn.setProperty("class", "toolbar_btn")
     dialog.deck_opts_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
-    dialog.export_btn = QPushButton("  Export", parent=dialog)
+    dialog.export_btn = QPushButton('  ' + tr('Export'), parent=dialog)
     dialog.export_btn.setIcon(get_svg_icon("save", size=16))
     dialog.export_btn.setIconSize(QSize(16, 16))
     dialog.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -95,7 +96,7 @@ def setup_dialog_ui(dialog):
     dialog.export_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
     setup_dashboard_and_overlays(dialog)
 
-    dialog.trend_toggle = QPushButton("  Trends", parent=dialog)
+    dialog.trend_toggle = QPushButton('  ' + tr('Trends'), parent=dialog)
     dialog.trend_toggle.setIcon(get_svg_icon("trending-up", size=16))
     dialog.trend_toggle.setIconSize(QSize(16, 16))
     dialog.trend_toggle.setCheckable(True)
@@ -120,7 +121,7 @@ def setup_dialog_ui(dialog):
     search_container_layout.setSpacing(0)
 
     dialog.search_bar = QLineEdit(parent=search_container)
-    dialog.search_bar.setPlaceholderText("Search decks...")
+    dialog.search_bar.setPlaceholderText(tr("Search decks..."))
     dialog.search_bar.setProperty("class", "search_bar")
     dialog.search_bar.setMinimumWidth(40)
     dialog.search_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -146,7 +147,7 @@ def setup_dialog_ui(dialog):
     dialog.search_bar.textChanged.connect(on_search_text_changed)
     dialog.search_clear_btn.clicked.connect(clear_search)
 
-    dialog.span_select_btn = QPushButton("  Time Span", parent=dialog)
+    dialog.span_select_btn = QPushButton('  ' + tr('Time Span'), parent=dialog)
     dialog.span_select_btn.setIcon(get_svg_icon("calendar", size=16))
     dialog.span_select_btn.setIconSize(QSize(16, 16))
     dialog.span_select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -199,7 +200,7 @@ def setup_dialog_ui(dialog):
 
     dialog.span_select_btn.clicked.connect(on_span_select_clicked)
 
-    dialog.deck_select_btn = QPushButton("  Deck", parent=dialog)
+    dialog.deck_select_btn = QPushButton('  ' + tr('Deck'), parent=dialog)
     dialog.deck_select_btn.setIcon(get_svg_icon("layers", size=16))
     dialog.deck_select_btn.setIconSize(QSize(16, 16))
     dialog.deck_select_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -293,7 +294,7 @@ def setup_dialog_ui(dialog):
     # Three states: the table alone, the charts with the table drawer open, the charts alone.
     for i, (icon_name, tooltip) in enumerate(zip(
         layout_button_icons(dialog.side_view),
-        ("Full Table", "Charts with table drawer", "Full Deep Dive"),
+        (tr("Full Table"), tr("Charts with table drawer"), tr("Full Deep Dive")),
     )):
         btn = QPushButton("", parent=dialog.layout_toggle_container)
         btn.setIcon(get_svg_icon(icon_name, size=16))
@@ -360,7 +361,7 @@ def setup_dialog_ui(dialog):
     dialog.overflow_btn.setIconSize(QSize(20, 20))
     dialog.overflow_btn.setFixedSize(30, 30)
     dialog.overflow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    dialog.overflow_btn.setToolTip("More Options")
+    dialog.overflow_btn.setToolTip(tr("More Options"))
     dialog.overflow_btn.setProperty("class", "toolbar_btn")
     set_qss(dialog.overflow_btn, "QPushButton { min-width: 30px; padding: 0; } QPushButton::menu-indicator { image: none; width: 0px; }")
     dialog.overflow_btn.setVisible(False)
@@ -381,8 +382,8 @@ def setup_dialog_ui(dialog):
 
     from . import links as _links
     for _attr, _icon, _tip, _url_name in (
-        ("support_btn", "heart", "Support on Ko-fi", "SUPPORT_URL"),
-        ("rate_btn", "thumbs-up", "Rate this add-on", "RATE_URL"),
+        ("support_btn", "heart", tr("Support on Ko-fi"), "SUPPORT_URL"),
+        ("rate_btn", "thumbs-up", tr("Rate this add-on"), "RATE_URL"),
         ("github_btn", "github", "GitHub", "GITHUB_URL"),
     ):
         if not getattr(_links, _url_name):

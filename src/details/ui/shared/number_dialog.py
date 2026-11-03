@@ -6,6 +6,7 @@ from aqt.qt import QDialog, QHBoxLayout, QLabel, QPushButton, QSpinBox, Qt, QVBo
 
 from ...logic.logger import log_swallowed
 from ....qss import set_qss
+from ....i18n import tr
 
 
 def ask_number(title, label, value=0, minimum=0, maximum=100000, parent=None):
@@ -34,8 +35,8 @@ def ask_number(title, label, value=0, minimum=0, maximum=100000, parent=None):
     lay.addWidget(spin)
     row = QHBoxLayout()
     row.addStretch(1)
-    cancel = QPushButton("Cancel", dlg)
-    ok = QPushButton("OK", dlg)
+    cancel = QPushButton(tr("Cancel"), dlg)
+    ok = QPushButton(tr("OK"), dlg)
     ok.setDefault(True)
     cancel.clicked.connect(dlg.reject)
     ok.clicked.connect(dlg.accept)

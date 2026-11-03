@@ -10,6 +10,7 @@ from ..common.discrete import binning_active_getter, set_chart_opacity_impl
 from ..common.core import set_flag_and_update
 from ....animations.chart_policy import chart_animations_allowed
 from ....logic.logger import log_swallowed
+from .....i18n import tr, tr_name
 
 
 def _range_for_display_data(display_data, visible_series):
@@ -31,7 +32,10 @@ def _range_for_display_data(display_data, visible_series):
     return lo, hi
 
 
-CURVE_DIV = 4
+# Steps per segment of the rounded line while it morphs (render_ops uses 2 to 16 of
+# them depending on the room between two points: few steps on wide segments drew
+# visible corners until the curve came back at the end of the animation).
+CURVE_DIV = 16
 
 
 def _curve_values(filled, mask, div=CURVE_DIV):
@@ -725,6 +729,6 @@ def get_stats_text_impl(widget):
             if widget.visible_series.get(key, False):
                 val = widget._avg_from_series_rows((widget.retention_data or {}).get(key, []), widget.avg_on_active_days)
                 if val is not None and val > 0:
-                    lbl = widget.SERIES_CONFIG[key]["label"]
-                    stats.append(f"{lbl} Avg: {fmt_num_compact(val)}%")
+                    lbl = tr_name(widget.SERIES_CONFIG[key]["label"])
+                    stats.append(tr("{name} Avg: {value}%", name=lbl, value=fmt_num_compact(val)))
     return stats

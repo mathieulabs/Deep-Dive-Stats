@@ -4,7 +4,7 @@ from aqt import mw, gui_hooks
 from aqt.qt import QTimer, QCheckBox, QRadioButton, QWidget, QDialog
 
 from ..imports import sync_theme_manager_from_config, sync_theme_manager_and_notify
-from .....logic.logger import log_swallowed
+from .....logic.logger import log_info, log_swallowed
 
 
 def register_hooks(manager):
@@ -40,6 +40,26 @@ def register_hooks(manager):
     try:
         cm = manager._get_config_manager()
         sync_theme_manager_and_notify(cm.config, source="pinned_register")
+    except Exception:
+        log_swallowed()
+
+    # Installed or turned on while Anki runs: the deck list is already on screen, drawn
+    # without the room the pinned widgets go in, so it is drawn again.
+    if getattr(mw, "col", None) is not None and mw.state in ("deckBrowser", "overview"):
+        QTimer.singleShot(0, _redraw_page)
+
+
+def _redraw_page():
+    try:
+        if getattr(mw, "col", None) is None:
+            return
+        if mw.state == "deckBrowser":
+            mw.deckBrowser.refresh()
+        elif mw.state == "overview":
+            mw.overview.refresh()
+        else:
+            return
+        log_info(f"Loaded with the {mw.state} page already shown: page drawn again.", tag="PINNED")
     except Exception:
         log_swallowed()
 
@@ -156,7 +176,59 @@ def run_operation_refresh(manager):
         log_swallowed()
 
 
+def _drop_previous_profile_widgets(manager):
+    """The widgets on screen belong to the profile that was open before. They have to go:
+    the default widgets keep the same id in every profile, so the next rebuild reused them
+    as they were (another profile's box, which the new profile hides with everything in it,
+    and its data in their headers). The overlay goes too, so the boxes are built again."""
+    widgets = list((getattr(manager, "_active_widgets", None) or {}).values())
+    for scope_widgets in (getattr(manager, "_preserved_widgets_by_scope", None) or {}).values():
+        widgets.extend((scope_widgets or {}).values())
+    seen = set()
+    for widget in widgets:
+        if widget is None or id(widget) in seen:
+            continue
+        seen.add(id(widget))
+        try:
+            widget.hide()
+            widget.setParent(None)
+            widget.deleteLater()
+        except RuntimeError:
+            pass
+    manager._active_widgets = {}
+    manager._preserved_widgets_by_scope = {}
+    manager._widget_update_signatures = {}
+    manager._last_render_scope_key = None
+    overlay = getattr(manager, "_overlay", None)
+    manager._overlay = None
+    if overlay is not None:
+        try:
+            overlay.hide()
+            overlay.deleteLater()
+        except RuntimeError:
+            pass
+    # What pointed into the old overlay (built again with the new one, see overlay_state).
+    manager._stats_container = None
+    manager._stats_containers = {}
+    manager._stats_box_order = []
+    manager._charts_container = None
+    manager._chart_boxes = {}
+    manager._chart_box_order = []
+    manager._texts_container = None
+    manager._text_boxes = {}
+    manager._text_box_order = []
+    manager._masonry_layout = None
+    manager._chart_masonry_rows = []
+    manager._charts_vbox = None
+    manager._text_masonry_rows = []
+    manager._texts_vbox = None
+
+
 def on_profile_did_open(manager):
+    try:
+        _drop_previous_profile_widgets(manager)
+    except Exception:
+        log_swallowed()
     manager._mark_config_dirty()
     manager._last_state = None
     manager._last_widget_set = None

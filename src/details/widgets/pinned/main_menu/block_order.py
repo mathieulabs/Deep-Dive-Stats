@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 
+from aqt.qt import QSizePolicy, QSpacerItem
+
 from .imports import Config
+from .....i18n import tr
 
 BLOCK_STATS = "stats"
 BLOCK_CHARTS = "charts"
@@ -72,12 +75,12 @@ def section_key_for_widget(widget_def):
 def section_label(section_key):
     base, box_id = parse_section_key(section_key)
     if base == BLOCK_STATS:
-        return "main stats section" if int(box_id or 0) == 0 else "stats section"
+        return tr("main stats section") if int(box_id or 0) == 0 else tr("stats section")
     if base == BLOCK_CHARTS:
-        return "main charts section" if int(box_id or 0) == 0 else "charts section"
+        return tr("main charts section") if int(box_id or 0) == 0 else tr("charts section")
     if base == BLOCK_TEXTS:
-        return "main text section" if int(box_id or 0) == 0 else "text section"
-    return "section"
+        return tr("main text section") if int(box_id or 0) == 0 else tr("text section")
+    return tr("section")
 
 
 def normalize_block_order(raw_order, stats_boxes=None, chart_boxes=None, text_boxes=None):
@@ -125,6 +128,13 @@ def normalize_block_order(raw_order, stats_boxes=None, chart_boxes=None, text_bo
 
 def block_for_widget(widget_def):
     return section_key_for_widget(widget_def)
+
+
+class GapSpacer(QSpacerItem):
+    """The space under a box: kept when the other spacers are cleared away."""
+
+    def __init__(self):
+        super().__init__(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
 
 
 def _strip_spacers(layout):
@@ -272,6 +282,28 @@ def apply_block_layout_order(manager, pinned_conf, add_stretch=False):
 
     for idx, widget in enumerate(ordered_widgets):
         layout.insertWidget(idx, widget)
+    # The space under each box but the last: a spacer of its own, so each one can have
+    # its size (the layout's own spacing is 0, see overlay_margins).
+    spacers = []
+    for section_id, widget in list(zip(ordered_sections, ordered_widgets))[:-1]:
+        # Right under its box (the layout can hold other, hidden widgets too).
+        spacer = GapSpacer()
+        layout.insertItem(layout.indexOf(widget) + 1, spacer)
+        spacers.append((spacer, section_id))
+    manager._section_spacers = spacers
+    layout.setSpacing(0)
+    try:
+        from .runtime.overlay_margins import apply_line_gaps, apply_section_gaps
+
+        apply_section_gaps(manager)
+        apply_line_gaps(manager)
+    except Exception:
+        from ....logic.logger import log_swallowed
+
+        log_swallowed()
+    for section_id, widget in zip(ordered_sections, ordered_widgets):
+        # Lets a drag find the box under the mouse and where a new box would go.
+        widget.setProperty("deepdivestats_section", section_id)
 
     if add_stretch and ordered_widgets:
         layout.addStretch(1)

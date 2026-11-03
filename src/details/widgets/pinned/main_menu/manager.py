@@ -41,7 +41,6 @@ from .ui.context_actions import (
     open_details_dialog as open_details_dialog_impl,
     open_time_span_settings as open_time_span_settings_impl,
     open_widget_settings as open_widget_settings_impl,
-    update_span as update_span_impl,
     update_span_bulk as update_span_bulk_impl,
     update_setting as update_setting_impl,
     toggle_global_bottom_stats as toggle_global_bottom_stats_impl,
@@ -434,9 +433,6 @@ class MainMenuWidgetManager(QObject):
 
     def _open_widget_settings(self, widget, widget_def):
         open_widget_settings_impl(self, widget, widget_def)
-
-    def _update_span(self, wid, span):
-        update_span_impl(self, wid, span)
 
     def _update_span_bulk(self, wid, updates):
         update_span_bulk_impl(self, wid, updates)

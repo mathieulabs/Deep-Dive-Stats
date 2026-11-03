@@ -16,7 +16,7 @@ from .config import ConfigManager, clear_config_caches, reload_live_managers
 
 def data_dir() -> str:
     """The add-on's user_files folder (settings, history cache, debug log)."""
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "user_files")
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "user_files")
 
 
 def _refresh_after_config_change(source: str) -> None:
@@ -133,3 +133,20 @@ def open_data_folder() -> None:
 
     os.makedirs(data_dir(), exist_ok=True)
     QDesktopServices.openUrl(QUrl.fromLocalFile(data_dir()))
+
+
+def reset_tips() -> None:
+    """Forget that the guided tour was seen, as on a first install: it shows again at the
+    next Anki start."""
+    try:
+        os.remove(os.path.join(data_dir(), "tips.json"))
+    except FileNotFoundError:
+        pass
+    except OSError:
+        log_swallowed()
+    try:
+        from .details.widgets.common import guided_tour
+
+        guided_tour._done = None
+    except Exception:
+        log_swallowed()

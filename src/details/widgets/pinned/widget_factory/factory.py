@@ -22,6 +22,7 @@ from .builders.difficulty import _build_difficulty
 from .builders.retrievability import _build_retrievability
 from .builders.text_label import _build_text_label
 from .....qss import set_qss
+from .....i18n import tr, N_, tr_name, upper
 
 
 @contextmanager
@@ -83,21 +84,21 @@ class WidgetFactory:
     def create(widget_def, deck_id=None, cache=None, parent=None, cfg=None):
         wtype = widget_def.get("type", "")
         default_labels = {
-            "activity": "Activity",
-            "retention": "Retention",
-            "heatmap": "Heatmap",
-            "added": "Added",
-            "distribution": "Distribution",
-            "card_counts": "Card Counts",
-            "hourly": "Hourly Breakdown",
-            "future_due": "Future Due",
-            "review_intervals": "Review Intervals",
-            "stability": "Card Stability",
-            "difficulty": "Card Difficulty",
-            "retrievability": "Card Retrievability",
-            "text_label": "Text Widget",
+            "activity": N_("Activity"),
+            "retention": N_("Retention"),
+            "heatmap": N_("Heatmap"),
+            "added": N_("Added"),
+            "distribution": N_("Distribution"),
+            "card_counts": N_("Card Counts"),
+            "hourly": N_("Hourly Breakdown"),
+            "future_due": N_("Future Due"),
+            "review_intervals": N_("Review Intervals"),
+            "stability": N_("Card Stability"),
+            "difficulty": N_("Card Difficulty"),
+            "retrievability": N_("Card Retrievability"),
+            "text_label": N_("Text Widget"),
         }
-        label = widget_def.get("label") or default_labels.get(wtype, wtype.replace("_", " ").title())
+        label = tr_name(widget_def.get("label") or default_labels.get(wtype, wtype.replace("_", " ").title()))
         if wtype != "stat_card" and widget_def.get("label") is not None and not str(widget_def.get("label")).strip():
             label = None  # emptied title: no header
         if wtype == "text_label":
@@ -149,7 +150,7 @@ class WidgetFactory:
             apply_own_colors(wrapped, widget_def.get("own_colors"))
             return wrapped
         except Exception as e:
-            l = QLabel(f"Error: {e}")
+            l = QLabel(tr("Error: {error}", error=e))
             set_qss(l, "color: red; font-weight: bold;")
             return l
 
@@ -238,21 +239,22 @@ class WidgetFactory:
                 if label is not None:
                     if not label:
                         default_labels = {
-                            "activity": "Activity", "retention": "Retention", "heatmap": "Heatmap",
-                            "added": "Added", "distribution": "Distribution", "card_counts": "Card Counts",
-                            "hourly": "Hourly Breakdown", "future_due": "Future Due",
-                            "review_intervals": "Review Intervals", "stability": "Card Stability",
-                            "text_label": "Text Widget",
-                            "difficulty": "Card Difficulty", "retrievability": "Card Retrievability"
+                            "activity": N_("Activity"), "retention": N_("Retention"), "heatmap": N_("Heatmap"),
+                            "added": N_("Added"), "distribution": N_("Distribution"), "card_counts": N_("Card Counts"),
+                            "hourly": N_("Hourly Breakdown"), "future_due": N_("Future Due"),
+                            "review_intervals": N_("Review Intervals"), "stability": N_("Card Stability"),
+                            "text_label": N_("Text Widget"),
+                            "difficulty": N_("Card Difficulty"), "retrievability": N_("Card Retrievability")
                         }
                         label = default_labels.get(wtype, wtype.replace("_", " ").title())
+                    label = tr_name(label)
 
                     if isinstance(wrapper, StatCardWidget):
                         wrapper.update_val(wrapper.shown_value(), title=label, refresh=False)
                     else:
                         header = wrapper.findChild(QLabel, "pinned_header")
                         if header:
-                            header.setText(label.upper())
+                            header.setText(upper(label))
                             if wtype != "heatmap":
                                 header.setVisible(True)
 

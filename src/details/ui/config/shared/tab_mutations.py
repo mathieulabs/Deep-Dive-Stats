@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ... import Period
+from .....i18n import tr, N_, tr_name
 
 
 def make_new_tab_definition():
     return {
-        "title": "New Tab",
+        "title": tr("New Tab"),
         "range": Period.WEEK,
         "use_decimal": True,
-        "hrs_unit": "hrs",
+        "hrs_unit": N_("hrs"),
         "min_unit": "min",
         "show_time": True,
         "show_reviews": True,
@@ -34,8 +35,8 @@ def set_tab_field(tabs_data, row, key, value):
 
 
 def format_tab_list_title(title, enabled):
-    title = str(title or "")
-    return title if bool(enabled) else f"(Archived) {title}"
+    title = tr_name(str(title or ""))
+    return title if bool(enabled) else tr("(Archived) {name}", name=title)
 
 
 def set_tab_enabled(tabs_data, row, enabled):

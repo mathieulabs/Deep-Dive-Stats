@@ -169,7 +169,13 @@ class MasonryLayout(QLayout):
             if _widget and getattr(_widget, "_has_saved_height", False):
                 item_h = _widget.minimumHeight()
             else:
-                item_h = item.heightForWidth(item_w) if item.hasHeightForWidth() else item.sizeHint().height()
+                if _widget is not None and _widget.hasHeightForWidth():
+                    # Asked of the widget itself: the answer Qt's layout item keeps is not
+                    # always cleared when the widget's height changes (a rebuilt widget).
+                    item_h = _widget.heightForWidth(item_w)
+                    item_h = min(max(item_h, _widget.minimumHeight()), _widget.maximumHeight())
+                else:
+                    item_h = item.heightForWidth(item_w) if item.hasHeightForWidth() else item.sizeHint().height()
                 item_h = max(item_h, item.minimumSize().height())
 
             items_meta.append((item, int(item_w), int(item_h)))

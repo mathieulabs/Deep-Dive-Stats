@@ -5,6 +5,7 @@ from aqt.qt import QColor, QEasingCurve
 from ...chart_utils.formatting import fmt_num, fmt_num_compact
 from ..common.discrete import set_chart_opacity_impl
 from ..common.core import set_flag_and_update
+from .....i18n import num, tr
 
 
 def set_cumulative_mode_impl(widget, visible):
@@ -125,8 +126,8 @@ def get_tooltip_text_impl(widget, h_idx):
         rate = (correct / total * 100)
         total_int = int(round(float(total)))
         total_txt = fmt_num(total_int) if abs(float(total) - total_int) < 1e-9 else fmt_num(total)
-        return f"{h_idx}:00 - {h_idx}:59\nReviews: {total_txt}\nCorrect: {rate:.1f}%"
-    return f"{h_idx}:00 - {h_idx}:59\nReviews: 0"
+        return f"{h_idx}:00 - {h_idx}:59\n" + tr("Reviews: {count}\nCorrect: {rate}%", count=total_txt, rate=num(f"{rate:.1f}"))
+    return f"{h_idx}:00 - {h_idx}:59\n" + tr("Reviews: {count}", count=0)
 
 
 def get_stats_text_impl(widget):
@@ -135,5 +136,5 @@ def get_stats_text_impl(widget):
     total_correct = sum(float(v or 0.0) for v in (correct or []))
     if total_revs > 0:
         rate = (total_correct / total_revs * 100)
-        return [f"Total: {fmt_num_compact(total_revs)} revs", f"Retention: {fmt_num_compact(rate)}%"]
-    return [f"Total: {fmt_num_compact(total_revs)} revs", "Retention: -"]
+        return [tr("Total: {count} revs", count=fmt_num_compact(total_revs)), tr("Retention: {value}%", value=fmt_num_compact(rate))]
+    return [tr("Total: {count} revs", count=fmt_num_compact(total_revs)), tr("Retention: -")]

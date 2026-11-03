@@ -10,11 +10,22 @@ from ...chart_utils import get_theme_colors
 from ...chart_utils.drawing import get_hover_marker_outline_color
 from ..common.cache_keys import theme_color_token as _theme_color_token
 from .metrics import entry_counts
+from . import years_ops
+from .....i18n import month_short, weekday_short
 
+
+
+def _day_labels(monday_first, initials):
+    """Names of the 2nd, 4th and 6th rows of the grid (Tue/Thu/Sat or Mon/Wed/Fri)."""
+    days = (1, 3, 5) if monday_first else (0, 2, 4)  # date.weekday(): 0 is Monday
+    names = [weekday_short(d) for d in days]
+    return [name[:1].upper() for name in names] if initials else names
 
 def _geometry_token(widget):
     """Where the grid is drawn now: a cached picture is only valid for this exact layout."""
     try:
+        if years_ops.is_years(widget):
+            return years_ops.geometry_token(widget)
         if getattr(widget, "view_mode", "") == "continuous":
             geo = widget._get_continuous_layout()[:7]
         else:
@@ -196,18 +207,25 @@ def render_labels_to_pixmap_impl(widget):
     text_col = t_colors["text"]
     painter.setPen(text_col)
 
+    if years_ops.is_years(widget):
+        years_ops.draw_labels(widget, painter, month_short)
+        painter.end()
+        if not exporting():
+            widget._labels_pixmap_cache = pixmap
+            widget._labels_pixmap_cache_key = cache_key
+        return pixmap
+
     if widget.view_mode == "continuous":
         if widget._effective_show_labels:
             cell_size, spacing, step, gap_width, label_space, margin_top, start_x, months_list = widget._get_continuous_layout()
             start_y = margin_top
-            month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
             font = painter.font()
             font.setPointSize(max(6, min(8, int(cell_size * 0.7))))
             painter.setFont(font)
 
             current_x = start_x
             for (_yr, mo, _start_col, num_cols, _days_in_month, _first_day) in months_list:
-                label_text = month_names[mo - 1]
+                label_text = month_short(mo)
                 painter.drawText(
                     QRectF(current_x, start_y - (16 * widget.scale), 70 * widget.scale, 15 * widget.scale),
                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
@@ -216,10 +234,7 @@ def render_labels_to_pixmap_impl(widget):
                 current_x += num_cols * step + gap_width
 
             lx = start_x - label_space + 2 * widget.scale
-            if (cell_size / widget.scale) < 11.0:
-                day_labels = ["T", "T", "S"] if widget.monday_first else ["M", "W", "F"]
-            else:
-                day_labels = ["Tue", "Thu", "Sat"] if widget.monday_first else ["Mon", "Wed", "Fri"]
+            day_labels = _day_labels(widget.monday_first, (cell_size / widget.scale) < 11.0)
             for i, day_name in enumerate(day_labels):
                 y = start_y + (i * 2 + 1) * step + (cell_size * 0.8)
                 painter.drawText(int(lx), int(y), day_name)
@@ -230,7 +245,6 @@ def render_labels_to_pixmap_impl(widget):
         cell_size, spacing, start_x, start_y, label_space = widget._get_grid_geometry()
         step = cell_size + spacing
         grid_start, in_range = widget._compute_grid_info()
-        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         rendered_months = set()
 
         font = painter.font()
@@ -247,17 +261,12 @@ def render_labels_to_pixmap_impl(widget):
                     painter.drawText(
                         QRectF(week_x, start_y - (16 * widget.scale), 50 * widget.scale, 15 * widget.scale),
                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
-                        months[curr_date.month - 1],
+                        month_short(curr_date.month),
                     )
                     rendered_months.add(m_key)
 
         label_x = start_x - label_space + (2 * widget.scale)
-        if (cell_size / widget.scale) < 11.0:
-            day_labels = ["T", "T", "S"] if widget.monday_first else ["M", "W", "F"]
-        elif widget.monday_first:
-            day_labels = ["Tue", "Thu", "Sat"]
-        else:
-            day_labels = ["Mon", "Wed", "Fri"]
+        day_labels = _day_labels(widget.monday_first, (cell_size / widget.scale) < 11.0)
         for i, day_name in enumerate(day_labels):
             y = start_y + (i * 2 + 1) * step + (cell_size * 0.8)
             painter.drawText(int(label_x), int(y), day_name)
@@ -292,7 +301,12 @@ def render_scaffold_to_pixmap_impl(widget):
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(widget._brush_for_color(widget.empty_color))
 
-    if widget.view_mode == "continuous":
+    if years_ops.is_years(widget):
+        lay = years_ops.layout(widget)
+        radius = (lay["cell"] / 2.0) * (widget.rounding / 100.0)
+        for _d, rect in years_ops.iter_cells(widget):
+            painter.drawRoundedRect(rect, radius, radius)
+    elif widget.view_mode == "continuous":
         cell_size, _spacing, step, gap_width, _label_space, margin_top, start_x, months_list = widget._get_continuous_layout()
         radius = (cell_size / 2.0) * (widget.rounding / 100.0)
         current_x = start_x
@@ -359,7 +373,18 @@ def render_to_pixmap_impl(widget, data_source=None):
     logical_today = (datetime.now() - timedelta(hours=offset)).date()
     painter.setPen(Qt.PenStyle.NoPen)
 
-    if widget.view_mode == "continuous":
+    if years_ops.is_years(widget):
+        lay = years_ops.layout(widget)
+        radius = (lay["cell"] / 2.0) * (widget.rounding / 100.0)
+        for curr_date, rect in years_ops.iter_cells(widget):
+            entry = data_source.get(curr_date.isoformat()[:10], 0)
+            count, future = entry_counts(widget, entry)
+            color = widget._resolve_cell_color(count, future, curr_date.date(), logical_today, max_past_count, max_future_count)
+            if widget._is_empty_cell_color(color):
+                continue
+            painter.setBrush(widget._brush_for_color(color))
+            painter.drawRoundedRect(rect, radius, radius)
+    elif widget.view_mode == "continuous":
         cell_size, _spacing, step, gap_width, _label_space, margin_top, start_x, months_list = widget._get_continuous_layout()
         radius = (cell_size / 2.0) * (widget.rounding / 100.0)
         current_x = start_x
@@ -420,6 +445,21 @@ def paint_event_impl(widget, event):
     if intro_t < 0.999:
         painter.setOpacity(intro_t)
 
+    # Years view scrolling inside its card: the cells stop above the legend.
+    years_clip = None
+    if years_ops.is_years(widget):
+        try:
+            lay = years_ops.layout(widget)
+            # In a card of its own height (Deep Dive) the cells never go over the legend: when
+            # they scroll, and while they move to a new place (an animation can start from
+            # rows that were scrolled under it).
+            if lay["max_scroll"] > 0 or years_ops.fits_height(widget):
+                years_clip = QRectF(0.0, 0.0, float(widget.width()), float(lay["viewport_bottom"]))
+                painter.save()
+                painter.setClipRect(years_clip)
+        except Exception:
+            years_clip = None
+
     if widget._nav_transition_active:
         t = max(0.0, min(1.0, float(widget._nav_transition_progress)))
         width = widget.width()
@@ -438,7 +478,15 @@ def paint_event_impl(widget, event):
             tt,
             include_empty_pairs=True,
         )
-        if widget._mode_transition_old_labels_pixmap or widget._mode_transition_new_labels_pixmap:
+        label_from = getattr(widget, "_years_label_from", None)
+        if label_from is not None and years_ops.is_years(widget):
+            # Years moving (fold, gap): the labels are drawn at each frame, sliding with their row.
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(get_theme_colors(widget)["text"])
+            years_ops.draw_labels(widget, painter, month_short, motion=(label_from, tt))
+            painter.restore()
+        elif widget._mode_transition_old_labels_pixmap or widget._mode_transition_new_labels_pixmap:
             painter.save()
             if widget._mode_transition_old_labels_pixmap:
                 painter.setOpacity(1.0 - tt)
@@ -465,6 +513,10 @@ def paint_event_impl(widget, event):
         if frame:
             painter.drawPixmap(0, 0, frame)
 
+    if years_clip is not None:
+        painter.restore()
+        years_ops.draw_scrollbar(widget, painter)
+
     if getattr(widget, "show_legend", False):
         from .legend import paint_legend
 
@@ -475,7 +527,15 @@ def paint_event_impl(widget, event):
         mx = widget.hover_pos.x()
         my = widget.hover_pos.y()
 
-        if widget.view_mode == "continuous":
+        if years_ops.is_years(widget):
+            hit = years_ops.hit_test(widget, mx, my)
+            if hit:
+                rect = hit[1]
+                radius = (rect.width() / 2.0) * (widget.rounding / 100.0)
+                painter.setPen(QPen(hover_outline, 2))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRoundedRect(rect, radius, radius)
+        elif widget.view_mode == "continuous":
             hit = widget._continuous_hit_test(mx, my)
             if hit:
                 _, _, col, row, block_start_x = hit

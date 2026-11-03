@@ -5,20 +5,20 @@ from datetime import datetime, timedelta
 from aqt.qt import QPoint, Qt, QWidget
 
 from ....ui import rollover_hour
-from ...chart_utils.formatting import fmt_num_trim_zeros
+from ...chart_utils.formatting import fmt_num, fmt_num_trim_zeros
 from .metrics import components, component_label, component_value
 from ...chart_utils.tooltip import (
     hide_tooltip_targets,
     hide_tooltips_on_window_deactivate,
     show_tooltip_near,
 )
+from .....i18n import num, percent_text, tr, format_date
 
 
 def show_tooltip_for_date_impl(widget, target_date, mx, my):
     """Build and display the tooltip for a given datetime."""
     date_str = target_date.isoformat()[:10]
-    months_en = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    pretty_date = f"{months_en[target_date.month-1]} {target_date.day}, {target_date.year}"
+    pretty_date = format_date(target_date)
 
     entry = widget.data.get(date_str, {})
     if not isinstance(entry, dict):
@@ -37,29 +37,29 @@ def show_tooltip_for_date_impl(widget, target_date, mx, my):
     is_today = target_date.date() == logical_today_date
 
     if is_future:
-        lines.append({"id": "reviews", "text": "Future Reviews", "value": str(future)} if future > 0 else {"id": "reviews", "text": "No reviews due", "value": ""})
+        lines.append({"id": "reviews", "text": tr("Future Reviews"), "value": str(future)} if future > 0 else {"id": "reviews", "text": tr("No reviews due"), "value": ""})
     else:
-        lines.append({"id": "reviews", "text": "Reviews", "value": str(count)})
+        lines.append({"id": "reviews", "text": tr("Reviews"), "value": str(count)})
         if is_today:
             live_pending = widget._get_live_today_pending()
             pending_val = int(live_pending) if live_pending is not None else int(future)
-            lines.append({"id": "pending", "text": "Today Pending", "value": str(pending_val)})
+            lines.append({"id": "pending", "text": tr("Today Pending"), "value": str(pending_val)})
 
     if not is_future and count > 0:
         for comp in components(getattr(widget, "metric", "reviews")):
             if comp[0] in ("reviews", "time", "retention"):
                 continue  # already listed below
             val = component_value(comp, entry)
-            shown = f"{val / 1000.0:.1f}s" if comp[0] == "avg_time" else str(int(val))
+            shown = tr("{value}s", value=num(f"{val / 1000.0:.1f}")) if comp[0] == "avg_time" else fmt_num(int(val))
             lines.append({"id": "details", "text": component_label(comp), "value": shown})
 
     if time_ms > 0:
         mins = int(time_ms / 60000)
         secs = int((time_ms % 60000) / 1000)
-        lines.append({"id": "time", "text": "Time", "value": f"{mins}m {secs}s" if mins > 0 else f"{secs}s"})
+        lines.append({"id": "time", "text": tr("Time"), "value": tr("{minutes}m {seconds}s", minutes=mins, seconds=secs) if mins > 0 else tr("{value}s", value=secs)})
 
     if count > 0:
-        lines.append({"id": "retention", "text": "Retention", "value": f"{fmt_num_trim_zeros((passed / count) * 100, 1)}%"})
+        lines.append({"id": "retention", "text": tr("Retention"), "value": percent_text(fmt_num_trim_zeros((passed / count) * 100, 1))})
 
     show_tooltip_near(
         widget,
@@ -144,6 +144,24 @@ def mouse_move_event_impl(widget, event):
     mx = widget.hover_pos.x()
     my = widget.hover_pos.y()
 
+    if widget.view_mode == "years":
+        from .years_ops import hit_test, toggle_hit
+
+        on_toggle = toggle_hit(widget, widget.hover_pos)
+        if on_toggle != bool(getattr(widget, "_years_toggle_cursor", False)):
+            widget._years_toggle_cursor = on_toggle
+            if on_toggle:
+                widget.setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                widget.unsetCursor()
+        hit = None if on_toggle else hit_test(widget, mx, my)
+        if not hit:
+            widget.tooltip_window.hide()
+        else:
+            widget._show_tooltip_for_date(hit[0], mx, my)
+        widget.update()
+        return
+
     if widget.view_mode == "continuous":
         hit = widget._continuous_hit_test(mx, my)
         if not hit:
@@ -191,9 +209,23 @@ def mouse_press_event_impl(widget, event):
         if step is not None:
             widget.toggle_legend_step(step)
             return
+        if widget.view_mode == "years":
+            from .years_ops import toggle_hit
+
+            if toggle_hit(widget, event.position()):
+                widget.toggle_years_fold()
+                return
     if widget.day_clicked and event.button() == Qt.MouseButton.LeftButton:
         mx = event.position().x()
         my = event.position().y()
+
+        if widget.view_mode == "years":
+            from .years_ops import hit_test
+
+            hit = hit_test(widget, mx, my, strict=True)
+            if hit:
+                widget.day_clicked(hit[0].isoformat()[:10])
+            return
 
         if widget.view_mode == "continuous":
             hit = widget._continuous_hit_test(mx, my)
@@ -234,6 +266,9 @@ def mouse_press_event_impl(widget, event):
 
 def leave_event_impl(widget, event):
     widget.hover_pos = None
+    if getattr(widget, "_years_toggle_cursor", False):
+        widget._years_toggle_cursor = False
+        widget.unsetCursor()
     _update_legend_cursor(widget, None)
     hide_tooltip_targets(widget, "tooltip_window")
     widget.update()

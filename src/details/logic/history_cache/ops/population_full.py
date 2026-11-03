@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ..shared import datetime, mw, timedelta
-from ..exclusion import excluded_dids, drop_total_targets
+from ..exclusion import deck_targets, excluded_dids
 
 
 def populate_full_cache(cfg, range_type, min_rev_id=None, min_card_id=None, include_heavy=True, hier_context=None):
@@ -22,12 +22,7 @@ def populate_full_cache(cfg, range_type, min_rev_id=None, min_card_id=None, incl
         hier_map = {}
         _excl = excluded_dids()
         def get_targets(did):
-            t = {did, None, "[[TOTAL]]"}
-            name = all_decks_info.get(did)
-            if name:
-                parts = name.split("::")
-                for i in range(1, len(parts)): t.add("::".join(parts[:i]))
-            return drop_total_targets(t, did, _excl)
+            return deck_targets(did, all_decks_info, _excl)
         for d in all_decks:
             for t in get_targets(d.id):
                 hier_map.setdefault(t, []).append(d.id)
@@ -40,18 +35,7 @@ def populate_full_cache(cfg, range_type, min_rev_id=None, min_card_id=None, incl
     _excluded = excluded_dids()
 
     def get_targets(did):
-        name = all_decks_info.get(did)
-        if name:
-            # The string name is the primary key for the parent parts. Do not also add the
-            # full name: the raw integer did is already included, and both together
-            # double-count the leaf deck.
-            t = {None, "[[TOTAL]]", did}
-            parts = name.split("::")
-            for i in range(1, len(parts)):
-                t.add("::".join(parts[:i]))
-            return drop_total_targets(t, did, _excluded)
-        # Fallback to integer ID for decks with no name (e.g. deleted or ID -1)
-        return drop_total_targets({did, None, "[[TOTAL]]"}, did, _excluded)
+        return deck_targets(did, all_decks_info, _excluded)
 
     def make_agg():
         return {

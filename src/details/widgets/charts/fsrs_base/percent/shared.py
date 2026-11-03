@@ -8,6 +8,7 @@ from ....chart_utils.drawing import draw_bar_rect
 from ....chart_utils.tooltip import hide_tooltip_targets, show_tooltip_text_near
 from ...common.stats.render import draw_chart_bottom_stats
 from ...common.cache_keys import theme_color_token as _theme_color_token
+from ......i18n import num
 
 
 def lerp_fsrs_percent_color(c1: QColor, c2: QColor, t: float) -> QColor:
@@ -91,7 +92,7 @@ def _draw_cached_fsrs_percent_chrome(widget, painter, *, plot_w, width, height, 
             for i in range(0, 101, 20):
                 x = margin_left + (i * plot_w / 101)
                 t_rect = QRectF(x - 15, height - margin_bottom + 5, 30, 15)
-                cp.drawText(t_rect, Qt.AlignmentFlag.AlignCenter, f"{i}%")
+                cp.drawText(t_rect, Qt.AlignmentFlag.AlignCenter, num(f"{i}%"))
             draw_chart_bottom_stats(
                 widget,
                 cp,
@@ -243,7 +244,7 @@ def draw_fsrs_percent_extras(widget, painter, plot_w, margin_left, margin_bottom
     for i in range(0, 101, 20):
         x = margin_left + (i * plot_w / 101)
         t_rect = QRectF(x - 15, h - margin_bottom + 5, 30, 15)
-        painter.drawText(t_rect, Qt.AlignmentFlag.AlignCenter, f"{i}%")
+        painter.drawText(t_rect, Qt.AlignmentFlag.AlignCenter, num(f"{i}%"))
 
     return draw_chart_bottom_stats(
         widget,

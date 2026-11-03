@@ -9,6 +9,7 @@ from ..common.discrete import (
     reset_discrete_transition_state,
     set_chart_opacity_impl,
 )
+from .....i18n import tr_n
 
 
 def normalize_data_dict_impl(widget, data_dict):
@@ -92,4 +93,4 @@ def current_values_snapshot_impl(widget):
 
 
 def get_stats_text_impl(widget):
-    return [f"Total: {fmt_num(widget.total_cards)} cards"]
+    return [tr_n("Total: {count} card", "Total: {count} cards", widget.total_cards, count=fmt_num(widget.total_cards))]

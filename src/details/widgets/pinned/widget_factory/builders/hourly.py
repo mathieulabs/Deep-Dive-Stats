@@ -10,6 +10,7 @@ from ....common import (
     create_chart_header_for_chart,
     refresh_parent_chart_header_stats,
 )
+from ......i18n import N_, upper
 
 
 
@@ -39,7 +40,7 @@ def _build_hourly(widget_def, deck_id, cache=None, parent=None, cfg=None):
         minimum_height=120,
     )
 
-    label = pinned_title(widget_def, "HOURLY BREAKDOWN")
+    label = pinned_title(widget_def, N_("Hourly Breakdown"))
     header_widget, _, _, _ = create_chart_header_for_chart(
         chart,
         config,
@@ -51,7 +52,7 @@ def _build_hourly(widget_def, deck_id, cache=None, parent=None, cfg=None):
         include_when_no_header_stats=False,
     )
 
-    return _wrap(chart, label.upper() if not header_widget else None,
+    return _wrap(chart, upper(label) if not header_widget else None,
                  header_widget=header_widget,
                  widget_id=widget_def["id"],
                  saved_w=widget_def.get("width"),

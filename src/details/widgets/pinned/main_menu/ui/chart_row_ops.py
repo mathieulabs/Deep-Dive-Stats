@@ -14,6 +14,7 @@ from aqt.qt import (
 )
 
 from ..imports import animations_enabled
+from .....animations.effect_guard import effect_nested
 from ..constants import (
     CHART_FADE_IN_MS,
     CHART_FADE_OUT_MS,
@@ -106,6 +107,22 @@ def _ensure_chart_box(manager, box_id: int, box_kind: str = "chart"):
     return entry
 
 
+def chart_column_width(manager):
+    """Width of a row column, at Anki's interface zoom like the widget widths: fixed, a
+    saved width between one and two columns crossed down to one column before the
+    charts next to it when zooming out, and that card got narrower (and shorter)."""
+    try:
+        zoom = min(3.0, max(0.5, float(manager._get_zoom_factor() or 1.0)))
+    except Exception:
+        zoom = 1.0
+    return max(1, int(round(CHART_MIN_COLUMN_WIDTH * zoom)))
+
+
+def iter_all_row_layouts(manager):
+    """(row widget, MasonryLayout) of every chart and text box."""
+    return _iter_all_row_layouts(manager)
+
+
 def _iter_all_row_layouts(manager):
     for box_kind in ("chart", "text"):
         for _box_id, entry in _iter_chart_boxes(manager, box_kind=box_kind):
@@ -131,7 +148,7 @@ def get_or_create_chart_masonry_row(manager, row_idx: int, chart_box: int = 0, b
             row_w,
             margin=0,
             spacing=CHART_SPACING,
-            min_column_width=CHART_MIN_COLUMN_WIDTH,
+            min_column_width=chart_column_width(manager),
         )
         rows.append((row_w, row_ml))
         if entry["vbox"] is not None:
@@ -233,7 +250,7 @@ def mark_skip_next_show_anim(manager, widget):
         log_swallowed()
 
 
-def fade_in_widget(manager, widget, duration=CHART_FADE_IN_MS):
+def fade_in_widget(manager, widget, duration=CHART_FADE_IN_MS, _tries=0):
     if widget is None:
         return
     try:
@@ -243,9 +260,18 @@ def fade_in_widget(manager, widget, duration=CHART_FADE_IN_MS):
             return
     except Exception:
         log_swallowed()
+    try:
+        if widget.isWindow():
+            # Its data came before it was put in the page: showing it now would open it
+            # for a moment as a window of its own. Wait until it has its place.
+            if _tries < 40:
+                QTimer.singleShot(25, lambda: fade_in_widget(manager, widget, duration, _tries + 1))
+            return
+    except RuntimeError:
+        return
 
     manager._mark_skip_next_show_anim(widget)
-    if not animations_enabled("pinned"):
+    if not animations_enabled("pinned") or effect_nested(widget):  # see effect_guard
         try:
             if widget.graphicsEffect() is not None:
                 widget.setGraphicsEffect(None)
@@ -307,7 +333,7 @@ def fade_out_widget(manager, widget, duration=CHART_FADE_OUT_MS):
         log_swallowed()
 
     manager._mark_skip_next_show_anim(widget)
-    if not animations_enabled("pinned"):
+    if not animations_enabled("pinned") or effect_nested(widget):  # see effect_guard
         try:
             if widget.graphicsEffect() is not None:
                 widget.setGraphicsEffect(None)

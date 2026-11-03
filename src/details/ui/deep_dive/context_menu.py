@@ -9,6 +9,7 @@ from ..theme.icons import get_svg_icon
 from ...widgets.pinned import WidgetRegistry
 from ...widgets.pinned.main_menu.manager import MainMenuWidgetManager
 from ...logic.logger import log_swallowed
+from ....i18n import tr, tr_name
 
 class DeepDiveContextMenu:
     def __init__(self, manager):
@@ -19,17 +20,19 @@ class DeepDiveContextMenu:
         from ...widgets.common.fullscreen import close_fullscreen, is_fullscreen
 
         if is_fullscreen(widget):
-            fs_action = QAction("Exit Fullscreen", menu)
+            fs_action = QAction(tr("Exit Fullscreen"), menu)
+            fs_action.setMenuRole(QAction.MenuRole.NoRole)  # macOS would otherwise move it into the app menu as Preferences/Quit
             fs_action.triggered.connect(lambda _=False, w=widget: close_fullscreen(w))
         else:
-            fs_action = QAction("Fullscreen", menu)
+            fs_action = QAction(tr("Fullscreen"), menu)
             fs_action.triggered.connect(lambda _=False, w=widget: self._open_fullscreen(w))
         fs_action.setIcon(get_svg_icon("maximize", size=16, context_ref=menu))
         fs_action.setEnabled(not bool(getattr(widget, "is_collapsed", False)))
         menu.addAction(fs_action)
         menu.addSeparator()
 
-        settings_action = QAction("Settings", menu)
+        settings_action = QAction(tr("Settings"), menu)
+        settings_action.setMenuRole(QAction.MenuRole.NoRole)  # macOS would otherwise move it into the app menu as Preferences/Quit
         settings_action.setIcon(get_svg_icon("settings", size=16, context_ref=menu))
         settings_action.triggered.connect(lambda: self.manager._open_dd_widget_settings(section_key, widget))
         menu.addAction(settings_action)
@@ -42,7 +45,7 @@ class DeepDiveContextMenu:
             menu.addSeparator()
 
             show_avg = self.manager._get_dd_widget_setting(section_key, "show_average", True)
-            avg_act = QAction("Show Average", menu)
+            avg_act = QAction(tr("Show Average"), menu)
             avg_act.setCheckable(True)
             avg_act.setChecked(show_avg)
             avg_act.triggered.connect(lambda checked:
@@ -50,7 +53,7 @@ class DeepDiveContextMenu:
             menu.addAction(avg_act)
 
             avg_active = self.manager._get_dd_widget_setting(section_key, "avg_on_active_days", True)
-            avg_active_act = QAction("Average on Active Days", menu)
+            avg_active_act = QAction(tr("Average on Active Days"), menu)
             avg_active_act.setCheckable(True)
             avg_active_act.setChecked(avg_active)
             avg_active_act.triggered.connect(lambda checked:
@@ -59,7 +62,7 @@ class DeepDiveContextMenu:
 
             if section_key == "retention":
                 fit = self.manager._get_dd_widget_setting(section_key, "fit_to_data", False)
-                fit_act = QAction("Within data limit", menu)
+                fit_act = QAction(tr("Within data limit"), menu)
                 fit_act.setCheckable(True)
                 fit_act.setChecked(bool(fit))
                 fit_act.triggered.connect(lambda checked:
@@ -67,15 +70,15 @@ class DeepDiveContextMenu:
                 menu.addAction(fit_act)
 
                 bars_on = self.manager._get_dd_widget_setting(section_key, "review_bars", True)
-                bars_menu = menu.addMenu("Review Bars")
-                bars_act = QAction("Show Bars", bars_menu)
+                bars_menu = menu.addMenu(tr("Review Bars"))
+                bars_act = QAction(tr("Show Bars"), bars_menu)
                 bars_act.setCheckable(True)
                 bars_act.setChecked(bool(bars_on))
                 bars_act.triggered.connect(lambda checked:
                     self.manager._update_dd_widget_setting("retention", "review_bars", checked))
                 bars_menu.addAction(bars_act)
 
-                axis_act = QAction("Show Count Axis", bars_menu)
+                axis_act = QAction(tr("Show Count Axis"), bars_menu)
                 axis_act.setCheckable(True)
                 axis_act.setChecked(bool(self.manager._get_dd_widget_setting(section_key, "review_axis", False)))
                 axis_act.setEnabled(bool(bars_on))
@@ -83,23 +86,23 @@ class DeepDiveContextMenu:
                     self.manager._update_dd_widget_setting("retention", "review_axis", checked))
                 bars_menu.addAction(axis_act)
 
-                round_act = QAction("Rounded Look", menu)
+                round_act = QAction(tr("Rounded Look"), menu)
                 round_act.setCheckable(True)
                 round_act.setChecked(bool(self.manager._get_dd_widget_setting(section_key, "rounded", True)))
-                round_act.setToolTip("Smooth lines and rounded bar tops")
+                round_act.setToolTip(tr("Smooth lines and rounded bar tops"))
                 round_act.triggered.connect(lambda checked:
                     self.manager._update_dd_widget_setting("retention", "rounded", checked))
                 menu.addAction(round_act)
 
                 current_min = int(self.manager._get_dd_widget_setting(section_key, "min_reviews", 0) or 0)
-                min_act = QAction(f"Min Reviews per Point: {current_min if current_min else 'Off'}...", menu)
+                min_act = QAction(tr("Min Reviews per Point: {value}...", value=current_min if current_min else tr("Off")), menu)
 
                 def _ask_min(_=False, current=current_min, parent=widget):
                     from ..shared.number_dialog import ask_number
 
                     value = ask_number(
-                        "Min Reviews",
-                        "Hide points with fewer reviews than this (0 = show all):",
+                        tr("Min Reviews"),
+                        tr("Hide points with fewer reviews than this (0 = show all):"),
                         current,
                         parent=parent,
                     )
@@ -111,7 +114,7 @@ class DeepDiveContextMenu:
 
             if section_key == "added":
                 is_synced = self.manager._get_dd_widget_setting("added", "sync_zoom", True)
-                sync_act = QAction("Sync with other charts", menu)
+                sync_act = QAction(tr("Sync with other charts"), menu)
                 sync_act.setCheckable(True)
                 sync_act.setChecked(is_synced)
                 sync_act.triggered.connect(lambda checked:
@@ -131,7 +134,7 @@ class DeepDiveContextMenu:
             if section_key not in avg_sections:
                 menu.addSeparator()
             show_total = self.manager._get_dd_widget_setting(section_key, "show_cumulative", True)
-            total_act = QAction("Show Right Axis", menu)
+            total_act = QAction(tr("Show Right Axis"), menu)
             total_act.setCheckable(True)
             total_act.setChecked(show_total)
             total_act.triggered.connect(lambda checked:
@@ -145,7 +148,7 @@ class DeepDiveContextMenu:
             binning_override = self.manager._get_dd_widget_setting(section_key, "binning_override", None)
             effective_binning = binning_override if binning_override is not None else global_binning
 
-            binning_act = QAction("Adaptive Binning", menu)
+            binning_act = QAction(tr("Adaptive Binning"), menu)
             binning_act.setCheckable(True)
             binning_act.setChecked(effective_binning)
             binning_act.triggered.connect(lambda checked:
@@ -155,7 +158,7 @@ class DeepDiveContextMenu:
         if section_key in ["activity", "added", "retention", "hourly", "future_due", "review_intervals", "stability", "difficulty", "retrievability"]:
             menu.addSeparator()
             show_bottom_stats = self.manager.addon_config.config.get(Config.DEEP_DIVE_SHOW_BOTTOM_STATS, False)
-            bottom_stats_act = QAction("Show Bottom Stats (All Charts)", menu)
+            bottom_stats_act = QAction(tr("Show Bottom Stats (All Charts)"), menu)
             bottom_stats_act.setCheckable(True)
             bottom_stats_act.setChecked(show_bottom_stats)
             bottom_stats_act.triggered.connect(lambda checked:
@@ -163,7 +166,7 @@ class DeepDiveContextMenu:
             menu.addAction(bottom_stats_act)
 
             show_all_stats = self.manager.addon_config.config.get(Config.DEEP_DIVE_SHOW_STATS, True)
-            all_stats_act = QAction("Show Stats (All Charts)", menu)
+            all_stats_act = QAction(tr("Show Stats (All Charts)"), menu)
             all_stats_act.setCheckable(True)
             all_stats_act.setChecked(show_all_stats)
             all_stats_act.triggered.connect(lambda checked:
@@ -172,35 +175,17 @@ class DeepDiveContextMenu:
 
         menu.addSeparator()
 
-        _type_map = {
-            "activity": "activity",
-            "retention": "retention",
-            "added": "added",
-            "distribution": "distribution",
-            "card_counts": "card_counts",
-            "heatmap": "heatmap",
-            "hourly": "hourly",
-            "future_due": "future_due",
-            "review_intervals": "review_intervals",
-            "stability": "stability",
-            "difficulty": "difficulty",
-            "retrievability": "retrievability",
-        }
-        stype = _type_map.get(section_key)
-
-        if stype:
-            ctx_span = int(self.manager.last_history_range)
-            label_text = section_key.replace("_", " ").title()
-
-            act = QAction(f"Pin {label_text} to main menu", menu)
+        pin = self.pin_info(section_key)
+        if pin is not None:
+            act = QAction(tr("Pin {name} to main menu", name=tr_name(pin[1])), menu)
             act.setIcon(get_svg_icon("push-pin", size=16, context_ref=menu))
-            act.triggered.connect(lambda: self._pin_section(stype, label_text, None, ctx_span))
+            act.triggered.connect(lambda: self.pin_section(section_key))
             menu.addAction(act)
 
         if section_key == "heatmap":
             menu.addSeparator()
             multi_hue = self.manager.addon_config.config.get(Config.HEATMAP_MULTI_HUE_INTENSITY, False)
-            multi_hue_act = QAction("Multicolor Intensity", menu)
+            multi_hue_act = QAction(tr("Multicolor Intensity"), menu)
             multi_hue_act.setCheckable(True)
             multi_hue_act.setChecked(multi_hue)
 
@@ -237,10 +222,25 @@ class DeepDiveContextMenu:
             add_heatmap_display_actions(menu, self.manager.addon_config.config, on_display_changed)
 
         has_h = self.manager._get_dd_widget_setting(section_key, "height") is not None
+        if not has_h and getattr(self.manager, "grid_mode", False):
+            # A saved height sizes its whole row, and Reset Size resets the whole row:
+            # offer it on every card of that row, not just the one that was resized.
+            try:
+                target = (getattr(self.manager, "section_wrappers", {}) or {}).get(section_key)
+                for row in self.manager._get_grid_rows():
+                    if target in row:
+                        has_h = any(
+                            getattr(w, "state_key", None)
+                            and self.manager._get_dd_widget_setting(w.state_key, "height") is not None
+                            for w in row
+                        )
+                        break
+            except Exception:
+                log_swallowed()
         has_span = int(self.manager._get_dd_widget_setting(section_key, "col_span", 1)) > 1
         if has_h or has_span:
             menu.addSeparator()
-            reset_act = QAction("Reset Size", menu)
+            reset_act = QAction(tr("Reset Size"), menu)
             reset_act.setIcon(get_svg_icon("rotate-ccw", size=16, context_ref=menu))
             reset_act.triggered.connect(lambda: self.manager._reset_dd_widget_size(section_key))
             menu.addAction(reset_act)
@@ -250,7 +250,7 @@ class DeepDiveContextMenu:
         zoomed = find_zoomed_chart(widget)
         if zoomed is not None:
             menu.addSeparator()
-            zoom_act = QAction("Set zoom as time span", menu)
+            zoom_act = QAction(tr("Set zoom as time span"), menu)
             zoom_act.setIcon(get_svg_icon("calendar", size=16, context_ref=menu))
 
             def _apply_zoom_span(_=False, chart=zoomed):
@@ -284,6 +284,25 @@ class DeepDiveContextMenu:
                     log_swallowed()
 
         open_fullscreen(widget, on_closed=_on_closed)
+
+    _PINNABLE = (
+        "activity", "retention", "added", "distribution", "card_counts", "heatmap", "hourly",
+        "future_due", "review_intervals", "stability", "difficulty", "retrievability",
+    )
+
+    def pin_info(self, section_key):
+        """(widget type, label) of the chart a section shows, or None if it cannot be pinned."""
+        if section_key not in self._PINNABLE:
+            return None
+        from ..config.widgets.label_defaults import DEFAULT_LABELS
+
+        return section_key, DEFAULT_LABELS.get(section_key, section_key.replace("_", " ").title())
+
+    def pin_section(self, section_key):
+        """Pin the section's chart to the main screen, on the period shown."""
+        info = self.pin_info(section_key)
+        if info is not None:
+            self._pin_section(info[0], info[1], None, int(self.manager.last_history_range))
 
     def _pin_section(self, stype, slabel, did, span):
         extras = []

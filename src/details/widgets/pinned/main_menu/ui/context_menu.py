@@ -18,10 +18,20 @@ from ..block_order import (
     stats_section_key,
     texts_section_key,
 )
-from ... import DeckMultiSelectDialog, PinnedViewSelectorDialog, WidgetRegistry
-from .....ui import StyledMenu, get_svg_icon
+from ... import PinnedViewSelectorDialog, WidgetRegistry
+from .....ui import get_svg_icon
 from ......qss import set_qss
 from .....logic.logger import log_swallowed
+from ......i18n import tr
+
+# Edit layout (move buttons on every widget) is off: dragging now does all it did
+# (another line, a new line, a new box, a spot on a line). True brings the menu entry back.
+SHOW_EDIT_LAYOUT = False
+# Same for the Position submenu (its moves are done by dragging).
+SHOW_POSITION_MENU = False
+# "Move this box up / down" in the menu: off, a whole box moves by its handle (shown in the
+# guided tour). True brings them back.
+SHOW_BOX_MOVE_ENTRIES = False
 
 
 class PinnedContextMenu:
@@ -81,60 +91,6 @@ class PinnedContextMenu:
             if d.get("id") == wid:
                 return d
         return None
-
-    def _add_text_label_widget(self, parent_widget):
-        """Open a themed dialog to create a new text_label pinned widget."""
-        from aqt.qt import QDialog, QVBoxLayout, QHBoxLayout, QPushButton
-        from aqt.theme import theme_manager
-        from .....ui.theme import get_settings_dialog_style
-        from .....ui.config.widgets.text_label_editor import TextLabelEditor
-        from .....ui.config.shared import clamp_dialog_width
-
-        dlg = QDialog(parent_widget)
-        dlg.setWindowTitle("Add Text Widget")
-        dlg.setMinimumWidth(500)
-
-        cfg = {}
-        try:
-            cfg = (self.manager._config_manager.config or {}) if getattr(self.manager, "_config_manager", None) else {}
-            from ....chart_utils.theme import ThemeContext, get_context_theme_config
-
-            cfg = get_context_theme_config(ThemeContext.PINNED, cfg)
-            set_qss(dlg, get_settings_dialog_style(bool(theme_manager.get_night_mode()), cfg))
-        except Exception:
-            log_swallowed()
-
-        layout = QVBoxLayout(dlg)
-        layout.setSpacing(12)
-        layout.setContentsMargins(20, 20, 20, 16)
-
-        tl_editor = TextLabelEditor(dlg, theme_config=cfg)
-        layout.addWidget(tl_editor)
-
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        cancel_btn = QPushButton("Cancel")
-        ok_btn = QPushButton("Add")
-        ok_btn.setDefault(True)
-        cancel_btn.clicked.connect(dlg.reject)
-        ok_btn.clicked.connect(dlg.accept)
-        btn_row.addWidget(cancel_btn)
-        btn_row.addWidget(ok_btn)
-        layout.addLayout(btn_row)
-
-        from aqt.qt import QCoreApplication
-        QCoreApplication.processEvents()
-        wanted_w = max(dlg.minimumWidth(), dlg.sizeHint().width() + 24)
-        dlg.resize(clamp_dialog_width(wanted_w, min_width=500), dlg.sizeHint().height())
-
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        template = tl_editor.get_template().strip()
-        WidgetRegistry.add("text_label", "Text Widget", template=template)
-        self.manager._last_state = None
-        self.manager._last_widget_set = None
-        self.manager.refresh()
 
     def _open_details_for_widget(self, widget_def):
         """Open the Deep Dive on the deck(s) and period this widget shows."""
@@ -213,15 +169,10 @@ class PinnedContextMenu:
                 return
             ConfigManager(mw).set_value(key, value)
 
-        menu = StyledMenu(widget)
+        from .card_chips import themed_menu
+
+        menu = themed_menu(widget, self.manager)
         global_pos = fixed_global_pos if fixed_global_pos is not None else widget.mapToGlobal(pos)
-        menu.setProperty("deepdivestats_theme_context", "pinned")
-        menu.setProperty("deepdivestats_ignore_forced_dark_theme", True)
-        menu.setProperty("deepdivestats_config_override", dict(cfg))
-        try:
-            menu._apply_theme_style()
-        except Exception:
-            log_swallowed()
 
         def _refresh_and_reopen_menu(reopen_position=False):
             self.manager._last_state = None
@@ -252,90 +203,62 @@ class PinnedContextMenu:
 
         position_menu = None
 
-        details_action = QAction("Open Details Window", menu)
+        details_action = QAction(tr("Open Details Window"), menu)
         details_action.setIcon(get_svg_icon("external-link", size=16, context_ref=menu))
-        details_action.triggered.connect(lambda _=False, wd=widget_def: self._open_details_for_widget(wd))
+        # Open once the menu has closed: a window shown from inside the menu's loop stays white
+        # until the loop ends.
+        details_action.triggered.connect(
+            lambda _=False, wd=widget_def: QTimer.singleShot(0, lambda: self._open_details_for_widget(wd))
+        )
         menu.addAction(details_action)
 
         if widget_def.get("type") not in ("stat_card", "text_label"):
             from ....common.fullscreen import close_fullscreen, is_fullscreen
 
             if is_fullscreen(widget):
-                fs_action = QAction("Exit Fullscreen", menu)
+                fs_action = QAction(tr("Exit Fullscreen"), menu)
+                fs_action.setMenuRole(QAction.MenuRole.NoRole)  # macOS would otherwise move it into the app menu as Preferences/Quit
                 fs_action.triggered.connect(lambda _=False, w=widget: close_fullscreen(w))
             else:
-                fs_action = QAction("Fullscreen", menu)
+                fs_action = QAction(tr("Fullscreen"), menu)
                 fs_action.triggered.connect(lambda _=False, w=widget: self._open_fullscreen(w))
             fs_action.setIcon(get_svg_icon("maximize", size=16, context_ref=menu))
             menu.addAction(fs_action)
 
-        from .edit_mode import is_edit_mode, set_edit_mode
+        if SHOW_EDIT_LAYOUT:
+            from .edit_mode import is_edit_mode, set_edit_mode
 
-        _edit_act = QAction("Edit layout", menu)
-        _edit_act.setCheckable(True)
-        _edit_act.setChecked(is_edit_mode(self.manager))
-        _edit_act.triggered.connect(lambda checked: set_edit_mode(self.manager, bool(checked)))
-        menu.addAction(_edit_act)
+            _edit_act = QAction(tr("Edit layout"), menu)
+            _edit_act.setCheckable(True)
+            _edit_act.setChecked(is_edit_mode(self.manager))
+            _edit_act.triggered.connect(lambda checked: set_edit_mode(self.manager, bool(checked)))
+            menu.addAction(_edit_act)
         from .add_widget_menu import add_widget_actions
 
         add_widget_actions(
             menu,
             self.manager,
-            lambda: self._add_text_label_widget(widget),
             icon_fn=lambda name: get_svg_icon(name, size=16, context_ref=menu),
+            after_def=widget_def if isinstance(widget_def, dict) else None,
         )
 
         menu.addSeparator()
-        settings_action = QAction("Settings", menu)
-        settings_action.setIcon(get_svg_icon("settings", size=16, context_ref=menu))
+        # The text widget's dialog is mostly its text (plus its box settings): say so.
+        is_text = widget_def.get("type") == "text_label"
+        settings_action = QAction(tr("Edit Text and Settings...") if is_text else tr("Settings"), menu)
+        settings_action.setMenuRole(QAction.MenuRole.NoRole)  # macOS would otherwise move it into the app menu as Preferences/Quit
+        settings_action.setIcon(get_svg_icon("file-text" if is_text else "settings", size=16, context_ref=menu))
         settings_action.triggered.connect(lambda: self.manager._open_widget_settings(widget, widget_def))
         menu.addAction(settings_action)
 
         menu.addSeparator()
 
-        no_span_types = [
-            "card_counts", "heatmap", "future_due", "review_intervals",
-            "stability", "difficulty", "retrievability"
-        ]
-        is_streak = widget_def.get("stat_key") in [Config.DASH_SHOW_STREAK, Config.DEEP_DIVE_SHOW_STREAK]
+        from .card_chips import choose_decks, fill_span_menu, has_time_span
 
-        if widget_def.get("type") not in no_span_types and not is_streak:
-            span_menu = menu.addMenu("Time Span")
+        if has_time_span(widget_def):
+            span_menu = menu.addMenu(tr("Time Span"))
             span_menu.setIcon(get_svg_icon("calendar", size=16, context_ref=menu))
-
-            from .....ui.shared.span_menu import populate_span_menu
-
-            current_span = widget_def.get("time_span", Period.TOTAL)
-            current_days = widget_def.get("custom_days", None)
-
-            def on_update_span(v, d=None):
-                updates = {"time_span": v}
-                if d is not None:
-                    updates["custom_days"] = d
-
-                if hasattr(self.manager, "_update_span_bulk"):
-                    self.manager._update_span_bulk(widget_def["id"], updates)
-                else:
-                    self.manager._update_span(widget_def["id"], v)
-
-            from .....ui.shared.zoom_span import create_span_from_zoom, find_zoomed_chart
-
-            zoomed = find_zoomed_chart(widget)
-
-            def on_zoom_span(chart=zoomed):
-                code = create_span_from_zoom(chart, self.manager._config_manager, parent=widget)
-                if code is not None:
-                    self.manager._update_span_bulk(widget_def["id"], {"time_span": code})
-
-            populate_span_menu(
-                span_menu,
-                current_span,
-                current_days,
-                on_update_span,
-                self.manager._config_manager,
-                on_manage_callback=self.manager._open_time_span_settings,
-                on_zoom_callback=on_zoom_span if zoomed is not None else None,
-            )
+            fill_span_menu(span_menu, self.manager, widget, widget_def)
 
         try:
             from ... import zoom_link
@@ -343,46 +266,28 @@ class PinnedContextMenu:
             if zoom_link.has_charts(widget):
                 linked_n, off_n = zoom_link.counts(self.manager)
                 mine = zoom_link.is_linked(widget)
-                z_act = QAction("Disconnect zoom" if mine else "Reconnect zoom", menu)
+                z_act = QAction(tr("Disconnect zoom") if mine else tr("Reconnect zoom"), menu)
                 z_act.setIcon(get_svg_icon("zoom-in", size=16, context_ref=menu))
                 z_act.triggered.connect(lambda _=False, w=widget, v=not mine: zoom_link.set_linked(w, v))
                 menu.addAction(z_act)
                 if linked_n + off_n >= 2:
                     if linked_n >= 2 or (linked_n == 1 and not mine):
-                        a = QAction("Disconnect all charts' zoom", menu)
+                        a = QAction(tr("Disconnect all charts' zoom"), menu)
                         a.triggered.connect(lambda _=False: zoom_link.set_all_linked(self.manager, False))
                         menu.addAction(a)
                     if off_n:
-                        a = QAction("Reconnect all charts' zoom", menu)
+                        a = QAction(tr("Reconnect all charts' zoom"), menu)
                         a.triggered.connect(lambda _=False: zoom_link.set_all_linked(self.manager, True))
                         menu.addAction(a)
         except Exception:
             log_swallowed()
 
-        deck_act = QAction("Select Decks...", menu)
+        deck_act = QAction(tr("Select Decks..."), menu)
         deck_act.setIcon(get_svg_icon("layers", size=16, context_ref=menu))
-
-        def on_deck_multi_select():
-            current_deck_ids = widget_def.get("deck_ids", None)
-            if current_deck_ids is None and "deck_id" in widget_def:
-                old_did = widget_def["deck_id"]
-                if old_did is None or old_did == 0 or str(old_did) == "0":
-                    current_deck_ids = None  # all/adaptive: default all checked
-                else:
-                    current_deck_ids = [int(old_did)]
-            dialog = DeckMultiSelectDialog(current_deck_ids, parent=widget)
-            if dialog.exec():
-                new_deck_ids = dialog.selected_deck_ids
-                WidgetRegistry.update_settings_bulk(widget_def["id"], {
-                    "deck_ids": new_deck_ids,
-                    "deck_id": None,
-                })
-                self.manager.refresh()
-
-        deck_act.triggered.connect(on_deck_multi_select)
+        deck_act.triggered.connect(lambda _=False: choose_decks(self.manager, widget, widget_def))
         menu.addAction(deck_act)
 
-        view_act = QAction("View...", menu)
+        view_act = QAction(tr("View..."), menu)
         view_act.setIcon(get_svg_icon("eye", size=16, context_ref=menu))
 
         def on_view_select():
@@ -404,7 +309,7 @@ class PinnedContextMenu:
 
             if wtype in avg_sections:
                 show_avg = widget_def.get("show_average", True)
-                avg_act = QAction("Show Average", menu)
+                avg_act = QAction(tr("Show Average"), menu)
                 avg_act.setCheckable(True)
                 avg_act.setChecked(show_avg)
                 avg_act.triggered.connect(lambda checked, wid=widget_def["id"]:
@@ -412,7 +317,7 @@ class PinnedContextMenu:
                 menu.addAction(avg_act)
 
                 show_active = widget_def.get("avg_on_active_days", True)
-                active_act = QAction("Average on active days", menu)
+                active_act = QAction(tr("Average on active days"), menu)
                 active_act.setCheckable(True)
                 active_act.setChecked(show_active)
                 active_act.triggered.connect(lambda checked, wid=widget_def["id"]:
@@ -421,22 +326,22 @@ class PinnedContextMenu:
 
                 if wtype == "retention":
                     fit = bool(widget_def.get("fit_to_data", False))
-                    fit_act = QAction("Within data limit", menu)
+                    fit_act = QAction(tr("Within data limit"), menu)
                     fit_act.setCheckable(True)
                     fit_act.setChecked(fit)
                     fit_act.triggered.connect(lambda checked, wid=widget_def["id"]:
                         self.manager._update_setting(wid, "fit_to_data", checked))
                     menu.addAction(fit_act)
 
-                    bars_menu = menu.addMenu("Review Bars")
-                    bars_act = QAction("Show Bars", bars_menu)
+                    bars_menu = menu.addMenu(tr("Review Bars"))
+                    bars_act = QAction(tr("Show Bars"), bars_menu)
                     bars_act.setCheckable(True)
                     bars_act.setChecked(bool(widget_def.get("review_bars", True)))
                     bars_act.triggered.connect(lambda checked, wid=widget_def["id"]:
                         self.manager._update_setting(wid, "review_bars", checked))
                     bars_menu.addAction(bars_act)
 
-                    axis_act = QAction("Show Count Axis", bars_menu)
+                    axis_act = QAction(tr("Show Count Axis"), bars_menu)
                     axis_act.setCheckable(True)
                     axis_act.setChecked(bool(widget_def.get("review_axis", False)))
                     axis_act.setEnabled(bool(widget_def.get("review_bars", True)))
@@ -444,23 +349,23 @@ class PinnedContextMenu:
                         self.manager._update_setting(wid, "review_axis", checked))
                     bars_menu.addAction(axis_act)
 
-                    round_act = QAction("Rounded Look", menu)
+                    round_act = QAction(tr("Rounded Look"), menu)
                     round_act.setCheckable(True)
                     round_act.setChecked(bool(widget_def.get("rounded", True)))
-                    round_act.setToolTip("Smooth lines and rounded bar tops")
+                    round_act.setToolTip(tr("Smooth lines and rounded bar tops"))
                     round_act.triggered.connect(lambda checked, wid=widget_def["id"]:
                         self.manager._update_setting(wid, "rounded", checked))
                     menu.addAction(round_act)
 
                     current_min = int(widget_def.get("min_reviews", 0) or 0)
-                    min_act = QAction(f"Min Reviews per Point: {current_min if current_min else 'Off'}...", menu)
+                    min_act = QAction(tr("Min Reviews per Point: {value}...", value=current_min if current_min else tr("Off")), menu)
 
                     def _ask_min(_=False, current=current_min, wid=widget_def["id"], parent=widget):
                         from .....ui.shared.number_dialog import ask_number
 
                         value = ask_number(
-                            "Min Reviews",
-                            "Hide points with fewer reviews than this (0 = show all):",
+                            tr("Min Reviews"),
+                            tr("Hide points with fewer reviews than this (0 = show all):"),
                             current,
                             parent=parent,
                         )
@@ -483,7 +388,7 @@ class PinnedContextMenu:
 
             if wtype in cumulative_sections:
                 show_total = widget_def.get("show_cumulative", True)
-                total_act = QAction("Show Total (Cumulative)", menu)
+                total_act = QAction(tr("Show Total (Cumulative)"), menu)
                 total_act.setCheckable(True)
                 total_act.setChecked(show_total)
                 total_act.triggered.connect(lambda checked, wid=widget_def["id"]:
@@ -494,7 +399,7 @@ class PinnedContextMenu:
             menu.addSeparator()
             multi_hue = cfg.get(Config.HEATMAP_MULTI_HUE_INTENSITY, False)
 
-            multi_hue_act = QAction("Multicolor Intensity", menu)
+            multi_hue_act = QAction(tr("Multicolor Intensity"), menu)
             multi_hue_act.setCheckable(True)
             multi_hue_act.setChecked(multi_hue)
 
@@ -524,14 +429,14 @@ class PinnedContextMenu:
         if wtype in wtype_stats:
             menu.addSeparator()
             global_show_bottom_stats = self.manager._config_manager.config.get(Config.DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS, False)
-            bottom_stats_act = QAction("Show Bottom Stats (Global)", menu)
+            bottom_stats_act = QAction(tr("Show Bottom Stats (Global)"), menu)
             bottom_stats_act.setCheckable(True)
             bottom_stats_act.setChecked(global_show_bottom_stats)
             bottom_stats_act.triggered.connect(self.manager._toggle_global_bottom_stats)
             menu.addAction(bottom_stats_act)
 
             global_show_all_stats = self.manager._config_manager.config.get(Config.DEEP_DIVE_PINNED_SHOW_STATS, True)
-            all_stats_act = QAction("Show Stats (Global)", menu)
+            all_stats_act = QAction(tr("Show Stats (Global)"), menu)
             all_stats_act.setCheckable(True)
             all_stats_act.setChecked(global_show_all_stats)
             all_stats_act.triggered.connect(self.manager._toggle_global_show_stats)
@@ -546,7 +451,7 @@ class PinnedContextMenu:
             binning_override = widget_def.get("binning_override", None)
             effective_binning = binning_override if binning_override is not None else global_binning
 
-            binning_act = QAction("Adaptive Binning", menu)
+            binning_act = QAction(tr("Adaptive Binning"), menu)
             binning_act.setCheckable(True)
             binning_act.setChecked(effective_binning)
             binning_act.triggered.connect(lambda checked, wid=widget_def["id"]:
@@ -556,7 +461,14 @@ class PinnedContextMenu:
         # Row break option, only for chart widgets (stat cards expose it through StatCardsContainer's own context menu).
         _wtype = widget_def.get("type")
         menu.addSeparator()
-        position_menu = menu.addMenu("Position")
+        if SHOW_POSITION_MENU:
+            position_menu = menu.addMenu(tr("Position"))
+        else:
+            # Lines, boxes and shifts are done by dragging now (and a whole box by its
+            # handle): the submenu is built but not shown. Moving a box up / down stays
+            # in the menu itself, below.
+            from aqt.qt import QMenu
+            position_menu = QMenu(menu)
 
         def _do_down(_=None, wid=widget_def["id"]):
             cur = self._get_widget_def_by_id(wid) or {}
@@ -615,10 +527,10 @@ class PinnedContextMenu:
                 log_swallowed()
             _refresh_and_reopen_menu(reopen_position=True)
 
-        self._add_persistent_action(position_menu, "\u2193 Move to next line", _do_down)
-        self._add_persistent_action(position_menu, "\u2191 Move up a line", _do_up)
-        self._add_persistent_action(position_menu, "\u2192 Shift right", _do_shift_right)
-        self._add_persistent_action(position_menu, "\u2190 Shift left", _do_shift_left)
+        self._add_persistent_action(position_menu, '↓ ' + tr('Move to next line'), _do_down)
+        self._add_persistent_action(position_menu, '↑ ' + tr('Move up a line'), _do_up)
+        self._add_persistent_action(position_menu, '→ ' + tr('Shift right'), _do_shift_right)
+        self._add_persistent_action(position_menu, '← ' + tr('Shift left'), _do_shift_left)
 
         _cur_def = self._get_widget_def_by_id(widget_def["id"]) or widget_def
         _cur_row = int(_cur_def.get("row_num", 0) or 0)
@@ -634,7 +546,7 @@ class PinnedContextMenu:
                 except Exception:
                     log_swallowed()
                 _refresh_and_reopen_menu(reopen_position=True)
-            self._add_persistent_action(position_menu, "\u21ba Reset line/shift position", _do_reset_position)
+            self._add_persistent_action(position_menu, '↺ ' + tr('Reset line/shift position'), _do_reset_position)
 
         position_menu.addSeparator()
 
@@ -717,8 +629,8 @@ class PinnedContextMenu:
                 _write_config_value(Config.PINNED_BLOCK_ORDER, order)
                 _refresh_after_box_move()
 
-            self._add_persistent_action(position_menu, "\u2193 Move to next box/section", _do_box_down)
-            self._add_persistent_action(position_menu, "\u2191 Move to previous box/section", _do_box_up)
+            self._add_persistent_action(position_menu, '↓ ' + tr('Move to next box/section'), _do_box_down)
+            self._add_persistent_action(position_menu, '↑ ' + tr('Move to previous box/section'), _do_box_up)
 
             _cur_box = _stat_box_num(self._get_widget_def_by_id(widget_def["id"]) or widget_def)
             if _cur_box != 0:
@@ -726,7 +638,7 @@ class PinnedContextMenu:
                     WidgetRegistry.update_setting(wid, "stat_box", None)
                     _refresh_after_box_move()
 
-                self._add_persistent_action(position_menu, "\u21ba Return to main stats box", _do_box_reset)
+                self._add_persistent_action(position_menu, '↺ ' + tr('Return to main stats box'), _do_box_reset)
         else:
             def _chart_box_num(defn):
                 try:
@@ -760,7 +672,7 @@ class PinnedContextMenu:
             current_section_key_fn = texts_section_key if is_text_widget else charts_section_key
             current_box_num = _text_box_num if is_text_widget else _chart_box_num
             next_box_id = _next_text_box_id if is_text_widget else _next_chart_box_id
-            main_box_label = "main text box" if is_text_widget else "main charts box"
+            main_box_label = tr("main text box") if is_text_widget else tr("main charts box")
 
             def _write_current_box(wid, target_box):
                 if is_text_widget:
@@ -833,8 +745,8 @@ class PinnedContextMenu:
                 _write_config_value(Config.PINNED_BLOCK_ORDER, order)
                 _refresh_after_chart_box_move()
 
-            self._add_persistent_action(position_menu, "\u2193 Move to next box/section", _do_chart_box_down)
-            self._add_persistent_action(position_menu, "\u2191 Move to previous box/section", _do_chart_box_up)
+            self._add_persistent_action(position_menu, '↓ ' + tr('Move to next box/section'), _do_chart_box_down)
+            self._add_persistent_action(position_menu, '↑ ' + tr('Move to previous box/section'), _do_chart_box_up)
 
             _cur_box = current_box_num(self._get_widget_def_by_id(widget_def["id"]) or widget_def)
             if _cur_box != 0:
@@ -842,8 +754,9 @@ class PinnedContextMenu:
                     _write_current_box(wid, 0)
                     _refresh_after_chart_box_move()
 
-                self._add_persistent_action(position_menu, f"\u21ba Return to {main_box_label}", _do_chart_box_reset)
+                self._add_persistent_action(position_menu, "\u21ba " + tr("Return to {box}", box=main_box_label), _do_chart_box_reset)
 
+        block_actions = []
         all_defs_for_blocks = WidgetRegistry.get_all()
         stat_boxes, chart_boxes, text_boxes = _collect_boxes_from_defs(all_defs_for_blocks)
 
@@ -868,7 +781,12 @@ class PinnedContextMenu:
 
                 def _persist_block_order(new_working_order):
                     _write_config_value(Config.PINNED_BLOCK_ORDER, list(new_working_order))
-                    _refresh_and_reopen_menu(reopen_position=True)
+                    if SHOW_POSITION_MENU:
+                        _refresh_and_reopen_menu(reopen_position=True)
+                        return
+                    self.manager._last_state = None
+                    self.manager._last_widget_set = None
+                    self.manager.refresh(clear_cache=False)
 
                 def _load_working_order():
                     live_cfg = (self.manager._config_manager.config or {})
@@ -892,7 +810,10 @@ class PinnedContextMenu:
                         updated[idx - 1], updated[idx] = updated[idx], updated[idx - 1]
                         _persist_block_order(updated)
 
-                    self._add_persistent_action(position_menu, f"\u2191 Move {current_label} up", _move_block_up)
+                    if SHOW_POSITION_MENU:
+                        self._add_persistent_action(position_menu, "\u2191 " + tr("Move {section} up", section=current_label), _move_block_up)
+                    else:
+                        block_actions.append(("\u2191 " + tr("Move {section} up", section=current_label), _move_block_up))
 
                 if current_index < len(working_order) - 1:
                     def _move_block_down(_=None):
@@ -905,7 +826,10 @@ class PinnedContextMenu:
                         updated[idx + 1], updated[idx] = updated[idx], updated[idx + 1]
                         _persist_block_order(updated)
 
-                    self._add_persistent_action(position_menu, f"\u2193 Move {current_label} down", _move_block_down)
+                    if SHOW_POSITION_MENU:
+                        self._add_persistent_action(position_menu, "\u2193 " + tr("Move {section} down", section=current_label), _move_block_down)
+                    else:
+                        block_actions.append(("\u2193 " + tr("Move {section} down", section=current_label), _move_block_down))
 
                 default_order = normalize_block_order(
                     None,
@@ -918,10 +842,14 @@ class PinnedContextMenu:
                         _write_config_value(Config.PINNED_BLOCK_ORDER, default_order)
                         _refresh_and_reopen_menu(reopen_position=True)
 
-                    self._add_persistent_action(position_menu, "\u21ba Reset section order", _reset_block_order)
+                    self._add_persistent_action(position_menu, '↺ ' + tr('Reset section order'), _reset_block_order)
 
+        for label, fn in (block_actions if SHOW_BOX_MOVE_ENTRIES else []):
+            act = QAction(label, menu)
+            act.triggered.connect(lambda _=False, f=fn: f())
+            menu.addAction(act)
         menu.addSeparator()
-        remove_action = QAction("Remove from main menu", menu)
+        remove_action = QAction(tr("Remove from main menu"), menu)
         remove_action.setIcon(get_svg_icon("trash-2", size=14, context_ref=menu))
         remove_action.triggered.connect(lambda: self.manager._unpin(widget_def["id"]))
         menu.addAction(remove_action)
@@ -929,7 +857,7 @@ class PinnedContextMenu:
         has_size = widget_def.get("width") or widget_def.get("height")
         if has_size:
             menu.addSeparator()
-            reset_size_act = QAction("Reset Size", menu)
+            reset_size_act = QAction(tr("Reset Size"), menu)
             reset_size_act.setIcon(get_svg_icon("maximize", size=16, context_ref=menu))
             reset_size_act.triggered.connect(lambda: self.manager._reset_widget_size(widget_def["id"]))
             menu.addAction(reset_size_act)

@@ -2,8 +2,9 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Centered "No data" label drawn over a chart that has nothing to show."""
 from aqt.qt import QEvent, QLabel, QObject, Qt
+from ....i18n import N_, tr_name
 
-NO_DATA_TEXT = "No data for this graph"
+NO_DATA_TEXT = N_("No data for this graph")
 
 
 class _FillParent(QObject):
@@ -32,7 +33,7 @@ def set_no_data(body, empty, text=NO_DATA_TEXT, style_label=None):
             lbl.hide()
         return
     if lbl is None:
-        lbl = QLabel(text, body)
+        lbl = QLabel(tr_name(text), body)
         lbl.setProperty("deepdivestats_theme_role", "empty_label")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)

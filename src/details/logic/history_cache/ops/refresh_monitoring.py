@@ -451,17 +451,11 @@ def get_hierarchy_context(cache):
 
     hier_map = {}
 
-    from ..exclusion import excluded_dids, drop_total_targets
+    from ..exclusion import deck_targets, excluded_dids
     _excl = excluded_dids()
 
     def get_targets(did):
-        t = {did, None, "[[TOTAL]]"}
-        name = all_decks_info.get(did)
-        if name:
-            parts = name.split("::")
-            for i in range(1, len(parts)):
-                t.add("::".join(parts[:i]))
-        return drop_total_targets(t, did, _excl)
+        return deck_targets(did, all_decks_info, _excl)
 
     for d in all_decks:
         for t in get_targets(d.id):

@@ -17,6 +17,7 @@ from ..common.discrete import (
     set_chart_opacity_impl,
     set_cumulative_mode_impl,
 )
+from .....i18n import tr_n
 
 
 def invalidate_data_caches_impl(widget):
@@ -133,13 +134,26 @@ def update_data_impl(widget, new_data, adaptive_binning=None, transition_mode=No
 
 
 def get_tooltip_text_impl(widget, idx, points_count):
+    text = _bin_tooltip_line(widget, idx, points_count)
+    if getattr(widget, "cumulative_visible", True):
+        # The running total the cumulative curve shows at this bar.
+        first, _ = widget._day_range(0, points_count)
+        _day, next_day = widget._day_range(idx, points_count)
+        running = sum(widget.filtered_dist.get(d, 0) for d in range(first, next_day))
+        text += "\n" + tr_n("Total: {count} card", "Total: {count} cards", running, count=fmt_num(running))
+    return text
+
+
+def _bin_tooltip_line(widget, idx, points_count):
     day, next_day = widget._day_range(idx, points_count)
     bucket_sum = 0
     for d in range(day, next_day):
         bucket_sum += widget.filtered_dist.get(d, 0)
     if next_day - day > 1:
-        return f"Interval {day}-{next_day-1} days: {fmt_num(bucket_sum)} cards"
-    return f"Interval {day} days: {fmt_num(bucket_sum)} cards"
+        return tr_n("Interval {days} days: {count} card", "Interval {days} days: {count} cards", bucket_sum,
+                    days=f"{day}-{next_day - 1}", count=fmt_num(bucket_sum))
+    return tr_n("Interval {days} days: {count} card", "Interval {days} days: {count} cards", bucket_sum,
+                days=day, count=fmt_num(bucket_sum))
 
 
 def compute_stats_impl(widget):
@@ -161,4 +175,4 @@ def compute_stats_impl(widget):
 
 
 def get_stats_text_impl(widget):
-    return [f"Median interval: {widget.stats_median} days"]
+    return [tr_n("Median interval: {n} day", "Median interval: {n} days", widget.stats_median)]

@@ -26,6 +26,7 @@ from aqt.qt import (
 from aqt.theme import theme_manager
 from aqt.utils import showInfo, showCritical
 from ..logger import log_swallowed
+from ....i18n import tr, deck_title, format_date
 # Export layout constants (all in virtual pixels, before 2x scale)
 _SCALE = 2.0
 _PAD = 32
@@ -85,16 +86,16 @@ def _period_label(period):
     """Convert a Period integer constant to a readable string."""
     from ....const import Period
     labels = {
-        Period.TOTAL:        "All Time",
-        Period.TODAY:        "Today",
-        Period.YESTERDAY:    "Yesterday",
-        Period.WEEK:         "Past Week",
-        Period.TWO_WEEKS:    "Past 2 Weeks",
-        Period.MONTH:        "Past Month",
-        Period.THREE_MONTHS: "Past 3 Months",
-        Period.YEAR:         "Past Year",
-        Period.LAST_YEAR:    "Last Year",
-        Period.CUSTOM:       "Custom",
+        Period.TOTAL:        tr("All Time"),
+        Period.TODAY:        tr("Today"),
+        Period.YESTERDAY:    tr("Yesterday"),
+        Period.WEEK:         tr("Past Week"),
+        Period.TWO_WEEKS:    tr("Past 2 Weeks"),
+        Period.MONTH:        tr("Past Month"),
+        Period.THREE_MONTHS: tr("Past 3 Months"),
+        Period.YEAR:         tr("Past Year"),
+        Period.LAST_YEAR:    tr("Last Year"),
+        Period.CUSTOM:       tr("Custom"),
     }
     return labels.get(period, str(period))
 
@@ -113,15 +114,15 @@ def _context(dialog):
     """
     mgr = getattr(dialog, 'deep_dive_manager', None)
     if mgr:
-        deck   = _clean_deck_name(getattr(mgr, 'last_title', None) or "Collection")
+        deck   = deck_title(_clean_deck_name(getattr(mgr, 'last_title', None) or "Collection"))
         period = getattr(mgr, 'last_history_range', None)
         if period is None:
             period = getattr(mgr, 'last_period_range', None)
-        parts = [("Deck", deck)]
+        parts = [(tr("Deck"), deck)]
         if period is not None:   # Period.WEEK = 0, so `if period` would skip it
-            parts.append(("Time Range", _period_label(period)))
+            parts.append((tr("Time Range"), _period_label(period)))
     else:
-        view = "Deck" if dialog.view_mode == 'deck' else "Time Range"
+        view = tr("Deck") if dialog.view_mode == 'deck' else tr("Time Range")
         idx  = dialog.tab_widget.currentIndex()
         ctx  = dialog.tab_widget.tabText(idx) if idx >= 0 else ""
         parts = [(view, ctx)] if ctx else []
@@ -179,7 +180,8 @@ def _draw_header(p, W, title, subtitle_parts, t):
         pills.append((lbl_text, val, lbl_w, val_w, 10 + lbl_w + 6 + val_w + 10))
     pills_w = sum(pw for *_r, pw in pills) + gap * max(0, len(pills) - 1)
 
-    date_txt = "Exported · " + datetime.now().strftime("%B %d, %Y  %H:%M")
+    now = datetime.now()
+    date_txt = tr("Exported · {date}", date=format_date(now, now.strftime("%H:%M")))
     f3 = QFont()
     f3.setPointSize(8)
     p.setFont(f3)
@@ -572,9 +574,9 @@ def _export_visual_impl(dialog, mode):
                 ))
             elif mode == "deep_dive":
                 showInfo(
-                    "No Deep Dive is currently open.\n\n"
+                    tr("No Deep Dive is currently open.\n\n"
                     "Click on any row in the statistics table to open the "
-                    "Deep Dive, then export."
+                    "Deep Dive, then export.")
                 )
                 return
 
@@ -602,7 +604,7 @@ def _export_visual_impl(dialog, mode):
                     ))
 
         if not sections:
-            showInfo("Nothing to export. Load some data first.")
+            showInfo(tr("Nothing to export. Load some data first."))
             return
 
         # Canvas width: the Deep Dive width when the mode includes it, so dashboard and
@@ -762,8 +764,8 @@ def _export_visual_impl(dialog, mode):
         desktop = os.path.join(os.path.expanduser("~"), "Desktop")
         start_dir = os.path.join(desktop if os.path.isdir(desktop) else os.path.expanduser("~"), fn)
         path, sel_filter = QFileDialog.getSaveFileName(
-            dialog, "Save Export", start_dir,
-            "PNG Image (*.png);;PDF Document (*.pdf);;JPEG Image (*.jpg)",
+            dialog, tr("Save Export"), start_dir,
+            tr("PNG Image (*.png);;PDF Document (*.pdf);;JPEG Image (*.jpg)"),
         )
         if path:
             low = path.lower()
@@ -780,9 +782,9 @@ def _export_visual_impl(dialog, mode):
                     path += '.jpg' if jpeg else '.png'
                 ok = pix.save(path, quality=95) if path.lower().endswith(('.jpg', '.jpeg')) else pix.save(path)
             if ok:
-                showInfo(f"Saved to:\n{path}")
+                showInfo(tr("Saved to:\n{path}", path=path))
             else:
-                showCritical(f"Could not save the export to:\n{path}")
+                showCritical(tr("Could not save the export to:\n{path}", path=path))
 
     except Exception as e:
         import traceback
@@ -799,10 +801,8 @@ def _export_visual_impl(dialog, mode):
             except Exception:
                 log_swallowed()
         _restore_label_effects(_dashboard_effects_saved)
-        showCritical(f"Export failed:\n{str(e)}\n\n{traceback.format_exc()}")
+        showCritical(tr("Export failed:\n{error}", error=e) + f"\n\n{traceback.format_exc()}")
 
-
-_export = export_visual
 
 
 

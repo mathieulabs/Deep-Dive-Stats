@@ -6,6 +6,7 @@ from ...common.color_utils import blend_colors
 from .utils import _theme_vars, _addon_config
 from .....qss import set_qss
 from ...common.surface import dark_surface_rgba
+from .....const.glass_scale import box_glass_k
 
 def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
     """Apply the global pinned widget style (glass/shadow) to the card."""
@@ -43,16 +44,16 @@ def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
         border_alpha_pct = cfg.config.get(Config.FACECARDS_GLASS_BORDER, 50)
     elif is_text_label:
         use_glass = cfg.config.get(Config.TEXT_WIDGET_SHOW_GLASS, True)
-        intensity = cfg.config.get(Config.TEXT_WIDGET_GLASS_INTENSITY, 20)
+        intensity = cfg.config.get(Config.TEXT_WIDGET_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.TEXT_WIDGET_GLASS_INTENSITY])
         border_alpha_pct = cfg.config.get(Config.TEXT_WIDGET_GLASS_BORDER, 50)
         hover_border = cfg.config.get(Config.TEXT_WIDGET_HOVER_BORDER, True)
     elif is_heatmap:
         use_glass = cfg.config.get(Config.HEATMAP_SHOW_GLASS, False)
-        intensity = cfg.config.get(Config.HEATMAP_GLASS_INTENSITY, 43)
+        intensity = cfg.config.get(Config.HEATMAP_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.HEATMAP_GLASS_INTENSITY])
         border_alpha_pct = cfg.config.get(Config.HEATMAP_GLASS_BORDER, 0)
     else:
         use_glass = cfg.config.get(Config.PINNED_GLASS, True)
-        intensity = cfg.config.get(Config.PINNED_GLASS_INTENSITY, 20)
+        intensity = cfg.config.get(Config.PINNED_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.PINNED_GLASS_INTENSITY])
         border_alpha_pct = cfg.config.get(Config.PINNED_GLASS_BORDER, 50)
         hover_border = cfg.config.get(Config.PINNED_HOVER_BORDER, True)
 
@@ -113,7 +114,7 @@ def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
             # Chart cards (Deep Dive and pinned): a flat surface one step lighter than the
             # background and a hairline border. Glass intensity and border settings still
             # drive their strength.
-            k = intensity / 100.0
+            k = box_glass_k(intensity)
             b = border_alpha_pct / 100.0
             # Hairline unchanged up to 50%, then up to a fully opaque border at 100%.
             def _edge(base_at_half, slope):

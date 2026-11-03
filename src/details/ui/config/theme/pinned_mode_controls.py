@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from ... import Config
 from ....logic.logger import log_swallowed
+from .....i18n import tr
 
 if TYPE_CHECKING:
     from ..dialogs.tabs_config_dialog import DetailedStatsConfigDialog
@@ -71,11 +72,11 @@ def refresh_pinned_theme_mode_hint(dialog: "DetailedStatsConfigDialog") -> None:
         return
     mode = str(dialog.pinned_theme_mode_combo.currentData() or "native")
     if mode == "native":
-        text = "Pinned widgets use Anki native colors (not Details theme colors)."
+        text = tr("Pinned widgets use Anki native colors (not Details theme colors).")
     elif mode == "linked":
-        text = "Pinned widgets use the same theme as Details (same preset and same custom colors)."
+        text = tr("Pinned widgets use the same theme as Details (same preset and same custom colors).")
     else:
-        text = "Pinned widgets use an independent theme. Configure it in the 'Pinned' tab."
+        text = tr("Pinned widgets use an independent theme. Configure it in the 'Pinned' tab.")
     dialog.pinned_theme_mode_hint.setText(text)
 
 
@@ -86,7 +87,7 @@ def sync_pinned_theme_tab_visibility(
         return
     idx = dialog.theme_tabs.indexOf(dialog.pinned_theme_tab)
     if show_pinned_tab and idx < 0:
-        dialog.theme_tabs.addTab(dialog.pinned_theme_tab, "Pinned")
+        dialog.theme_tabs.addTab(dialog.pinned_theme_tab, tr("Pinned"))
     elif (not show_pinned_tab) and idx >= 0:
         dialog.theme_tabs.removeTab(idx)
 

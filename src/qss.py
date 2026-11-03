@@ -6,10 +6,14 @@ QWidget.setStyleSheet() re-polishes the whole subtree even when the sheet did
 not change, and the theme is re-applied on every navigation.
 """
 
+from .i18n import adapt_qss
+
 
 def set_qss(widget, sheet):
     if sheet is None:
         sheet = ""
+    # Captions adapted to the interface language (see i18n.adapt_qss).
+    sheet = adapt_qss(sheet)
     try:
         if widget.styleSheet() == sheet:
             return False

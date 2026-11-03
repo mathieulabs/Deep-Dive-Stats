@@ -170,8 +170,9 @@ class ContextMixin:
                     "cram_count": h.get("cram_count", 0)
                 }
 
-            fd_o = total_ctx.get("future_due", {})
-            fd_dist = fd_o.get("distribution", {})
+            # The key can be there with None (future due not computed yet for this deck).
+            fd_o = total_ctx.get("future_due") or {}
+            fd_dist = fd_o.get("distribution") or {}
             if fd_dist:
                 today_sched = mw.col.sched.today
                 for due_idx, count in fd_dist.items():

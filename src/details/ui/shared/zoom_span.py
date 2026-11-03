@@ -11,6 +11,7 @@ from ....qss import set_qss
 
 from ...logic.data.core import abs_period
 from ...logic.logger import log_swallowed
+from ....i18n import tr
 
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 _TEXT_DATE = re.compile(r"^([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2}),?\s+(\d{4})")
@@ -115,7 +116,7 @@ def _unique_title(tabs, name):
 def ask_span_name(default, parent=None):
     """Small themed dialog asking for the span name. Returns the name or None."""
     dlg = QDialog(parent or mw)
-    dlg.setWindowTitle("Time Span")
+    dlg.setWindowTitle(tr("Time Span"))
     dlg.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
     dlg.setMinimumWidth(340)
     try:
@@ -127,14 +128,14 @@ def ask_span_name(default, parent=None):
     lay = QVBoxLayout(dlg)
     lay.setContentsMargins(14, 14, 14, 14)
     lay.setSpacing(10)
-    lay.addWidget(QLabel("Name:"))
+    lay.addWidget(QLabel(tr("Name:")))
     edit = QLineEdit(default, dlg)
     edit.selectAll()
     lay.addWidget(edit)
     row = QHBoxLayout()
     row.addStretch(1)
-    cancel = QPushButton("Cancel", dlg)
-    ok = QPushButton("OK", dlg)
+    cancel = QPushButton(tr("Cancel"), dlg)
+    ok = QPushButton(tr("OK"), dlg)
     ok.setDefault(True)
     cancel.clicked.connect(dlg.reject)
     ok.clicked.connect(dlg.accept)

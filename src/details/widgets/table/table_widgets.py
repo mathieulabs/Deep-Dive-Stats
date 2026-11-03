@@ -4,6 +4,7 @@ from aqt.qt import (
     QApplication, QKeySequence, QTableWidget, QTextDocument, Qt
 )
 import re
+from ....i18n import tr
 
 class HorizontalScrollTable(QTableWidget):
     def wheelEvent(self, event):
@@ -46,13 +47,13 @@ class HorizontalScrollTable(QTableWidget):
         for r in sorted(rows.keys()):
             parts = []
             if tab_title:
-                parts.append(f"Tab: {tab_title}")
+                parts.append(tr("Tab: {name}", name=tab_title))
             for c in selected_cols:
                 item = self.item(r, c)
                 raw = item.text() if item else ""
                 txt = self._to_plain_text(raw)
                 h_item = self.horizontalHeaderItem(c)
-                header = (h_item.text() if h_item else f"Column {c + 1}").strip()
+                header = (h_item.text() if h_item else tr("Column {number}", number=c + 1)).strip()
                 if c == 0 and item is not None:
                     # Prefer full deck/time path when available for clearer context.
                     try:
@@ -61,7 +62,7 @@ class HorizontalScrollTable(QTableWidget):
                         full_path = None
                     if isinstance(full_path, str) and full_path.strip():
                         fp = full_path.strip()
-                        txt = "Total" if fp == "[[TOTAL]]" else fp
+                        txt = tr("Total") if fp == "[[TOTAL]]" else fp
                 parts.append(f"{header}: {txt}")
             row_lines.append(" | ".join(parts))
 

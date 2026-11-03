@@ -8,6 +8,7 @@ from aqt.qt import QLabel
 
 from ....logic.data.context_payloads import context_stats
 from ....logic.logger import log_swallowed
+from .....i18n import tr, tr_name, deck_title, upper
 
 
 def open_deep_dive(manager, deck_identifier, title, period_range=None):
@@ -48,24 +49,25 @@ def open_deep_dive(manager, deck_identifier, title, period_range=None):
         tabs_config = get_tabs_config(manager.addon_config)
         for tab_conf in tabs_config:
             if tab_conf.get("range") == period_range:
-                span_label = tab_conf.get("title", "")
+                span_label = tr_name(tab_conf.get("title", ""))
                 break
         if not span_label:
-            span_label = Period.LABEL.get(period_range, "")
+            span_label = tr_name(Period.LABEL.get(period_range, ""))
         if not span_label:
             span_label = str(period_range).capitalize()
 
+    deck_name = deck_title(deck_name)
     if span_label:
-        display_title = f"{deck_name} ({span_label})".upper()
+        display_title = upper(f"{deck_name} ({span_label})")
     else:
-        display_title = deck_name.upper()
+        display_title = upper(deck_name)
 
     manager.dialog.expanded_title.setText(display_title)
 
     row_data = manager._find_row_data(deck_identifier, title, period_range)
     if not row_data:
         manager.dialog.expanded_chart_area.addWidget(
-            QLabel(f"No detailed data found for '{title}'.", parent=manager.dialog)
+            QLabel(tr("No detailed data found for '{name}'.", name=deck_title(title)), parent=manager.dialog)
         )
         manager.dialog.expanded_container.setVisible(True)
         if hasattr(manager.dialog, "layout_toggle_container"):
@@ -248,7 +250,7 @@ def open_deep_dive(manager, deck_identifier, title, period_range=None):
             history_data, history_range_, history_ctx, bg_elapsed_ms = future.result()
         except Exception:
             manager.dialog.expanded_chart_area.addWidget(
-                QLabel("Error loading data.", parent=manager.dialog)
+                QLabel(tr("Error loading data."), parent=manager.dialog)
             )
             return
 

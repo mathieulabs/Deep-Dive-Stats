@@ -5,6 +5,9 @@ from __future__ import annotations
 
 from aqt.qt import (
     QCheckBox,
+    QEvent,
+    QObject,
+    QTimer,
     QComboBox,
     QFormLayout,
     QGroupBox,
@@ -22,8 +25,9 @@ from aqt.qt import (
 
 from ... import Config
 from .....config import is_dev_build
-from .....dev_mode import open_data_folder, reset_everything, reset_profile
+from .....dev_mode import open_data_folder, reset_everything, reset_profile, reset_tips
 from .pinned_widgets_tab_builder import build_pinned_widgets_section
+from .....i18n import num, tr
 
 
 def _set_table_drawer_auto_close(parent_dialog, value):
@@ -34,6 +38,87 @@ def _set_table_drawer_auto_close(parent_dialog, value):
 
 from .....qss import set_qss
 from ....logic.logger import log_swallowed
+
+
+def _build_language_row(dialog, layout) -> None:
+    """Language of the add-on: Anki's language (default) or a fixed one. Applied on restart."""
+    from .....i18n import AUTO, ENGLISH, LANGUAGES, language, resolve_language
+
+    combo = QComboBox()
+    combo.addItem(tr("Same as Anki"), AUTO)
+    combo.addItem("English", ENGLISH)
+    for code, name in LANGUAGES.items():
+        combo.addItem(name, code)
+    conf = dialog.parent_dialog.addon_config
+    saved = str(conf.config.get(Config.LANGUAGE, AUTO) or AUTO)
+    combo.setCurrentIndex(max(0, combo.findData(saved)))
+    combo.setToolTip(tr("Language of Deep Dive Stats. Takes effect after restarting Anki."))
+    hint = QLabel(tr("Restart Anki to apply the new language."))
+    hint.setWordWrap(True)
+    set_qss(hint, "color: rgba(127,127,127,0.95);")
+    shown = language()
+
+    def _changed(_index):
+        value = str(combo.currentData() or AUTO)
+        conf.config[Config.LANGUAGE] = value
+        try:
+            conf.set_value(Config.LANGUAGE, value)
+        except Exception:
+            log_swallowed()
+        hint.setVisible(resolve_language(value) != shown)
+        QTimer.singleShot(0, _fit_notes)
+
+    # Not English: the translation may be off somewhere, and fixes are welcome.
+    from ...details_dialog.links import TRANSLATIONS_URL
+    note = QLabel(tr(
+        "Translations may contain mistakes. Corrections are welcome on {link}.",
+        link=f'<a href="{TRANSLATIONS_URL}">GitHub</a>',
+    ))
+    note.setWordWrap(True)
+    note.setTextFormat(Qt.TextFormat.RichText)
+    note.setOpenExternalLinks(True)
+    set_qss(note, "color: rgba(127,127,127,0.95);")
+
+    def _update_note():
+        note.setVisible(resolve_language(str(combo.currentData() or AUTO)) != ENGLISH)
+
+    combo.currentIndexChanged.connect(_changed)
+    combo.currentIndexChanged.connect(lambda _i: _update_note())
+    hint.setVisible(False)
+    _update_note()
+    # Both notes in one row: two form rows leave a big gap between them (and a hidden
+    # row still keeps its spacing).
+    notes = QWidget()
+    notes_lay = QVBoxLayout(notes)
+    notes_lay.setContentsMargins(0, 0, 0, 0)
+    notes_lay.setSpacing(2)
+    notes_lay.addWidget(hint)
+    notes_lay.addWidget(note)
+    # Wrapped labels ask for the height of a narrow column, which left big gaps: size
+    # them from the width they really get.
+    def _fit_notes():
+        width = notes.width()
+        if width <= 0:
+            return
+        total = 0
+        for lab in (hint, note):
+            if lab.isVisibleTo(notes):
+                h = lab.heightForWidth(width)
+                lab.setFixedHeight(h)
+                total += h + (notes_lay.spacing() if total else 0)
+        notes.setFixedHeight(total)
+
+    class _NotesFit(QObject):
+        def eventFilter(self, obj, event):
+            if event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
+                QTimer.singleShot(0, _fit_notes)
+            return False
+
+    notes._fit_filter = _NotesFit(notes)
+    notes.installEventFilter(notes._fit_filter)
+    layout.addRow(tr("Language:"), combo)
+    layout.addRow("", notes)
+    dialog.language_combo = combo
 
 
 def build_general_tab(dialog) -> None:
@@ -52,34 +137,36 @@ def build_general_tab(dialog) -> None:
     gen_scroll.setWidget(gen_scroll_content)
     gen_tab_layout.addWidget(gen_scroll)
 
-    group_global = QGroupBox("Global Style")
+    group_global = QGroupBox(tr("Global Style"))
     layout_global = QFormLayout(group_global)
 
+    _build_language_row(dialog, layout_global)
+
     dialog.animation_scope_combo = QComboBox()
-    dialog.animation_scope_combo.addItem("All Animations", "all")
-    dialog.animation_scope_combo.addItem("No Pinned Animations", "no_pinned")
-    dialog.animation_scope_combo.addItem("No Details Animations", "no_details")
-    dialog.animation_scope_combo.addItem("No Animations", "none")
+    dialog.animation_scope_combo.addItem(tr("All Animations"), "all")
+    dialog.animation_scope_combo.addItem(tr("No Pinned Animations"), "no_pinned")
+    dialog.animation_scope_combo.addItem(tr("No Details Animations"), "no_details")
+    dialog.animation_scope_combo.addItem(tr("No Animations"), "none")
     dialog.animation_scope_combo.setToolTip(
-        "Choose where animations are active: everywhere, only pinned off, only details off, or off globally."
+        tr("Choose where animations are active: everywhere, only pinned off, only details off, or off globally.")
     )
     dialog.animation_scope_combo.currentIndexChanged.connect(dialog.on_animation_scope_changed)
-    layout_global.addRow("Animation Mode:", dialog.animation_scope_combo)
+    layout_global.addRow(tr("Animation Mode:"), dialog.animation_scope_combo)
 
     dialog.chart_animation_threshold_spin = QSpinBox()
     dialog.chart_animation_threshold_spin.setRange(1, 24)
-    chart_animation_threshold_tip = (
+    chart_animation_threshold_tip = tr(
         "Maximum number of charts animating at once in a window.\n"
         "When more are ready together, the extra animations are queued.\n"
         "A single chart always animates right away. Lower this if the window lags."
     )
     dialog.chart_animation_threshold_spin.setToolTip(chart_animation_threshold_tip)
     dialog.chart_animation_threshold_spin.valueChanged.connect(dialog.on_chart_animation_threshold_changed)
-    chart_animation_threshold_label = QLabel("Chart Animation Threshold:")
+    chart_animation_threshold_label = QLabel(tr("Chart Animation Threshold:"))
     chart_animation_threshold_label.setToolTip(chart_animation_threshold_tip)
     layout_global.addRow(chart_animation_threshold_label, dialog.chart_animation_threshold_spin)
     chart_animation_threshold_help = QLabel(
-        "Extra chart animations are queued once this limit is reached."
+        tr("Extra chart animations are queued once this limit is reached.")
     )
     chart_animation_threshold_help.setWordWrap(True)
     chart_animation_threshold_help.setToolTip(chart_animation_threshold_tip)
@@ -92,20 +179,20 @@ def build_general_tab(dialog) -> None:
         dialog.parent_dialog.addon_config.config.get(Config.STATS_PRECISION, 2)
     )
     dialog.stats_precision_spin.valueChanged.connect(dialog.on_stats_precision_changed)
-    dialog.stats_precision_spin.setToolTip("Decimals shown in stats, from 0 to 4. Trend arrows always show 1 decimal.")
-    layout_global.addRow("Decimal Precision:", dialog.stats_precision_spin)
+    dialog.stats_precision_spin.setToolTip(tr("Decimals shown in stats, from 0 to 4. Trend arrows always show 1 decimal."))
+    layout_global.addRow(tr("Decimal Precision:"), dialog.stats_precision_spin)
 
     dialog.thousands_separator_check = QCheckBox()
     dialog.thousands_separator_check.stateChanged.connect(dialog.on_thousands_separator_changed)
-    layout_global.addRow("Thousands Separator (400,000):", dialog.thousands_separator_check)
+    layout_global.addRow(tr("Thousands Separator (400,000):"), dialog.thousands_separator_check)
     gen_main_layout.addWidget(group_global)
 
-    group_display = QGroupBox("Deep Dive Display")
+    group_display = QGroupBox(tr("Deep Dive Display"))
     layout_display = QFormLayout(group_display)
 
     dialog.adaptive_binning_check = QCheckBox()
     dialog.adaptive_binning_check.stateChanged.connect(dialog.on_adaptive_binning_changed)
-    layout_display.addRow("Adaptive Chart Binning:", dialog.adaptive_binning_check)
+    layout_display.addRow(tr("Adaptive Chart Binning:"), dialog.adaptive_binning_check)
 
     dialog.binning_scale_slider = QSlider(Qt.Orientation.Horizontal)
     dialog.binning_scale_slider.setRange(0, 4)
@@ -114,10 +201,10 @@ def build_general_tab(dialog) -> None:
     dialog.binning_scale_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
     dialog.binning_scale_slider.setTickInterval(1)
     dialog.binning_scale_slider.setToolTip(
-        "How many days are grouped in one bar when adaptive binning is enabled. "
-        "Each step moves along day, 2 days, 3 days, week, 2 weeks, month, 2 months, 3 months."
+        tr("How many days are grouped in one bar when adaptive binning is enabled. "
+        "Each step moves along day, 2 days, 3 days, week, 2 weeks, month, 2 months, 3 months.")
     )
-    dialog.binning_scale_value_lbl = QLabel("Normal")
+    dialog.binning_scale_value_lbl = QLabel(tr("Normal"))
     dialog.binning_scale_value_lbl.setMinimumWidth(80)
     from ...theme.icons import get_svg_icon
 
@@ -125,7 +212,7 @@ def build_general_tab(dialog) -> None:
     dialog.binning_scale_reset_btn.setIcon(get_svg_icon("rotate-ccw", size=13))
     dialog.binning_scale_reset_btn.setFixedSize(22, 22)
     dialog.binning_scale_reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    dialog.binning_scale_reset_btn.setToolTip("Reset to default (Normal)")
+    dialog.binning_scale_reset_btn.setToolTip(tr("Reset to default (Normal)"))
     set_qss(dialog.binning_scale_reset_btn,
         "QPushButton { background: transparent; border: none; } "
         "QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }"
@@ -146,23 +233,23 @@ def build_general_tab(dialog) -> None:
         dialog.binning_scale_reset_btn.setEnabled(bool(checked))
 
     dialog.adaptive_binning_check.toggled.connect(_sync_binning_scale_enabled)
-    layout_display.addRow("Chart Binning:", binning_row)
+    layout_display.addRow(tr("Chart Binning:"), binning_row)
 
     dialog.side_view_check = QCheckBox()
     dialog.side_view_check.setToolTip(
-        "Off: the table slides up from the bottom of the window. On: it slides in from the right edge."
+        tr("Off: the table slides up from the bottom of the window. On: it slides in from the right edge.")
     )
     dialog.side_view_check.stateChanged.connect(dialog.on_side_view_changed)
-    layout_display.addRow("Table On The Side:", dialog.side_view_check)
+    layout_display.addRow(tr("Table On The Side:"), dialog.side_view_check)
 
     dialog.table_drawer_auto_check = QCheckBox()
     dialog.table_drawer_auto_check.setToolTip(
-        "When the table drawer is on, close the table after you pick a deck in it."
+        tr("When the table drawer is on, close the table after you pick a deck in it.")
     )
     dialog.table_drawer_auto_check.stateChanged.connect(
         lambda state, d=dialog: _set_table_drawer_auto_close(d.parent_dialog, bool(state))
     )
-    layout_display.addRow("Close Table After Picking:", dialog.table_drawer_auto_check)
+    layout_display.addRow(tr("Close Table After Picking:"), dialog.table_drawer_auto_check)
 
     from aqt.qt import QKeySequence as _QKeySequence, QKeySequenceEdit as _QKeySequenceEdit
 
@@ -170,14 +257,14 @@ def build_general_tab(dialog) -> None:
     drawer_key_row = QHBoxLayout(drawer_key_box)
     drawer_key_row.setContentsMargins(0, 0, 0, 0)
     dialog.table_drawer_key_edit = _QKeySequenceEdit()
-    dialog.table_drawer_key_edit.setToolTip("Key that opens or closes the table in the Deep Dive window.")
+    dialog.table_drawer_key_edit.setToolTip(tr("Key that opens or closes the table in the Deep Dive window."))
     dialog.table_drawer_key_edit.setKeySequence(
         _QKeySequence(str(dialog.parent_dialog.addon_config.config.get(Config.DETAILS_TABLE_DRAWER_SHORTCUT, "T") or ""))
     )
-    drawer_key_clear = QPushButton("Clear")
+    drawer_key_clear = QPushButton(tr("Clear"))
     drawer_key_row.addWidget(dialog.table_drawer_key_edit, 1)
     drawer_key_row.addWidget(drawer_key_clear)
-    layout_display.addRow("Table Shortcut:", drawer_key_box)
+    layout_display.addRow(tr("Table Shortcut:"), drawer_key_box)
 
     def _on_drawer_key_changed(seq):
         from ...details_dialog.table_drawer import apply_shortcut
@@ -201,8 +288,8 @@ def build_general_tab(dialog) -> None:
 
     dialog.show_empty_charts_check = QCheckBox()
     dialog.show_empty_charts_check.setToolTip(
-        "Off: Deep Dive leaves out charts that have no data for the selected deck and period. "
-        "On: they stay, with a \"No data for this graph\" message."
+        tr("Off: Deep Dive leaves out charts that have no data for the selected deck and period. "
+        "On: they stay, with a \"No data for this graph\" message.")
     )
 
     def _on_show_empty_charts_toggled(checked):
@@ -224,12 +311,12 @@ def build_general_tab(dialog) -> None:
                 log_swallowed()
 
     dialog.show_empty_charts_check.toggled.connect(_on_show_empty_charts_toggled)
-    layout_display.addRow("Show Charts Without Data:", dialog.show_empty_charts_check)
+    layout_display.addRow(tr("Show Charts Without Data:"), dialog.show_empty_charts_check)
 
     dialog.dd_collapsible_check = QCheckBox()
     dialog.dd_collapsible_check.setToolTip(
-        "Adds an arrow to each Deep Dive chart so it can be folded to its title. "
-        "Off: the arrows are hidden and every chart stays open."
+        tr("Adds an arrow to each Deep Dive chart so it can be folded to its title. "
+        "Off: the arrows are hidden and every chart stays open.")
     )
 
     def _on_dd_collapsible_toggled(checked):
@@ -251,7 +338,7 @@ def build_general_tab(dialog) -> None:
                 log_swallowed()
 
     dialog.dd_collapsible_check.toggled.connect(_on_dd_collapsible_toggled)
-    layout_display.addRow("Collapsible Charts:", dialog.dd_collapsible_check)
+    layout_display.addRow(tr("Collapsible Charts:"), dialog.dd_collapsible_check)
 
     def _bool_setting(key, checked):
         conf = dialog.parent_dialog.addon_config
@@ -263,8 +350,8 @@ def build_general_tab(dialog) -> None:
 
     dialog.dd_fill_height_check = QCheckBox()
     dialog.dd_fill_height_check.setToolTip(
-        "When the Deep Dive charts do not fill the window, make them taller (up to 1.6x) "
-        "so there is no empty space under them. Charts you resized by hand are left alone."
+        tr("When the Deep Dive charts do not fill the window, make them taller (up to 1.6x) "
+        "so there is no empty space under them. Charts you resized by hand are left alone.")
     )
 
     def _on_fill_height_toggled(checked):
@@ -279,10 +366,10 @@ def build_general_tab(dialog) -> None:
                 log_swallowed()
 
     dialog.dd_fill_height_check.toggled.connect(_on_fill_height_toggled)
-    layout_display.addRow("Fill Window Height:", dialog.dd_fill_height_check)
+    layout_display.addRow(tr("Fill Window Height:"), dialog.dd_fill_height_check)
     gen_main_layout.addWidget(group_display)
 
-    group_chart_style = QGroupBox("Chart Style")
+    group_chart_style = QGroupBox(tr("Chart Style"))
     layout_chart_style = QFormLayout(group_chart_style)
 
     def _style_slider(config_key, low, high, tip):
@@ -298,10 +385,10 @@ def build_general_tab(dialog) -> None:
             slider.setValue(int(conf.get(config_key, _style_default)))
         except Exception:
             slider.setValue(_style_default)
-        value_lbl.setText(f"{slider.value()}%")
+        value_lbl.setText(num(f"{slider.value()}%"))
 
         def _changed(v, _k=config_key, _lbl=value_lbl):
-            _lbl.setText(f"{v}%")
+            _lbl.setText(num(f"{v}%"))
             conf[_k] = int(v)
             _repaint_charts()
 
@@ -316,14 +403,14 @@ def build_general_tab(dialog) -> None:
 
     dialog.chart_line_opacity_slider, dialog.chart_line_opacity_lbl, _line_row = _style_slider(
         Config.CHART_LINE_OPACITY, 0, 200,
-        "Opacity of the Total and Average lines (and the soft area under Total). Lower = more discreet.",
+        tr("Opacity of the Total and Average lines (and the soft area under Total). Lower = more discreet."),
     )
-    layout_chart_style.addRow("Total / Average Lines:", _line_row)
+    layout_chart_style.addRow(tr("Total / Average Lines:"), _line_row)
     dialog.chart_bar_gradient_slider, dialog.chart_bar_gradient_lbl, _grad_row = _style_slider(
         Config.CHART_BAR_GRADIENT, 0, 100,
-        "Strength of the soft fade on bars. 0% = flat bars, 100% = default.",
+        tr("Strength of the soft fade on bars. 0% = flat bars, 100% = default."),
     )
-    layout_chart_style.addRow("Bar Gradient:", _grad_row)
+    layout_chart_style.addRow(tr("Bar Gradient:"), _grad_row)
 
     def _style_check(config_key, text, tip):
         conf = dialog.parent_dialog.addon_config.config
@@ -358,22 +445,22 @@ def build_general_tab(dialog) -> None:
 
     dialog.chart_show_grid_check = _style_check(
         Config.CHART_SHOW_GRID,
-        "Grid lines",
-        "Horizontal guide lines behind the charts. Off keeps only the baseline.",
+        tr("Grid lines"),
+        tr("Horizontal guide lines behind the charts. Off keeps only the baseline."),
     )
     layout_chart_style.addRow("", dialog.chart_show_grid_check)
     gen_main_layout.addWidget(group_chart_style)
 
-    group_table = QGroupBox("Table Layout")
+    group_table = QGroupBox(tr("Table Layout"))
     layout_table = QFormLayout(group_table)
     dialog.global_row_height_spin = QSpinBox()
     dialog.global_row_height_spin.setRange(10, 200)
     global_row_h = dialog.parent_dialog.addon_config.config.get(Config.GLOBAL_ROW_HEIGHT, 30)
     dialog.global_row_height_spin.setValue(global_row_h)
     dialog.global_row_height_spin.valueChanged.connect(dialog.on_global_row_height_changed)
-    layout_table.addRow("Row Height (px):", dialog.global_row_height_spin)
-    dialog.table_zebra_check = QCheckBox("Alternate row shading")
-    dialog.table_zebra_check.setToolTip("Zebra striping: every other row in the tables is slightly shaded.")
+    layout_table.addRow(tr("Row Height (px):"), dialog.global_row_height_spin)
+    dialog.table_zebra_check = QCheckBox(tr("Alternate row shading"))
+    dialog.table_zebra_check.setToolTip(tr("Zebra striping: every other row in the tables is slightly shaded."))
     dialog.table_zebra_check.setChecked(bool(dialog.parent_dialog.addon_config.config.get(Config.TABLE_ZEBRA, True)))
 
     def _zebra_toggled(on):
@@ -383,20 +470,20 @@ def build_general_tab(dialog) -> None:
         apply_zebra_to_dialog_tables(dialog.parent_dialog, on)
 
     dialog.table_zebra_check.toggled.connect(_zebra_toggled)
-    layout_table.addRow("Zebra Rows:", dialog.table_zebra_check)
+    layout_table.addRow(tr("Zebra Rows:"), dialog.table_zebra_check)
     gen_main_layout.addWidget(group_table)
 
-    group_toolbar = QGroupBox("Anki Toolbar")
+    group_toolbar = QGroupBox(tr("Anki Toolbar"))
     layout_toolbar = QFormLayout(group_toolbar)
     dialog.toolbar_style_combo = QComboBox()
-    dialog.toolbar_style_combo.addItem("Logo", Config.TOOLBAR_STYLE_LOGO)
-    dialog.toolbar_style_combo.addItem("Text (Deep Dive)", Config.TOOLBAR_STYLE_TEXT)
-    dialog.toolbar_style_combo.addItem("None (Hidden)", Config.TOOLBAR_STYLE_NONE)
+    dialog.toolbar_style_combo.addItem(tr("Logo"), Config.TOOLBAR_STYLE_LOGO)
+    dialog.toolbar_style_combo.addItem(tr("Text (Deep Dive)"), Config.TOOLBAR_STYLE_TEXT)
+    dialog.toolbar_style_combo.addItem(tr("None (Hidden)"), Config.TOOLBAR_STYLE_NONE)
     dialog.toolbar_style_combo.currentIndexChanged.connect(dialog.on_toolbar_button_style_changed)
-    layout_toolbar.addRow("Toolbar Button:", dialog.toolbar_style_combo)
+    layout_toolbar.addRow(tr("Toolbar Button:"), dialog.toolbar_style_combo)
     # Custom label, only shown for the "Text" style.
     dialog.toolbar_text_edit = QLineEdit()
-    dialog.toolbar_text_edit.setPlaceholderText("Deep Dive")
+    dialog.toolbar_text_edit.setPlaceholderText(tr("Deep Dive"))
     dialog.toolbar_text_edit.setMaxLength(40)
     dialog.toolbar_text_edit.setText(
         str(dialog.parent_dialog.addon_config.config.get(Config.TOOLBAR_BUTTON_TEXT, "Deep Dive") or "")
@@ -404,7 +491,7 @@ def build_general_tab(dialog) -> None:
     dialog.toolbar_text_edit.textChanged.connect(
         lambda text: dialog.parent_dialog.addon_config.config.__setitem__(Config.TOOLBAR_BUTTON_TEXT, text)
     )
-    layout_toolbar.addRow("Button Text:", dialog.toolbar_text_edit)
+    layout_toolbar.addRow(tr("Button Text:"), dialog.toolbar_text_edit)
     dialog._toolbar_form = layout_toolbar
 
     from aqt import mw
@@ -417,10 +504,10 @@ def build_general_tab(dialog) -> None:
     dialog.open_shortcut_edit.setKeySequence(
         QKeySequence(str(dialog.parent_dialog.addon_config.config.get(Config.OPEN_SHORTCUT, "") or ""))
     )
-    shortcut_clear = QPushButton("Clear")
+    shortcut_clear = QPushButton(tr("Clear"))
     shortcut_row.addWidget(dialog.open_shortcut_edit, 1)
     shortcut_row.addWidget(shortcut_clear)
-    layout_toolbar.addRow("Open Shortcut:", shortcut_box)
+    layout_toolbar.addRow(tr("Open Shortcut:"), shortcut_box)
     dialog.open_shortcut_hint = QLabel()
     dialog.open_shortcut_hint.setVisible(False)
     layout_toolbar.addRow("", dialog.open_shortcut_hint)
@@ -446,7 +533,7 @@ def build_general_tab(dialog) -> None:
             dialog.open_shortcut_edit.blockSignals(False)
         dialog.parent_dialog.addon_config.config[Config.OPEN_SHORTCUT] = text
         used = _shortcut_conflict(text)
-        dialog.open_shortcut_hint.setText(f"Already used by Anki: {used}" if used else "")
+        dialog.open_shortcut_hint.setText(tr("Already used by Anki: {action}", action=used) if used else "")
         dialog.open_shortcut_hint.setVisible(bool(used))
 
     dialog.open_shortcut_edit.keySequenceChanged.connect(_on_shortcut_changed)
@@ -468,7 +555,7 @@ def build_general_tab(dialog) -> None:
 
     # Tools for working on the add-on itself, only in a source checkout.
     if is_dev_build():
-        group_dev = QGroupBox("Developer")
+        group_dev = QGroupBox(tr("Developer"))
         layout_dev = QVBoxLayout(group_dev)
         try:
             from ... import get_color
@@ -510,36 +597,36 @@ def build_general_tab(dialog) -> None:
             _confirm_and_reset(
                 d,
                 reset_profile,
-                "This deletes the Deep Dive settings of the current Anki profile (pinned widgets, "
-                "colors, excluded dates, everything) and cannot be undone.\n\nContinue?",
-                "Reset this profile",
-                "Deep Dive: settings of this profile reset. Reopen the Deep Dive window.",
+                tr("This deletes the Deep Dive settings of the current Anki profile (pinned widgets, "
+                   "colors, excluded dates, everything) and cannot be undone.\n\nContinue?"),
+                tr("Reset this profile"),
+                tr("Deep Dive: settings of this profile reset. Reopen the Deep Dive window."),
             )
 
         def _on_reset_everything(_checked=False, d=dialog):
             _confirm_and_reset(
                 d,
                 reset_everything,
-                "This deletes the Deep Dive settings of every Anki profile (pinned widgets, "
-                "colors, excluded dates, everything) and cannot be undone.\n\nContinue?",
-                "Reset all profiles",
-                "Deep Dive: settings of all profiles reset. Reopen the Deep Dive window.",
+                tr("This deletes the Deep Dive settings of every Anki profile (pinned widgets, "
+                   "colors, excluded dates, everything) and cannot be undone.\n\nContinue?"),
+                tr("Reset all profiles"),
+                tr("Deep Dive: settings of all profiles reset. Reopen the Deep Dive window."),
             )
 
-        dialog.reset_profile_btn = QPushButton("Reset this profile's settings...")
+        dialog.reset_profile_btn = QPushButton(tr("Reset this profile's settings..."))
         set_qss(dialog.reset_profile_btn, _danger_qss)
-        dialog.reset_profile_btn.setToolTip("Deletes the saved settings of the current Anki profile only.")
+        dialog.reset_profile_btn.setToolTip(tr("Deletes the saved settings of the current Anki profile only."))
         dialog.reset_profile_btn.clicked.connect(_on_reset_profile)
 
-        dialog.reset_everything_btn = QPushButton("Reset all profiles...")
+        dialog.reset_everything_btn = QPushButton(tr("Reset all profiles..."))
         set_qss(dialog.reset_everything_btn, _danger_qss)
         dialog.reset_everything_btn.setToolTip(
-            "Deletes the saved settings of all Anki profiles, as if the add-on was just installed."
+            tr("Deletes the saved settings of all Anki profiles, as if the add-on was just installed.")
         )
         dialog.reset_everything_btn.clicked.connect(_on_reset_everything)
 
-        dialog.open_data_folder_btn = QPushButton("Open data folder")
-        dialog.open_data_folder_btn.setToolTip("Opens user_files: settings, history cache and the debug log.")
+        dialog.open_data_folder_btn = QPushButton(tr("Open data folder"))
+        dialog.open_data_folder_btn.setToolTip(tr("Opens user_files: settings, history cache and the debug log."))
         dialog.open_data_folder_btn.clicked.connect(lambda _checked=False: open_data_folder())
 
         _dev_row = QHBoxLayout()
@@ -553,14 +640,27 @@ def build_general_tab(dialog) -> None:
             from ...details_dialog.rate_prompt import preview_next_open
 
             preview_next_open()
-            tooltip("Deep Dive: the rating banner shows the next time the Deep Dive window opens.", parent=dialog)
+            tooltip(tr("Deep Dive: the rating banner shows the next time the Deep Dive window opens."), parent=dialog)
 
-        dialog.preview_rate_btn = QPushButton("Preview rating banner")
-        dialog.preview_rate_btn.setToolTip("Shows the rating banner the next time the Deep Dive window opens.")
+        dialog.preview_rate_btn = QPushButton(tr("Preview rating banner"))
+        dialog.preview_rate_btn.setToolTip(tr("Shows the rating banner the next time the Deep Dive window opens."))
         dialog.preview_rate_btn.clicked.connect(lambda _checked=False: _on_preview_rate_banner())
         layout_dev.addWidget(dialog.preview_rate_btn)
+
+        def _on_reset_tips():
+            from aqt.utils import tooltip
+
+            reset_tips()
+            tooltip(tr("Deep Dive: the guided tour shows again at the next Anki start."), parent=dialog)
+
+        dialog.reset_tips_btn = QPushButton(tr("Reset guided tour"))
+        dialog.reset_tips_btn.setToolTip(
+            tr("The guided tour shows again at the next Anki start, as on a first install.")
+        )
+        dialog.reset_tips_btn.clicked.connect(lambda _checked=False: _on_reset_tips())
+        layout_dev.addWidget(dialog.reset_tips_btn)
         gen_main_layout.addWidget(group_dev)
 
     gen_main_layout.addStretch()
-    dialog.tabs_widget.addTab(gen_tab, "General")
+    dialog.tabs_widget.addTab(gen_tab, tr("General"))
 

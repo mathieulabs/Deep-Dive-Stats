@@ -4,6 +4,7 @@ from aqt.qt import QTimer
 
 from ...chart_utils import is_night_mode
 from ...chart_utils.formatting import fmt_num
+from .....i18n import english_number, tr, upper
 from ..ui.style import theme_title_color, resolve_visual_profile, resolve_adaptive_text_colors, value_contrast_reference
 from ....logic.logger import log_swallowed
 from .own_color import own_card_color
@@ -136,6 +137,8 @@ def update_val(
     refresh_theme_fn=None,
     request_refresh_fn=None,
 ):
+    if value == "N/A":  # the stats use "N/A" as a value; shown translated
+        value = tr("N/A")
     old_loading = widget._is_loading
     widget._is_loading = (value == "...")
     if color and own_card_color(widget):
@@ -171,7 +174,7 @@ def update_val(
 
     if title:
         widget.display_name = title
-        widget.title_lbl.setText(title.upper())
+        widget.title_lbl.setText(upper(title))
         widget.set_title_visible(True)
     elif title is not None:
         widget.title_lbl.setText("")
@@ -183,13 +186,9 @@ def update_val(
     if subtitle is not None and widget.sub_lbl:
         if isinstance(subtitle, (int, float)):
             subtitle = fmt_num(subtitle)
-        elif isinstance(subtitle, str) and subtitle.strip().replace("+", "").replace("-", "").replace(",", "").isdigit():
-            try:
-                num_val = float(subtitle.strip().replace("+", "").replace("-", "").replace(",", ""))
-                prefix = "+" if "+" in subtitle else ("-" if "-" in subtitle else "")
-                subtitle = f"{prefix} {fmt_num(num_val)}"
-            except ValueError:
-                pass
+        elif isinstance(subtitle, str) and _plain_count(subtitle) is not None:
+            prefix = "+" if "+" in subtitle else ("-" if "-" in subtitle else "")
+            subtitle = f"{prefix} {fmt_num(_plain_count(subtitle))}"
         widget.sub_lbl.setText(subtitle)
 
     widget.update()
@@ -197,3 +196,11 @@ def update_val(
     if old_loading != widget._is_loading or value != old_val or title != old_title:
         if refresh and request_refresh_fn is not None:
             QTimer.singleShot(0, request_refresh_fn)
+
+
+def _plain_count(text):
+    """The number of a subtitle like "+1,234" (or "+1 234" in French), None for other text."""
+    raw = english_number(text.strip()).replace("+", "").replace("-", "").replace(",", "")
+    if not raw.isdigit():
+        return None
+    return float(raw)

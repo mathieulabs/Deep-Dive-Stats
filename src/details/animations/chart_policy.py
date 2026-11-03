@@ -67,7 +67,15 @@ def chart_visible_fraction(widget, root=None):
             return 0.0
         visible_rect = region.boundingRect()
         visible_area = max(0, int(visible_rect.width())) * max(0, int(visible_rect.height()))
-        total_area = max(1, int(widget.width()) * int(widget.height()))
+        # A chart taller than the screen (the heatmap with all its years) can never be
+        # 80 % visible: it counts as visible once it fills most of the window.
+        total_h = int(widget.height())
+        try:
+            if isinstance(root, QWidget) and root is not widget and root.height() > 0:
+                total_h = min(total_h, max(1, int(root.height() * 0.6)))
+        except Exception:
+            pass
+        total_area = max(1, int(widget.width()) * total_h)
         return max(0.0, min(1.0, float(visible_area) / float(total_area)))
     except Exception:
         return 1.0

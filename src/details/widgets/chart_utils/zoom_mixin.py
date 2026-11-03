@@ -38,7 +38,7 @@ def _row_label(row):
     if isinstance(row, (list, tuple)):
         return row[0] if row else None
     if isinstance(row, dict):
-        for k in ("label", "date", "logical_date", "x"):
+        for k in ("label", "date", "logical_date", "pretty_date", "x"):
             if row.get(k) is not None:
                 return row.get(k)
     return None
@@ -92,36 +92,51 @@ def preserve_zoom(*charts, notify=False):
             sig = getattr(c, "_zoom_signals", None)
             if sig is None:
                 continue
-            snap = zoom_snapshot(c)
+            live = snap = zoom_snapshot(c)
             anchor = getattr(c, "_zoom_anchor", None)
-            if anchor and anchor[1] == (snap[3], snap[4]):
+            if anchor and None not in anchor[1] and anchor[1] == (snap[3], snap[4]):
                 # Still the window set by the last restore (the user did not touch it):
                 # remap from the original labels so bin snapping cannot make it drift.
+                # (Not when the rows have no labels: any old anchor would then match.)
                 snap = anchor[0]
-            states.append((c, sig, sig.blockSignals(True), snap))
+            states.append((c, sig, sig.blockSignals(True), snap, live))
             c._keep_zoom = snap
         except Exception:
             continue
     try:
         yield
     finally:
-        for c, sig, prev, snap in states:
+        done = []  # (chart, range) of the charts put back, for the ones that could not be
+        for c, sig, prev, snap, live in states:
             restored = False
             c._keep_zoom = None
             try:
-                target = remap_zoom(snap, zoom_rows(c))
+                rows = zoom_rows(c)
+                target = remap_zoom(snap, rows) or (remap_zoom(live, rows) if live is not snap else None)
+                if not target:
+                    # Rows without usable labels: take the window of a chart of the same
+                    # group (e.g. the breakdown chart next to the plain one) over as many rows.
+                    target = next((r for o, r in done if len(zoom_rows(o)) == len(rows)), None)
                 if target:
                     if (int(c._zoom_start), int(c._zoom_end)) != tuple(target):
                         c.set_zoom_range(*target)
                     restored = True
                     now = zoom_snapshot(c)
                     c._zoom_anchor = (snap, (now[3], now[4]))
+                    done.append((c, (int(c._zoom_start), int(c._zoom_end))))
             except Exception:
                 restored = False
             sig.blockSignals(prev)
             if not restored:
+                # Tell where the chart really is now. It may have been zoomed meanwhile by
+                # a linked chart: announcing (False, 0, end) then made that chart zoom on
+                # 0..end, i.e. nearly the whole span.
                 try:
-                    sig.zoom_changed.emit(False, 0, int(getattr(c, "_zoom_end", 0) or 0))
+                    sig.zoom_changed.emit(
+                        bool(getattr(c, "_is_zoomed", False)),
+                        int(getattr(c, "_zoom_start", 0) or 0),
+                        int(getattr(c, "_zoom_end", 0) or 0),
+                    )
                 except Exception:
                     log_swallowed()
             elif notify:

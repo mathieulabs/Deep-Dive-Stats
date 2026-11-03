@@ -39,6 +39,7 @@ from ....common import (
 )
 from .....logic.logger import log_swallowed
 from ....chart_utils.zoom_camera import with_camera
+from ......i18n import tr, N_
 
 
 
@@ -123,11 +124,11 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
         }
 
         series_config = [
-            {"key": "mature", "label": "Mature", "color": colors["mature"]},
-            {"key": "young", "label": "Young", "color": colors["young"]},
-            {"key": "relearn", "label": "Relearning", "color": colors["relearn"]},
-            {"key": "learn", "label": "Learning", "color": colors["learn"]},
-            {"key": "cram", "label": "Filtered", "color": colors["cram"]}
+            {"key": "mature", "label": tr("Mature"), "color": colors["mature"]},
+            {"key": "young", "label": tr("Young"), "color": colors["young"]},
+            {"key": "relearn", "label": tr("Relearning"), "color": colors["relearn"]},
+            {"key": "learn", "label": tr("Learning"), "color": colors["learn"]},
+            {"key": "cram", "label": tr("Filtered"), "color": colors["cram"]}
         ]
 
         _hidden_types = normalize_hidden_types(widget_def.get("hidden_review_types"))
@@ -183,7 +184,7 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
         Config.DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS,
         Config.DEEP_DIVE_PINNED_SHOW_STATS,
         parent=parent,
-        title=pinned_title(widget_def, "ACTIVITY"),
+        title=pinned_title(widget_def, N_("Activity")),
         title_object_name="pinned_header",
     )
     if breakdown_chart:
@@ -538,11 +539,17 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
 
     def sync_zoom(source_chart, other_chart):
         def _sync(is_zoomed, start, end):
+            if getattr(stack, "_pair_sync_held", False):
+                # A data update is under way (see _update_activity): each chart resets or
+                # keeps its own zoom in its own update.
+                return
             # Only between charts showing the same rows. During a data update the first chart
             # already has the new rows and the second still the old ones: syncing then would zoom
             # the second on the wrong slice and its transition would start from it.
             if getattr(source_chart, "_full_length", None) != getattr(other_chart, "_full_length", None):
                 return
+            if not is_zoomed:
+                start, end = 0, int(getattr(other_chart, "_full_length", end) or end)
             if other_chart and other_chart.get_zoom_range() != (start, end):
                 _block_zoom(other_chart, True)
                 other_chart.set_zoom_range(start, end)
@@ -579,7 +586,8 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
 
     if breakdown_chart:
         show_breakdown = widget_def.get("show_breakdown", True)
-        cb = _make_checkbox("Breakdown by Type", checked=show_breakdown, parent=header_widget)
+        cb = _make_checkbox(tr("Breakdown by Type"), checked=show_breakdown, parent=header_widget)
+        cb.setProperty("deepdivestats_activity_toggle", "breakdown")
         stack.setCurrentIndex(1 if show_breakdown else 0)
 
         def _on_breakdown_toggled(checked):
@@ -601,7 +609,8 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
                            WidgetRegistry.update_setting(wid, "show_breakdown", c))
         header_lay.addWidget(cb)
 
-    cb_time = _make_checkbox("Time", checked=(metric_mode == "time"), parent=header_widget)
+    cb_time = _make_checkbox(tr("Time"), checked=(metric_mode == "time"), parent=header_widget)
+    cb_time.setProperty("deepdivestats_activity_toggle", "time")
     def _on_time_toggled(checked):
         next_mode = "time" if bool(checked) else "reviews"
         visible_chart = breakdown_chart if (breakdown_chart and stack.currentIndex() == 1) else normal_chart
@@ -651,8 +660,25 @@ def _span_key(widget_def):
 
 
 def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=False, cfg=None):
+    """New data for both charts of the widget (plain and by type).
+
+    The two charts keep the same zoom (sync_zoom in the builder), but not while their data
+    is updated: the first chart's update resets its zoom, and the sync then reset the other
+    chart's zoom before its own update. The chart on screen left its zoom at once, without
+    animation, and its transition started from the whole old range instead of the zoomed days
+    (deck change while zoomed), or its zoom bounced (refresh of the same deck)."""
     from aqt.qt import QStackedWidget
     if not isinstance(stack, QStackedWidget): return False
+    prev = getattr(stack, "_pair_sync_held", False)
+    stack._pair_sync_held = True
+    try:
+        return _update_activity_charts(stack, widget_def, deck_id, cache=cache,
+                                       fail_if_not_cached=fail_if_not_cached, cfg=cfg)
+    finally:
+        stack._pair_sync_held = prev
+
+
+def _update_activity_charts(stack, widget_def, deck_id, cache=None, fail_if_not_cached=False, cfg=None):
 
     show_avg = widget_def.get("show_average", True)
     show_total = widget_def.get("show_cumulative", True)
@@ -769,6 +795,11 @@ def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=
     _hidden_now = normalize_hidden_types(widget_def.get("hidden_review_types"))
     try:
         normal_chart._hidden_review_types = _hidden_now
+        # The tooltip lines chosen in the settings, for an update in place too.
+        _tip_hidden = list(widget_def.get("tooltip_hidden") or [])
+        for _c in (normal_chart, breakdown_chart):
+            if _c is not None:
+                _c.tooltip_hidden = _tip_hidden
         if breakdown_chart is not None and getattr(breakdown_chart, "_all_series_config", None):
             breakdown_chart.series_config = [
                 s for s in breakdown_chart._all_series_config if s["key"] not in _hidden_now
@@ -808,11 +839,11 @@ def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=
         }
 
         series_config = [
-            {"key": "mature", "label": "Mature", "color": colors["mature"]},
-            {"key": "young", "label": "Young", "color": colors["young"]},
-            {"key": "relearn", "label": "Relearning", "color": colors["relearn"]},
-            {"key": "learn", "label": "Learning", "color": colors["learn"]},
-            {"key": "cram", "label": "Filtered", "color": colors["cram"]}
+            {"key": "mature", "label": tr("Mature"), "color": colors["mature"]},
+            {"key": "young", "label": tr("Young"), "color": colors["young"]},
+            {"key": "relearn", "label": tr("Relearning"), "color": colors["relearn"]},
+            {"key": "learn", "label": tr("Learning"), "color": colors["learn"]},
+            {"key": "cram", "label": tr("Filtered"), "color": colors["cram"]}
         ]
         breakdown_chart._all_series_config = list(series_config)
         breakdown_chart.series_config = [s for s in series_config if s["key"] not in _hidden_now]
@@ -847,12 +878,12 @@ def _update_activity(stack, widget_def, deck_id, cache=None, fail_if_not_cached=
         if parent:
              from aqt.qt import QCheckBox
              for cb in parent.findChildren(QCheckBox):
-                  txt = (cb.text() or "").strip().lower()
-                  if "breakdown" in txt:
+                  role = cb.property("deepdivestats_activity_toggle")
+                  if role == "breakdown":
                       cb.blockSignals(True)
                       cb.setChecked(show_breakdown)
                       cb.blockSignals(False)
-                  elif txt == "time":
+                  elif role == "time":
                       cb.blockSignals(True)
                       cb.setChecked(metric_mode == "time")
                       cb.blockSignals(False)

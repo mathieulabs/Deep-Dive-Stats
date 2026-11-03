@@ -9,6 +9,7 @@ from aqt.qt import QFileDialog, QTableWidget, QLabel, Qt
 from aqt.utils import showInfo, showCritical
 
 from ..logger import log_swallowed
+from ....i18n import tr
 
 _TAG = re.compile(r"<[^>]*>")
 
@@ -52,7 +53,7 @@ def _cell_text(table, row, col):
         if isinstance(full, str) and full and full != "[[TOTAL]]":
             return full
         if full == "[[TOTAL]]":
-            return _plain(item.text()) or "Total"
+            return _plain(item.text()) or tr("Total")
     return _plain(item.text())
 
 
@@ -72,7 +73,7 @@ def export_to_csv(dialog):
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
     start_dir = os.path.join(desktop if os.path.isdir(desktop) else os.path.expanduser("~"), fn)
     path, _ = QFileDialog.getSaveFileName(
-        dialog, "Export CSV", start_dir, "CSV Files (*.csv)"
+        dialog, tr("Export CSV"), start_dir, tr("CSV Files (*.csv)")
     )
     if not path:
         return
@@ -91,12 +92,12 @@ def export_to_csv(dialog):
             w.writerow([
                 _plain(table.horizontalHeaderItem(c).text())
                 if table.horizontalHeaderItem(c)
-                else f"Col {c}"
+                else tr("Column {number}", number=c + 1)
                 for c in cols
             ])
             for r in rows:
                 w.writerow([_cell_text(table, r, c) for c in cols])
-        showInfo(f"Exported to:\n{path}")
+        showInfo(tr("Exported to:\n{path}", path=path))
     except Exception as e:
         log_swallowed()
-        showCritical(f"CSV export failed:\n{str(e)}")
+        showCritical(tr("CSV export failed:\n{error}", error=e))

@@ -12,6 +12,7 @@ from .shared import (
     threading,
 )
 from concurrent.futures import ThreadPoolExecutor
+from ....const.addon_dir import addon_removed
 from ..logger import log_swallowed
 
 
@@ -94,7 +95,7 @@ class GlobalHistoryCacheCore:
         # If a plain FILE (not dir) exists at that path, remove it
         if os.path.exists(cache_dir) and not os.path.isdir(cache_dir):
             os.remove(cache_dir)
-        if not os.path.exists(cache_dir):
+        if not os.path.exists(cache_dir) and not addon_removed():
             os.makedirs(cache_dir, exist_ok=True)
             GlobalHistoryCacheCore._migrate_old_cache_dir(addon_path, cache_dir)
         return cache_dir

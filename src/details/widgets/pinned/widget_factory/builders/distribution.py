@@ -7,6 +7,7 @@ from ..shared.reviews import load_distribution_source
 from ....charts.grouped_bar import GroupedBarWidget
 from ....common import apply_chart_display_config
 from ..wrapper import _wrap
+from ......i18n import N_
 
 def _build_distribution(widget_def, deck_id, cache=None, parent=None, cfg=None):
     span = widget_def.get("time_span", Period.TOTAL)
@@ -31,12 +32,16 @@ def _build_distribution(widget_def, deck_id, cache=None, parent=None, cfg=None):
         minimum_height=120,
     )
 
-    display_label = pinned_title(widget_def, "DISTRIBUTION").upper()
-    return _wrap(chart, display_label,
-                 widget_id=widget_def["id"],
-                 saved_w=widget_def.get("width"),
-                 saved_h=widget_def.get("height"),
-                 parent=parent)
+    display_label = pinned_title(widget_def, N_("Distribution")).upper()
+    wrapped = _wrap(chart, display_label,
+                    widget_id=widget_def["id"],
+                    saved_w=widget_def.get("width"),
+                    saved_h=widget_def.get("height"),
+                    parent=parent)
+    if source["history_is_none"] and wrapped is not None:
+        # Not in the cache yet: the rebuild loads it in the background (else it stayed empty).
+        wrapped._is_loading = True
+    return wrapped
 
 def _update_distribution(chart, widget_def, deck_id, cache=None, fail_if_not_cached=False, cfg=None):
     span = widget_def.get("time_span", Period.TOTAL)

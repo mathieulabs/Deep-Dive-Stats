@@ -17,8 +17,8 @@ def apply_chart_display_config(
     chart.line_opacity_pct = None if line_opacity is None else int(line_opacity)
     chart.bar_gradient_pct = None if bar_gradient is None else int(bar_gradient)
     chart.show_grid_flag = None if show_grid is None else bool(show_grid)
-    if tooltip_hidden is not None:
-        chart.tooltip_hidden = list(tooltip_hidden)
+    # None: every line shown (a list kept from before would hide lines ticked back on).
+    chart.tooltip_hidden = list(tooltip_hidden or [])
 
     if minimum_height is not None and hasattr(chart, "setMinimumHeight"):
         chart.setMinimumHeight(int(minimum_height))

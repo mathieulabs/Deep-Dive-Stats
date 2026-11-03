@@ -13,6 +13,7 @@ from typing import Any
 from aqt import AnkiQt
 
 from .const import CURRENT_VERSION, Config
+from .const.addon_dir import addon_removed
 
 # path -> ((mtime_ns, size), pickled dict). See _load_file_config().
 _FILE_CONFIG_CACHE: dict[str, tuple] = {}
@@ -37,6 +38,8 @@ def pinned_widgets_disabled() -> bool:
 
 def set_pinned_widgets_disabled(disabled: bool) -> None:
     flag = _pinned_off_flag_path()
+    if addon_removed():
+        return
     if disabled:
         os.makedirs(os.path.dirname(flag), exist_ok=True)
         with open(flag, "w", encoding="utf-8") as handle:
@@ -84,10 +87,64 @@ def reload_live_managers() -> None:
             pass
 
 
+_BOX_INTENSITY_KEYS = (
+    Config.PINNED_GLASS_INTENSITY,
+    Config.TEXT_WIDGET_GLASS_INTENSITY,
+    Config.HEATMAP_GLASS_INTENSITY,
+)
+
+
+def _move_box_intensities_to_even_scale(saved, normalized):
+    """Once: box intensities saved with the old slider take the value that gives the same
+    look on the new one. Only values the profile saved are converted (the defaults are
+    already on the new scale). The text widget still at its old default (20, nearly
+    invisible) gets the new default, like the charts."""
+    from .const.glass_scale import box_value_from_old
+
+    def convert(src, dst):
+        for key in _BOX_INTENSITY_KEYS:
+            if key not in src or not isinstance(src.get(key), (int, float)):
+                continue
+            if key == Config.TEXT_WIDGET_GLASS_INTENSITY and src[key] == 20 and dst is normalized:
+                dst[key] = Config.DEFAULT_CONFIG[key]
+            else:
+                dst[key] = box_value_from_old(src[key])
+
+    try:
+        convert(saved, normalized)
+        grid = saved.get(Config.DEEP_DIVE_GRID_STYLE)
+        if isinstance(grid, dict):
+            normalized[Config.DEEP_DIVE_GRID_STYLE] = new_grid = dict(grid)
+            convert(grid, new_grid)
+        pins = saved.get(Config.PINNED_WIDGETS)
+        if isinstance(pins, list):
+            new_pins = []
+            for w in pins:
+                if isinstance(w, dict) and any(k in w for k in _BOX_INTENSITY_KEYS):
+                    w = dict(w)
+                    convert(dict(w), w)
+                new_pins.append(w)
+            normalized[Config.PINNED_WIDGETS] = new_pins
+        dd = saved.get(Config.DEEP_DIVE_WIDGET_SETTINGS)
+        if isinstance(dd, dict):
+            new_dd = {}
+            for wid, w in dd.items():
+                if isinstance(w, dict) and any(k in w for k in _BOX_INTENSITY_KEYS):
+                    w = dict(w)
+                    convert(dict(w), w)
+                new_dd[wid] = w
+            normalized[Config.DEEP_DIVE_WIDGET_SETTINGS] = new_dd
+    except Exception:
+        pass
+
+
 def _write_file_atomic(path: str, payload: str) -> None:
     """Write through a temp file, then swap it in. On Windows the swap can fail for a moment when
     the target is open elsewhere (antivirus, indexer, another save), so retry briefly and, as a last
-    resort, write the target directly."""
+    resort, write the target directly. Nothing is written while Anki replaces the add-on
+    (see const.addon_dir)."""
+    if addon_removed():
+        return
     tmp_path = f"{path}.{os.getpid()}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as handle:
         handle.write(payload)
@@ -178,6 +235,8 @@ class ConfigManager:
 
     def _save_config(self, config: dict[str, Any]) -> None:
         normalized = self._normalize_config(dict(config))
+        if addon_removed():
+            return
         os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
         _FILE_CONFIG_CACHE.pop(self._config_path, None)
         _NORMALIZED_CONFIG_CACHE.pop(self._config_path, None)
@@ -209,6 +268,19 @@ class ConfigManager:
         normalized = copy.deepcopy(Config.DEFAULT_CONFIG)
         normalized.update(config)
         normalized[Config.VERSION] = CURRENT_VERSION
+        saved = config
+        if not normalized.get(Config.PINNED_GLASS_DEFAULT_RAISED):
+            # Once: the old default box intensity (24) left pinned charts almost see-through
+            # over a background image. A value still at that default takes the newer one
+            # (70 on the old scale, converted just below).
+            if config.get(Config.PINNED_GLASS_INTENSITY) == 24:
+                saved = dict(config)
+                saved[Config.PINNED_GLASS_INTENSITY] = 70
+                normalized[Config.PINNED_GLASS_INTENSITY] = 70
+            normalized[Config.PINNED_GLASS_DEFAULT_RAISED] = True
+        if not normalized.get(Config.GLASS_SCALE_EVEN):
+            _move_box_intensities_to_even_scale(saved, normalized)
+            normalized[Config.GLASS_SCALE_EVEN] = True
         return normalized
 
     def _load_live_config(self) -> dict[str, Any]:

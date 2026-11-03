@@ -6,14 +6,15 @@ from aqt.qt import QCheckBox, QColor, QGroupBox, QVBoxLayout
 
 from ... import Config
 from .components import SettingsSlider
+from .....i18n import tr
 
 
 def setup_facecard_settings(dialog) -> None:
-    group = QGroupBox("Card Layout && Size")
+    group = QGroupBox(tr("Card Layout && Size"))
     layout = QVBoxLayout(group)
 
     dialog.scale_spin = SettingsSlider(
-        "Visual Scale",
+        tr("Visual Scale"),
         dialog.addon_config.get(dialog._get_key(Config.FACECARDS_SCALE, Config.DASHBOARD_SCALE), 100),
         50,
         150,
@@ -22,7 +23,7 @@ def setup_facecard_settings(dialog) -> None:
     layout.addWidget(dialog.scale_spin)
 
     dialog.title_size_slider = SettingsSlider(
-        "Title Size",
+        tr("Title Size"),
         dialog.addon_config.get(
             dialog._get_key(Config.FACECARDS_TITLE_SIZE, Config.DASHBOARD_TITLE_SIZE), 100
         ),
@@ -47,15 +48,15 @@ def setup_facecard_settings(dialog) -> None:
     _swatch, dialog._paint_title_btn = _color_row(
         dialog,
         layout,
-        "Title Color",
+        tr("Title Color"),
         current_fn=lambda: dialog.title_color if QColor(dialog.title_color).isValid() else auto_title_color(dialog),
         is_default_fn=lambda: not (dialog.title_color and QColor(dialog.title_color).isValid()),
         set_fn=_set_title_color,
         reset_fn=lambda: _set_title_color(""),
-        reset_tip="Back to the theme color",
+        reset_tip=tr("Back to the theme color"),
     )
 
-    dialog.hover_effect_cb = QCheckBox("Show Hover Border")
+    dialog.hover_effect_cb = QCheckBox(tr("Show Hover Border"))
     dialog.hover_effect_cb.setChecked(
         dialog.addon_config.get(
             dialog._get_key(Config.FACECARDS_HOVER_EFFECT, Config.DASHBOARD_HOVER_EFFECT), True
@@ -63,7 +64,7 @@ def setup_facecard_settings(dialog) -> None:
     )
     layout.addWidget(dialog.hover_effect_cb)
 
-    dialog.inline_stats_cb = QCheckBox("Title + Value on same line")
+    dialog.inline_stats_cb = QCheckBox(tr("Title + Value on same line"))
     dialog.inline_stats_cb.setChecked(
         dialog.addon_config.get(
             dialog._get_key(Config.FACECARDS_INLINE_STATS, Config.DASHBOARD_INLINE_STATS), False
@@ -73,10 +74,10 @@ def setup_facecard_settings(dialog) -> None:
 
     dialog.content_layout.addWidget(group)
 
-    glass_group = QGroupBox("Background Box Style")
+    glass_group = QGroupBox(tr("Background Box Style"))
     glass_layout = QVBoxLayout(glass_group)
 
-    dialog.glass_cb = QCheckBox("Show Background Box")
+    dialog.glass_cb = QCheckBox(tr("Show Background Box"))
     initial_glass = dialog.addon_config.get(
         dialog._get_key(Config.FACECARDS_SHOW_GLASS, Config.DASHBOARD_SHOW_GLASS), True
     )
@@ -91,7 +92,7 @@ def setup_facecard_settings(dialog) -> None:
     glass_layout.addWidget(dialog.glass_cb)
 
     dialog.face_int_slider = SettingsSlider(
-        "Intensity",
+        tr("Intensity"),
         dialog.addon_config.get(
             dialog._get_key(Config.FACECARDS_GLASS_INTENSITY, Config.DASHBOARD_GLASS_INTENSITY), 5
         ),
@@ -102,7 +103,7 @@ def setup_facecard_settings(dialog) -> None:
     glass_layout.addWidget(dialog.face_int_slider)
 
     dialog.face_border_slider = SettingsSlider(
-        "Border Opacity",
+        tr("Border Opacity"),
         dialog.addon_config.get(
             dialog._get_key(Config.FACECARDS_GLASS_BORDER, Config.DASHBOARD_GLASS_BORDER), 50
         ),
@@ -115,11 +116,11 @@ def setup_facecard_settings(dialog) -> None:
     update_glass_state(dialog.glass_cb.isChecked())
     dialog.content_layout.addWidget(glass_group)
 
-    shadow_group = QGroupBox("Text Shadows")
+    shadow_group = QGroupBox(tr("Text Shadows"))
     shadow_layout = QVBoxLayout(shadow_group)
 
     dialog.tshad_slider = SettingsSlider(
-        "Title Shadow",
+        tr("Title Shadow"),
         dialog.addon_config.get(
             dialog._get_key(
                 Config.FACECARDS_TITLE_SHADOW_INTENSITY, Config.DASHBOARD_TITLE_SHADOW_INTENSITY
@@ -133,7 +134,7 @@ def setup_facecard_settings(dialog) -> None:
     shadow_layout.addWidget(dialog.tshad_slider)
 
     dialog.sshad_slider = SettingsSlider(
-        "Value Shadow",
+        tr("Value Shadow"),
         dialog.addon_config.get(
             dialog._get_key(
                 Config.FACECARDS_STAT_SHADOW_INTENSITY, Config.DASHBOARD_STAT_SHADOW_INTENSITY

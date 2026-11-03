@@ -23,6 +23,7 @@ def on_trend_toggled(dialog, checked):
 
         if dialog.view_mode == "time":
             from ...logic.data import fetch_stats_for_range
+            from ...logic.tabs import populate_time_tab
             params_map = dict(getattr(dialog, "_time_tab_params", {}) or {})
             queue = sorted(params_map.keys())
             if current_idx in queue:
@@ -126,6 +127,7 @@ def on_trend_toggled(dialog, checked):
 
         from ...logic.data import fetch_deck_stats
         from ...logic.tabs import get_tabs_config
+        from ..deck_view import populate_deck_tab
 
         tabs_config = [t for t in get_tabs_config(dialog.addon_config) if t.get("enabled", True)]
         excluded = dialog.addon_config.config.get(Config.EXCLUDED_DECKS, [])

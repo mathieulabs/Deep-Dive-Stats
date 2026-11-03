@@ -2,58 +2,75 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ....ui import Config, format_hours
 from ...chart_utils.formatting import fmt_num, fmt_percent_or_na, stats_precision
+from .....i18n import N_, num, tr, tr_name
 
 DEFAULT_STATS_PRECISION = 2
 
 
 STAT_CARD_INFO_MAP = {
-    Config.DEEP_DIVE_SHOW_TIME: ("Total Time", "#8ab4f8"),
-    Config.DEEP_DIVE_SHOW_REVIEWS: ("Reviews", "#FF9800"),
-    Config.DEEP_DIVE_SHOW_AVG_TIME: ("Time/Card", "#06b6d4"),
-    Config.DEEP_DIVE_SHOW_RET_ALL: ("Retention", "#22c55e"),
-    Config.DEEP_DIVE_SHOW_RET_YOUNG: ("Young", "#00BCD4"),
-    Config.DEEP_DIVE_SHOW_RET_MAT: ("Mature", "#4caf50"),
-    Config.DASH_SHOW_TIME: ("Total Time", "#8ab4f8"),
-    Config.DASH_SHOW_REVIEWS: ("Reviews", "#FF9800"),
-    Config.DASH_SHOW_AVG_TIME: ("Time/Card", "#06b6d4"),
-    Config.DASH_SHOW_RET_ALL: ("Retention", "#22c55e"),
-    Config.DASH_SHOW_RET_YOUNG: ("Young", "#00BCD4"),
-    Config.DASH_SHOW_RET_MAT: ("Mature", "#4caf50"),
-    Config.DASH_SHOW_STREAK: ("Streak", "#F44336"),
-    Config.DASH_SHOW_ACTIVE_DAYS: ("Active Days", "#e91e63"),
-    Config.DASH_SHOW_DAYS_LEARNED: ("Days Learned", "#e91e63"),
-    Config.DASH_SHOW_LONGEST_STREAK: ("Longest Streak", "#F44336"),
-    Config.DASH_SHOW_REVIEWS_PER_DAY: ("Reviews/Day", "#FF9800"),
-    Config.DASH_SHOW_TIME_PER_DAY: ("Time/Day", "#8ab4f8"),
-    Config.DASH_SHOW_RET_TRUE: ("True Retention", "#9fa8da"),
-    Config.DASH_SHOW_REV_YOUNG: ("Young Reviews", "#00BCD4"),
-    Config.DASH_SHOW_REV_MATURE: ("Mature Reviews", "#4caf50"),
-    Config.DASH_SHOW_AGAIN: ("Again", "#f44336"),
-    Config.DASH_SHOW_BEST_DAY: ("Best Day", "#FF9800"),
-    Config.DASH_SHOW_CARDS_TOTAL: ("Total Cards", "#669ff7"),
-    Config.DASH_SHOW_CARDS_NEW: ("New Cards", "#1976d2"),
-    Config.DASH_SHOW_CARDS_LEARNING: ("Learning Cards", "#ff9800"),
-    Config.DASH_SHOW_CARDS_YOUNG: ("Young Cards", "#8bc34a"),
-    Config.DASH_SHOW_CARDS_MATURE: ("Mature Cards", "#4caf50"),
-    Config.DASH_SHOW_CARDS_SUSPENDED: ("Suspended Cards", "#fdd835"),
-    Config.DASH_SHOW_CARDS_BURIED: ("Buried Cards", "#9e9e9e"),
-    Config.DASH_SHOW_CARDS_DELETED: ("Deleted Cards", "#616161"),
-    Config.DASH_SHOW_DUE_TODAY: ("Due Today", "#4ade80"),
-    Config.DASH_SHOW_BACKLOG: ("Backlog", "#f59e0b"),
-    Config.DASH_SHOW_AVG_RETRIEVABILITY: ("Avg Retrievability", "#4cd964"),
-    Config.DASH_SHOW_AVG_STABILITY: ("Avg Stability", "#5ac8fa"),
-    Config.DASH_SHOW_LAPSES: ("Lapses", "#f44336"),
-    Config.DEEP_DIVE_SHOW_STREAK: ("Streak", "#F44336"),
-    Config.DEEP_DIVE_SHOW_ACTIVE_DAYS: ("Active Days", "#e91e63"),
+    Config.DEEP_DIVE_SHOW_TIME: (N_("Total Time"), "#8ab4f8"),
+    Config.DEEP_DIVE_SHOW_REVIEWS: (N_("Reviews"), "#FF9800"),
+    Config.DEEP_DIVE_SHOW_AVG_TIME: (N_("Time/Card"), "#06b6d4"),
+    Config.DEEP_DIVE_SHOW_RET_ALL: (N_("Retention"), "#22c55e"),
+    Config.DEEP_DIVE_SHOW_RET_YOUNG: (N_("Young"), "#00BCD4"),
+    Config.DEEP_DIVE_SHOW_RET_MAT: (N_("Mature"), "#4caf50"),
+    Config.DASH_SHOW_TIME: (N_("Total Time"), "#8ab4f8"),
+    Config.DASH_SHOW_REVIEWS: (N_("Reviews"), "#FF9800"),
+    Config.DASH_SHOW_AVG_TIME: (N_("Time/Card"), "#06b6d4"),
+    Config.DASH_SHOW_RET_ALL: (N_("Retention"), "#22c55e"),
+    Config.DASH_SHOW_RET_YOUNG: (N_("Young"), "#00BCD4"),
+    Config.DASH_SHOW_RET_MAT: (N_("Mature"), "#4caf50"),
+    Config.DASH_SHOW_STREAK: (N_("Streak"), "#F44336"),
+    Config.DASH_SHOW_ACTIVE_DAYS: (N_("Active Days"), "#e91e63"),
+    Config.DASH_SHOW_DAYS_LEARNED: (N_("Days Learned"), "#e91e63"),
+    Config.DASH_SHOW_LONGEST_STREAK: (N_("Longest Streak"), "#F44336"),
+    Config.DASH_SHOW_REVIEWS_PER_DAY: (N_("Reviews/Day"), "#FF9800"),
+    Config.DASH_SHOW_TIME_PER_DAY: (N_("Time/Day"), "#8ab4f8"),
+    Config.DASH_SHOW_RET_TRUE: (N_("True Retention"), "#9fa8da"),
+    Config.DASH_SHOW_REV_YOUNG: (N_("Young Reviews"), "#00BCD4"),
+    Config.DASH_SHOW_REV_MATURE: (N_("Mature Reviews"), "#4caf50"),
+    Config.DASH_SHOW_AGAIN: (N_("Again"), "#f44336"),
+    Config.DASH_SHOW_BEST_DAY: (N_("Best Day"), "#FF9800"),
+    Config.DASH_SHOW_CARDS_TOTAL: (N_("Total Cards"), "#669ff7"),
+    Config.DASH_SHOW_CARDS_NEW: (N_("New Cards"), "#1976d2"),
+    Config.DASH_SHOW_CARDS_LEARNING: (N_("Learning Cards"), "#ff9800"),
+    Config.DASH_SHOW_CARDS_YOUNG: (N_("Young Cards"), "#8bc34a"),
+    Config.DASH_SHOW_CARDS_MATURE: (N_("Mature Cards"), "#4caf50"),
+    Config.DASH_SHOW_CARDS_SUSPENDED: (N_("Suspended Cards"), "#fdd835"),
+    Config.DASH_SHOW_CARDS_BURIED: (N_("Buried Cards"), "#9e9e9e"),
+    Config.DASH_SHOW_CARDS_DELETED: (N_("Deleted Cards"), "#616161"),
+    Config.DASH_SHOW_DUE_TODAY: (N_("Due Today"), "#4ade80"),
+    Config.DASH_SHOW_BACKLOG: (N_("Backlog"), "#f59e0b"),
+    Config.DASH_SHOW_AVG_RETRIEVABILITY: (N_("Avg Retrievability"), "#4cd964"),
+    Config.DASH_SHOW_AVG_STABILITY: (N_("Avg Stability"), "#5ac8fa"),
+    Config.DASH_SHOW_LAPSES: (N_("Lapses"), "#f44336"),
+    Config.DEEP_DIVE_SHOW_STREAK: (N_("Streak"), "#F44336"),
+    Config.DEEP_DIVE_SHOW_ACTIVE_DAYS: (N_("Active Days"), "#e91e63"),
 }
 
 
+def get_stat_card_name(stat_key):
+    """English default name of a stat card: the form saved in the settings."""
+    return STAT_CARD_INFO_MAP.get(stat_key, (N_("Stat"), "#808080"))[0]
+
+
 def get_stat_card_info(stat_key):
-    return STAT_CARD_INFO_MAP.get(stat_key, ("Stat", "#808080"))
+    """(shown default name, default color) of a stat card."""
+    name, color = STAT_CARD_INFO_MAP.get(stat_key, (N_("Stat"), "#808080"))
+    return tr_name(name), color
 
 
 def get_stat_card_default_title(stat_key):
+    """Shown default name of a stat card."""
     return get_stat_card_info(stat_key)[0]
+
+
+def stat_card_label_to_save(stat_key, shown_label):
+    """The label to save for a stat card: its English name when the shown label is the
+    default one (so it follows the language), the user's text otherwise."""
+    if shown_label == get_stat_card_default_title(stat_key):
+        return get_stat_card_name(stat_key)
+    return shown_label
 
 
 DASHBOARD_CARD_SPECS = (
@@ -184,20 +201,46 @@ def _weighted_mean(hist):
     return sum(k * v for k, v in hist.items()) / total if total > 0 else None
 
 
-def schedule_values(future_due, fsrs, prec):
-    """Due today, backlog and FSRS averages; N/A for what is not in the data."""
+def _today():
+    try:
+        from aqt import mw
+
+        return int(mw.col.sched.today)
+    except Exception:
+        return None
+
+
+def schedule_values(future_due, fsrs, prec, today=None):
+    """Due today, backlog and FSRS averages; N/A for what is not in the data.
+
+    The cache keeps the due cards by Anki due day (days since the collection was created,
+    review and day-learning cards), not by days from today: today's are those due on
+    today's day number, the backlog those due before it."""
     out = dict.fromkeys(SCHEDULE_FIELDS, "N/A")
     dist = (future_due or {}).get("distribution") if isinstance(future_due, dict) else None
-    if isinstance(dist, dict):
-        out["due_today"] = fmt_num(dist.get(0, 0) or 0)
-        out["backlog"] = fmt_num(sum(v for k, v in dist.items() if k < 0))
+    today = _today() if today is None else today
+    if isinstance(dist, dict) and today is not None:
+        due_today = backlog = 0
+        for day, count in dist.items():
+            try:
+                day = int(day)
+            except (TypeError, ValueError):
+                continue
+            if day < 0 or day >= 1000000000:
+                continue  # invalid, or a learning card's timestamp (left out, as in Anki's forecast)
+            if day == today:
+                due_today += count or 0
+            elif day < today:
+                backlog += count or 0
+        out["due_today"] = fmt_num(due_today)
+        out["backlog"] = fmt_num(backlog)
     fsrs = fsrs if isinstance(fsrs, dict) else {}
     retrievability = _weighted_mean(fsrs.get("retrievability") or {})
     if retrievability is not None:
-        out["avg_retrievability"] = f"{retrievability:.{int(prec)}f}%"
+        out["avg_retrievability"] = num(f"{retrievability:.{int(prec)}f}%")
     stability = _weighted_mean(fsrs.get("stability") or {})
     if stability is not None:
-        out["avg_stability"] = f"{fmt_num(stability, prec)} d"
+        out["avg_stability"] = tr("{value} d", value=fmt_num(stability, prec))
     return out
 
 
@@ -298,7 +341,7 @@ def build_dashboard_stat_values(
             min_text=min_unit,
         ),
         "reviews": fmt_num(t_rev),
-        "avg_time": (f"{fmt_num(((float(data.get('time', 0) or 0.0) * 3600.0) / t_rev), prec)}s" if t_rev > 0 else "N/A"),
+        "avg_time": (tr("{value}s", value=fmt_num(((float(data.get('time', 0) or 0.0) * 3600.0) / t_rev), prec)) if t_rev > 0 else "N/A"),
         "ret_all": fmt_percent_or_na(t_pass, t_rev, prec),
         "ret_young": fmt_percent_or_na(t_pass_young, t_rev_young, prec),
         "ret_mat": fmt_percent_or_na(t_pass_mat, t_rev_mat, prec),
@@ -384,7 +427,7 @@ def build_total_row_entry(totals):
     data = totals or {}
     return {
         "is_total_row": True,
-        "display_name": "Total",
+        "display_name": "Total",  # identifies the total row; shown through deck_title()
         "full_name": "[[TOTAL]]",
         "did": None,
         "reviews": data.get("rev", 0),

@@ -23,6 +23,7 @@ from .event_ops import (
     mouse_move_event_impl,
 )
 from .render_ops import paint_event_impl
+from .....i18n import tr_n
 
 
 class FSRSBaseChart(ChartAnimationMixin, QWidget):
@@ -79,7 +80,7 @@ class FSRSBaseChart(ChartAnimationMixin, QWidget):
         return current_values_snapshot_impl(self)
 
     def get_tooltip_text(self, k, v):
-        return f"{k}: {v} cards"
+        return tr_n("{value}: {n} card", "{value}: {n} cards", v, value=k)
 
     def mouseMoveEvent(self, event):
         return mouse_move_event_impl(self, event)

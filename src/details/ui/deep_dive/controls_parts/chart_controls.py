@@ -10,6 +10,7 @@ from .....qss import set_qss
 from ....logic.logger import log_swallowed
 from .review_dots import refresh_review_dots
 from ....widgets.chart_utils.zoom_camera import with_camera
+from .....i18n import tr
 
 
 def add_chart_controls(self, activity_header, retention_header, added_header, activity_data, retention_data):
@@ -19,7 +20,7 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
     self.btn_reset_zoom.setIconSize(QSize(16, 16))
     self.btn_reset_zoom.setFixedSize(24, 24)
     self.btn_reset_zoom.setCursor(Qt.CursorShape.PointingHandCursor)
-    self.btn_reset_zoom.setToolTip("Reset All Zooms")
+    self.btn_reset_zoom.setToolTip(tr("Reset All Zooms"))
     self.btn_reset_zoom.setVisible(False)
     self.btn_reset_zoom.setProperty("class", "expanded_header_btn")
     set_qss(self.btn_reset_zoom, "QPushButton::menu-indicator { width: 0px; }")
@@ -105,9 +106,9 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
         update_all_reset_buttons()
     reset_added_local_zoom = with_camera(reset_added_local_zoom)
 
-    self.activity_reset_btn = create_local_reset("Reset Activity Zoom", reset_activity_local_zoom)
-    self.retention_reset_btn = create_local_reset("Reset Retention Zoom", reset_retention_local_zoom)
-    self.added_reset_btn = create_local_reset("Reset Added Zoom", reset_added_local_zoom)
+    self.activity_reset_btn = create_local_reset(tr("Reset Activity Zoom"), reset_activity_local_zoom)
+    self.retention_reset_btn = create_local_reset(tr("Reset Retention Zoom"), reset_retention_local_zoom)
+    self.added_reset_btn = create_local_reset(tr("Reset Added Zoom"), reset_added_local_zoom)
 
     def update_all_reset_buttons():
         sync = getattr(self, 'last_sync_zoom', False)
@@ -275,7 +276,7 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
     self.btn_zoom_in.setIconSize(QSize(16, 16))
     self.btn_zoom_in.setFixedSize(24, 24)
     self.btn_zoom_in.setCursor(Qt.CursorShape.PointingHandCursor)
-    self.btn_zoom_in.setToolTip("Zoom In (Bigger Charts)")
+    self.btn_zoom_in.setToolTip(tr("Zoom In (Bigger Charts)"))
     self.btn_zoom_in.setProperty("class", "expanded_header_btn")
     self.btn_zoom_in.clicked.connect(lambda: self._zoom_grid(1))
 
@@ -284,7 +285,7 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
     self.btn_zoom_out.setIconSize(QSize(16, 16))
     self.btn_zoom_out.setFixedSize(24, 24)
     self.btn_zoom_out.setCursor(Qt.CursorShape.PointingHandCursor)
-    self.btn_zoom_out.setToolTip("Zoom Out (Smaller Charts)")
+    self.btn_zoom_out.setToolTip(tr("Zoom Out (Smaller Charts)"))
     self.btn_zoom_out.setProperty("class", "expanded_header_btn")
     self.btn_zoom_out.clicked.connect(lambda: self._zoom_grid(-1))
 
@@ -293,7 +294,7 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
     btn_settings.setIconSize(QSize(16, 16))
     btn_settings.setFixedSize(24, 24)
     btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn_settings.setToolTip("Chart Options")
+    btn_settings.setToolTip(tr("Chart Options"))
     btn_settings.setProperty("class", "expanded_header_btn")
     set_qss(btn_settings, "QPushButton::menu-indicator { width: 0px; }")
 
@@ -310,23 +311,23 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
     self.last_avg_active = bool(effective_avg_active)
     self.last_show_cumulative = bool(effective_show_cumulative)
 
-    self.action_show_avg = QAction("Show Average Line", self.dialog)
+    self.action_show_avg = QAction(tr("Show Average Line"), self.dialog)
     self.action_show_avg.setCheckable(True)
     self.action_show_avg.setChecked(self.last_show_avg)
 
-    self.action_avg_active = QAction("Average on Active Days", self.dialog)
+    self.action_avg_active = QAction(tr("Average on Active Days"), self.dialog)
     self.action_avg_active.setCheckable(True)
     self.action_avg_active.setChecked(self.last_avg_active)
 
-    self.action_show_cumulative = QAction("Show Right Axis (Global)", self.dialog)
+    self.action_show_cumulative = QAction(tr("Show Right Axis (Global)"), self.dialog)
     self.action_show_cumulative.setCheckable(True)
     self.action_show_cumulative.setChecked(self.last_show_cumulative)
 
-    self.action_global_stats = QAction("Show Bottom Stats (All Charts)", self.dialog)
+    self.action_global_stats = QAction(tr("Show Bottom Stats (All Charts)"), self.dialog)
     self.action_global_stats.setCheckable(True)
     self.action_global_stats.setChecked(self.addon_config.config.get(Config.DEEP_DIVE_SHOW_BOTTOM_STATS, False))
 
-    self.action_global_show_stats = QAction("Show Stats (All Charts)", self.dialog)
+    self.action_global_show_stats = QAction(tr("Show Stats (All Charts)"), self.dialog)
     self.action_global_show_stats.setCheckable(True)
     self.action_global_show_stats.setChecked(self.addon_config.config.get(Config.DEEP_DIVE_SHOW_STATS, True))
     def update_options():
@@ -415,12 +416,12 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
                     if source_c:
                         source_c.zoom_changed.emit(True, start, end)
 
-    self.action_sync_zoom = QAction("Sync Zoom Across Charts", self.dialog)
+    self.action_sync_zoom = QAction(tr("Sync Zoom Across Charts"), self.dialog)
     self.action_sync_zoom.setCheckable(True)
     self.action_sync_zoom.setChecked(self.last_sync_zoom)
     self.action_sync_zoom.triggered.connect(lambda: toggle_sync(self.action_sync_zoom.isChecked()))
 
-    self.action_reset_order = QAction("Reset Chart Layout", self.dialog)
+    self.action_reset_order = QAction(tr("Reset Chart Layout"), self.dialog)
     self.action_reset_order.triggered.connect(self._reset_chart_order)
 
     menu.addAction(self.action_show_avg)
@@ -432,7 +433,7 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
     menu.addSeparator()
 
     from ... import ADAPTIVE_CHART_BINNING
-    self.action_adaptive_binning = QAction("Adaptive Binning (Global)", self.dialog)
+    self.action_adaptive_binning = QAction(tr("Adaptive Binning (Global)"), self.dialog)
     self.action_adaptive_binning.setCheckable(True)
     self.action_adaptive_binning.setChecked(self.addon_config.config.get(ADAPTIVE_CHART_BINNING, True))
     def toggle_global_binning(checked):

@@ -28,6 +28,7 @@ from ..theme.ui_helpers import (
     get_theme_color_keys,
 )
 from .....qss import set_qss
+from .....i18n import tr
 
 
 def build_colors_tab(dialog) -> None:
@@ -47,7 +48,7 @@ def build_colors_tab(dialog) -> None:
     colors_scroll.setWidget(colors_scroll_content)
     colors_main_layout.addWidget(colors_scroll)
 
-    group_theme = QGroupBox("Theme")
+    group_theme = QGroupBox(tr("Theme"))
     layout_theme = QVBoxLayout(group_theme)
     layout_theme.setSpacing(10)
 
@@ -62,10 +63,10 @@ def build_colors_tab(dialog) -> None:
     dialog._rebuild_theme_cards(current_preset)
 
     info_lbl = QLabel(
-        "Anki Native follows Anki's own light/dark mode. Any other theme overrides "
+        tr("Anki Native follows Anki's own light/dark mode. Any other theme overrides "
         "the colors of the Details window and menus (pinned widgets are set below). "
         "For other themes, Base Mode sets how graph lines, borders and text adapt "
-        "to light or dark, and is saved with the preset."
+        "to light or dark, and is saved with the preset.")
     )
     info_lbl.setObjectName("theme_info_label")
     info_lbl.setWordWrap(True)
@@ -103,7 +104,7 @@ def build_colors_tab(dialog) -> None:
     )
     details_theme_layout.addLayout(base_mode_row)
 
-    dialog.group_theme_manual = QGroupBox("Theme Colors")
+    dialog.group_theme_manual = QGroupBox(tr("Theme Colors"))
     layout_manual = QGridLayout(dialog.group_theme_manual)
     layout_manual.setSpacing(6)
     layout_manual.setContentsMargins(10, 10, 10, 10)
@@ -122,15 +123,15 @@ def build_colors_tab(dialog) -> None:
     details_theme_layout.addWidget(dialog.group_theme_manual)
 
     actions_row = QHBoxLayout()
-    dialog.update_theme_preset_btn = QPushButton("Update Preset")
+    dialog.update_theme_preset_btn = QPushButton(tr("Update Preset"))
     dialog.update_theme_preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     dialog.update_theme_preset_btn.clicked.connect(dialog.on_update_theme_preset)
     actions_row.addWidget(dialog.update_theme_preset_btn)
-    dialog.save_theme_preset_btn = QPushButton("Save as New Preset")
+    dialog.save_theme_preset_btn = QPushButton(tr("Save as New Preset"))
     dialog.save_theme_preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     dialog.save_theme_preset_btn.clicked.connect(dialog.on_save_theme_preset)
     actions_row.addWidget(dialog.save_theme_preset_btn)
-    dialog.delete_theme_preset_btn = QPushButton("Delete Preset")
+    dialog.delete_theme_preset_btn = QPushButton(tr("Delete Preset"))
     dialog.delete_theme_preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     dialog.delete_theme_preset_btn.clicked.connect(dialog.on_delete_theme_preset)
     actions_row.addWidget(dialog.delete_theme_preset_btn)
@@ -159,10 +160,10 @@ def build_colors_tab(dialog) -> None:
         pinned_theme_tab,
         dialog.on_pinned_theme_base_mode_changed,
     )
-    dialog.pinned_theme_base_mode_label.setText("Pinned Graph Adaptation Mode:")
+    dialog.pinned_theme_base_mode_label.setText(tr("Pinned Graph Adaptation Mode:"))
     pinned_theme_layout.addLayout(pinned_mode_row)
 
-    dialog.group_pinned_theme_manual = QGroupBox("Pinned Theme Colors")
+    dialog.group_pinned_theme_manual = QGroupBox(tr("Pinned Theme Colors"))
     layout_pinned_manual = QGridLayout(dialog.group_pinned_theme_manual)
     layout_pinned_manual.setSpacing(6)
     layout_pinned_manual.setContentsMargins(10, 10, 10, 10)
@@ -180,7 +181,7 @@ def build_colors_tab(dialog) -> None:
     pinned_theme_layout.addStretch()
 
     dialog.pinned_theme_tab = pinned_theme_tab
-    dialog.theme_tabs.addTab(details_theme_tab, "Details")
+    dialog.theme_tabs.addTab(details_theme_tab, tr("Details"))
     dialog.theme_tabs.currentChanged.connect(lambda _i: dialog._refresh_data_color_controls())
     layout_theme.addWidget(dialog.theme_tabs)
     layout_theme.addWidget(pinned_mode_group)
@@ -205,55 +206,55 @@ def build_colors_tab(dialog) -> None:
     dialog._hex_labels = {}
 
     stat_color_rows = [
-        (Config.COLOR_TIME, "Total Time"),
-        (Config.COLOR_AVG_TIME, "Time/Card"),
-        (Config.COLOR_REVIEWS, "Reviews"),
-        (Config.COLOR_RETENTION, "Retention"),
-        (Config.COLOR_STREAK, "Streak"),
-        (Config.COLOR_ACTIVE_DAYS, "Active Days"),
+        (Config.COLOR_TIME, tr("Total Time")),
+        (Config.COLOR_AVG_TIME, tr("Time/Card")),
+        (Config.COLOR_REVIEWS, tr("Reviews")),
+        (Config.COLOR_RETENTION, tr("Retention")),
+        (Config.COLOR_STREAK, tr("Streak")),
+        (Config.COLOR_ACTIVE_DAYS, tr("Active Days")),
     ]
-    add_data_color_group(colors_layout, "Stat Colors", stat_color_rows, dialog._make_color_button)
+    add_data_color_group(colors_layout, tr("Stat Colors"), stat_color_rows, dialog._make_color_button)
 
     break_color_rows = [
-        (Config.COLOR_MATURE, "Mature"),
-        (Config.COLOR_YOUNG, "Young"),
-        (Config.COLOR_LEARN, "Learning"),
-        (Config.COLOR_RELEARN, "Relearning"),
-        (Config.COLOR_CRAM, "Filtered"),
-        (Config.COLOR_NEW, "New"),
-        (Config.COLOR_SUSPENDED, "Suspended"),
-        (Config.COLOR_BURIED, "Buried"),
+        (Config.COLOR_MATURE, tr("Mature")),
+        (Config.COLOR_YOUNG, tr("Young")),
+        (Config.COLOR_LEARN, tr("Learning")),
+        (Config.COLOR_RELEARN, tr("Relearning")),
+        (Config.COLOR_CRAM, tr("Filtered")),
+        (Config.COLOR_NEW, tr("New")),
+        (Config.COLOR_SUSPENDED, tr("Suspended")),
+        (Config.COLOR_BURIED, tr("Buried")),
     ]
-    add_data_color_group(colors_layout, "Card Type Colors", break_color_rows, dialog._make_color_button)
+    add_data_color_group(colors_layout, tr("Card Type Colors"), break_color_rows, dialog._make_color_button)
 
     add_data_color_group(
         colors_layout,
-        "Button Colors (Again / Hard / Good / Easy)",
+        tr("Button Colors (Again / Hard / Good / Easy)"),
         [
-            (Config.COLOR_AGAIN, "Again"),
-            (Config.COLOR_HARD, "Hard"),
-            (Config.COLOR_GOOD, "Good"),
-            (Config.COLOR_EASY, "Easy"),
+            (Config.COLOR_AGAIN, tr("Again")),
+            (Config.COLOR_HARD, tr("Hard")),
+            (Config.COLOR_GOOD, tr("Good")),
+            (Config.COLOR_EASY, tr("Easy")),
         ],
         dialog._make_color_button,
     )
 
     add_data_color_group(
         colors_layout,
-        "Chart Colors",
+        tr("Chart Colors"),
         [
-            (Config.COLOR_BAR, "Bar / Line"),
-            (Config.COLOR_FUTURE_DUE, "Future Due"),
-            (Config.COLOR_BACKLOG, "Backlog"),
-            (Config.COLOR_DELETED, "Deleted"),
-            (Config.HEATMAP_COLOR, "Heatmap"),
-            (Config.COLOR_GRADIENT_LOW, "Gradient Low"),
-            (Config.COLOR_GRADIENT_HIGH, "Gradient High"),
+            (Config.COLOR_BAR, tr("Bar / Line")),
+            (Config.COLOR_FUTURE_DUE, tr("Future Due")),
+            (Config.COLOR_BACKLOG, tr("Backlog")),
+            (Config.COLOR_DELETED, tr("Deleted")),
+            (Config.HEATMAP_COLOR, tr("Heatmap")),
+            (Config.COLOR_GRADIENT_LOW, tr("Gradient Low")),
+            (Config.COLOR_GRADIENT_HIGH, tr("Gradient High")),
         ],
         dialog._make_color_button,
     )
 
-    reset_btn = QPushButton("Reset Colors to Default")
+    reset_btn = QPushButton(tr("Reset Colors to Default"))
     reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     set_qss(reset_btn,
         """
@@ -277,5 +278,5 @@ def build_colors_tab(dialog) -> None:
 
     dialog._refresh_data_color_controls()
 
-    dialog.tabs_widget.insertTab(1, colors_tab, "Colors")
+    dialog.tabs_widget.insertTab(1, colors_tab, tr("Colors"))
 

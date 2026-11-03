@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from aqt.qt import QEasingCurve, QGraphicsOpacityEffect, QPropertyAnimation, Qt
 
+from ....animations.effect_guard import effect_nested
 from ....animations.motion import animations_enabled
 from ....logic.logger import log_swallowed
 
@@ -10,7 +11,9 @@ def _fade_in(dialog):
     """Fade the Deep Dive area in. The opacity effect only lives for the fade: left on, it
     renders the whole area (charts, table drawer) off screen on every repaint."""
     box = dialog.expanded_container
-    if not animations_enabled("details"):
+    if box.graphicsEffect() is not None:
+        box.setGraphicsEffect(None)  # an earlier fade still running
+    if not animations_enabled("details") or effect_nested(box):  # see effect_guard
         box.setGraphicsEffect(None)
         return
     effect = QGraphicsOpacityEffect(box)

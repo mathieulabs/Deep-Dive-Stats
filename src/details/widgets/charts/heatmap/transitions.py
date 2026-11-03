@@ -3,6 +3,7 @@
 from aqt.qt import QColor, QBrush, QLinearGradient, QPainter, QPixmap, Qt
 
 from ....animations.chart_policy import chart_animations_allowed
+from .settings import USER_ACTION_MAX_CHARTS
 
 
 def clear_data_transition_state_impl(widget):
@@ -31,6 +32,16 @@ def clear_mode_transition_state_impl(widget):
     widget._mode_transition_progress = 1.0
     widget._mode_transition_old_labels_pixmap = None
     widget._mode_transition_new_labels_pixmap = None
+    widget._years_label_from = None
+    # Where the legend glides from: only for the switch that set it (a later transition
+    # that does not move the legend, a legend click, would replay that glide).
+    widget._legend_top_from = None
+    # A height kept for the animation (it shrinks at the end) goes however the animation ends
+    # (finished, hidden, interrupted), or the heatmap would stay too tall.
+    if getattr(widget, "_hold_min_height", None) is not None:
+        from .settings import release_height_hold
+
+        release_height_hold(widget)
 
 
 def interpolate_data_map_impl(widget, t):
@@ -60,6 +71,9 @@ def on_data_transition_finished_impl(widget):
 
 def on_mode_transition_finished_impl(widget):
     widget._clear_mode_transition_state()
+    from .settings import release_height_hold
+
+    release_height_hold(widget)
     widget.update()
 
 
@@ -85,7 +99,7 @@ def begin_navigation_transition_impl(widget, delta):
 
 def finalize_navigation_transition_impl(widget):
     """Capture destination frame and start slide animation."""
-    if not chart_animations_allowed(widget):
+    if not chart_animations_allowed(widget, max_visible_charts=USER_ACTION_MAX_CHARTS):
         widget._clear_nav_transition_state()
         widget._pixmap_cache = None
         widget.update()

@@ -6,6 +6,7 @@ from aqt.qt import QVBoxLayout, QWidget
 
 from .stream import start_deck_streaming
 from ...logic.logger import log_swallowed
+from ....i18n import deck_title
 
 
 def restore_deck_view_from_cache(
@@ -107,7 +108,7 @@ def restore_deck_view_from_cache(
             tab.setProperty("depth", depth)
 
             tab_index = tab_widget.count()
-            tab_widget.addTab(tab, tab_name)
+            tab_widget.addTab(tab, deck_title(tab_name))
             is_visible = is_deck_tab_visible_fn(dialog, deck_info.get("full_name", tab_name), tab_name, did)
             if not is_visible:
                 tab_widget.setTabVisible(tab_index, False)
@@ -234,7 +235,7 @@ def load_deck_view(
             tab.setProperty("depth", depth)
 
             tab_index = tab_widget.count()
-            tab_widget.addTab(tab, tab_name)
+            tab_widget.addTab(tab, deck_title(tab_name))
             is_visible = is_deck_tab_visible_fn(dialog, deck_info.get("full_name", tab_name), tab_name, did)
             if not is_visible:
                 tab_widget.setTabVisible(tab_index, False)

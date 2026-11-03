@@ -22,6 +22,7 @@ from ..common.discrete import (
 from ..common.discrete.cumulative import normalized_running_total
 from ..common.stats import draw_chart_bottom_stats
 from ..common.cache_keys import series_cache_token as _series_cache_token, theme_color_token as _theme_color_token
+from .....i18n import tr
 
 
 def _draw_cached_chrome(widget, painter, *, width, height, plot_w, margin_left, margin_bottom, draw_values):
@@ -268,7 +269,7 @@ def draw_extras_impl(widget, painter, plot_w, plot_h, margin_left, margin_top, m
             day = i * bs + (1 if bs <= 1 else 0)
             x = margin_left + (i * step_x) + (step_x / 2)
             t_rect = QRectF(x - 20, h - margin_bottom + 5, 40, 15)
-            painter.drawText(t_rect, Qt.AlignmentFlag.AlignCenter, f"{day}d")
+            painter.drawText(t_rect, Qt.AlignmentFlag.AlignCenter, tr("{n}d", n=day))
 
     if not widget.show_stats:
         return

@@ -27,6 +27,7 @@ from .....logic.data.transforms.retention_series import (
 )
 from .....logic.logger import log_swallowed
 from ....chart_utils.zoom_camera import with_camera
+from ......i18n import N_, tr_name
 
 
 def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
@@ -75,7 +76,7 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
         Config.DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS,
         Config.DEEP_DIVE_PINNED_SHOW_STATS,
         parent=parent,
-        title=pinned_title(widget_def, "RETENTION"),
+        title=pinned_title(widget_def, N_("Retention")),
         title_object_name="pinned_header",
     )
     prepare_pinned_header(header_widget, header_lay)
@@ -265,7 +266,7 @@ def _build_retention(widget_def, deck_id, cache=None, parent=None, cfg=None):
 
     series_checkboxes = {}
     for key, series in RetentionChart.SERIES_CONFIG.items():
-        lbl = series["label"]
+        lbl = tr_name(series["label"])
         is_checked = vis_states.get(key, series["default_on"])
         cb = _make_checkbox(lbl, checked=is_checked, parent=header_widget)
         # Keep retention legend tint dynamic across theme/data-color changes.
@@ -327,6 +328,9 @@ def _update_retention(chart, widget_def, deck_id, cache=None, fail_if_not_cached
         return False
     ret_data = source["retention_data"]
     new_raw_hist = source["raw_hist"]
+
+    # The tooltip lines chosen in the settings, for an update in place too.
+    chart.tooltip_hidden = list(widget_def.get("tooltip_hidden") or [])
 
     if hasattr(chart, "update_data"):
         if cfg is None:

@@ -57,7 +57,7 @@ def reset_heatmap_pinned(dialog) -> None:
     if hasattr(dialog, "hm_glass_cb"):
         dialog.hm_glass_cb.setChecked(defaults.get(Config.HEATMAP_SHOW_GLASS, False))
     if hasattr(dialog, "hm_int_slider"):
-        dialog.hm_int_slider.setValue(defaults.get(Config.HEATMAP_GLASS_INTENSITY, 43))
+        dialog.hm_int_slider.setValue(defaults.get(Config.HEATMAP_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.HEATMAP_GLASS_INTENSITY]))
     if hasattr(dialog, "hm_border_slider"):
         dialog.hm_border_slider.setValue(defaults.get(Config.HEATMAP_GLASS_BORDER, 0))
 
@@ -67,6 +67,10 @@ def reset_heatmap_pinned(dialog) -> None:
         dialog.show_365_cb.setChecked(defaults.get(Config.HEATMAP_SHOW_365_MODE, True))
     if hasattr(dialog, "show_year_cb"):
         dialog.show_year_cb.setChecked(defaults.get(Config.HEATMAP_SHOW_YEAR_MODE, True))
+    if hasattr(dialog, "show_years_cb"):
+        dialog.show_years_cb.setChecked(defaults.get(Config.HEATMAP_SHOW_YEARS_MODE, True))
+    if hasattr(dialog, "years_fold_slider"):
+        dialog.years_fold_slider.setValue(defaults.get(Config.HEATMAP_YEARS_FOLD, 3))
     if getattr(dialog, "hm_tooltip_checks", None):
         from ....widgets.chart_utils.tooltip_fields import set_checks
         set_checks(dialog.hm_tooltip_checks, defaults.get(Config.HEATMAP_TOOLTIP_HIDDEN, []))

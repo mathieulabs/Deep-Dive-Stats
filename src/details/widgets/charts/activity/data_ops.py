@@ -25,6 +25,7 @@ from ..common.metric import (
     transition_update_is_redundant,
 )
 from ....logic.logger import log_swallowed
+from .....i18n import tr
 
 def refresh_data_colors_impl(widget):
     color_key = getattr(widget, "_color_config_key", None)
@@ -104,9 +105,9 @@ def get_stats_text_impl(widget):
             avg = sum(raw_values) / len(raw_values)
         total = sum(raw_values)
 
-    stats = [f"Total: {widget._format_metric_value(total, compact=False)}"]
+    stats = [tr("Total: {value}", value=widget._format_metric_value(total, compact=False))]
     if avg > 0:
-        stats.append(f"Avg: {widget._format_metric_value(avg, per_day=True, compact=False)}")
+        stats.append(tr("Avg: {value}", value=widget._format_metric_value(avg, per_day=True, compact=False)))
     return stats
 
 

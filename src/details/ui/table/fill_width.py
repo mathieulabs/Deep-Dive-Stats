@@ -7,7 +7,7 @@ column on large screens and in exports. Each column grows in proportion to its
 natural width, up to MAX_GROWTH times it; whatever is left stays on the right.
 A column the user resizes by hand keeps its width until the next auto-size.
 """
-from aqt.qt import QEvent, QObject
+from aqt.qt import QEvent, QObject, QTimer
 from ...logic.logger import log_swallowed
 
 MAX_GROWTH = 1.8
@@ -50,13 +50,28 @@ def remember_natural_widths(table):
 
 
 class _ResizeWatcher(QObject):
+    """Refills the columns after the table was resized: right after, not inside Qt's own
+    layout pass, so resizing the columns (and the slot that follows) never runs in the
+    middle of it."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self._pending = False
+
     def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.Resize:
-            try:
-                apply_fill(self.parent())
-            except Exception:
-                log_swallowed()
+        if event.type() == QEvent.Type.Resize and not self._pending:
+            self._pending = True
+            QTimer.singleShot(0, self._fill)
         return False
+
+    def _fill(self):
+        self._pending = False
+        try:
+            apply_fill(self.parent())
+        except RuntimeError:
+            pass  # the table is gone
+        except Exception:
+            log_swallowed()
 
 
 def install_fill(table):

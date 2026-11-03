@@ -18,6 +18,7 @@ from .preset_mutations import (
     save_new_custom_theme_preset,
     update_selected_custom_theme_preset,
 )
+from .....i18n import tr
 
 if TYPE_CHECKING:
     from ..dialogs.tabs_config_dialog import DetailedStatsConfigDialog
@@ -46,8 +47,8 @@ def on_update_theme_preset(dialog: "DetailedStatsConfigDialog") -> None:
     if is_builtin_theme_preset_key(current_key) or current_key not in custom_presets:
         QMessageBox.information(
             dialog,
-            "Update Preset",
-            "Select a custom preset to update. Built-in presets cannot be modified.",
+            tr("Update Preset"),
+            tr("Select a custom preset to update. Built-in presets cannot be modified."),
         )
         return
 
@@ -71,12 +72,12 @@ def on_update_theme_preset(dialog: "DetailedStatsConfigDialog") -> None:
 def on_save_theme_preset(dialog: "DetailedStatsConfigDialog") -> None:
     effective = dialog._get_current_theme_effective_palette()
     effective_mode = dialog._get_current_theme_effective_base_mode()
-    name, ok = QInputDialog.getText(dialog, "Save Theme Preset", "Preset name:")
+    name, ok = QInputDialog.getText(dialog, tr("Save Theme Preset"), tr("Preset name:"))
     if not ok:
         return
     name = name.strip()
     if not name:
-        QMessageBox.warning(dialog, "Invalid Name", "Preset name cannot be empty.")
+        QMessageBox.warning(dialog, tr("Invalid Name"), tr("Preset name cannot be empty."))
         return
 
     conf = dialog.parent_dialog.addon_config.config
@@ -105,13 +106,13 @@ def on_delete_theme_preset(dialog: "DetailedStatsConfigDialog") -> None:
     current_key = conf.get(Config.THEME_PRESET, ThemePalettes.NATIVE)
     custom_presets = get_custom_theme_presets(conf)
     if is_builtin_theme_preset_key(current_key) or current_key not in custom_presets:
-        QMessageBox.information(dialog, "Delete Preset", "Select a custom preset to delete.")
+        QMessageBox.information(dialog, tr("Delete Preset"), tr("Select a custom preset to delete."))
         return
 
     entry = custom_presets.get(current_key, {})
     preset_name = str(entry.get("name", current_key))
-    msg = f"Delete theme preset '{preset_name}'?"
-    if QMessageBox.question(dialog, "Delete Preset", msg) != QMessageBox.StandardButton.Yes:
+    msg = tr("Delete theme preset '{name}'?", name=preset_name)
+    if QMessageBox.question(dialog, tr("Delete Preset"), msg) != QMessageBox.StandardButton.Yes:
         return
 
     delete_selected_custom_theme_preset(conf, custom_presets, current_key)

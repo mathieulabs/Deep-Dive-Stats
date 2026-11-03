@@ -43,6 +43,7 @@ from ...animations.motion import animations_enabled
 from ...logic.logger import log_swallowed
 from ...widgets.chart_utils.theme import get_theme_colors
 from ..theme.icons import get_svg_icon
+from ....i18n import parse_num, tr, tr_n
 
 BAR_HEIGHT = 30
 _BAR_GAP = 8
@@ -117,11 +118,11 @@ def install(dialog):
     btn.setFlat(True)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-    btn.setToolTip("Show or hide the table")
+    btn.setToolTip(tr("Show or hide the table"))
     btn.clicked.connect(lambda: toggle(dialog))
     row.addWidget(btn, 1)
-    cb = QCheckBox("Auto-close", parent=bar)
-    cb.setToolTip("Close the table after you pick a deck in it")
+    cb = QCheckBox(tr("Auto-close"), parent=bar)
+    cb.setToolTip(tr("Close the table after you pick a deck in it"))
     cb.setChecked(_auto_close_on(dialog))
     cb.toggled.connect(lambda v: set_auto_close(dialog, v))
     row.addWidget(cb, 0)
@@ -144,10 +145,10 @@ def install(dialog):
     hrow.setContentsMargins(8, 0, 0, 0)
     hide_btn = QToolButton(hider)
     hide_btn.setObjectName("table_drawer_hide")
-    hide_btn.setText("Hide")
+    hide_btn.setText(tr("Hide"))
     hide_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
     hide_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    hide_btn.setToolTip("Hide the table (Esc)")
+    hide_btn.setToolTip(tr("Hide the table (Esc)"))
     hide_btn.clicked.connect(lambda: toggle(dialog, False))
     hrow.addWidget(hide_btn, 0, Qt.AlignmentFlag.AlignVCenter)
     hider.hide()
@@ -159,8 +160,8 @@ def install(dialog):
     crow = QHBoxLayout(closer)
     crow.setContentsMargins(0, 0, 10, 0)
     crow.setSpacing(6)
-    cb2 = QCheckBox("Auto-close", parent=closer)
-    cb2.setToolTip("Close the table after you pick a deck in it")
+    cb2 = QCheckBox(tr("Auto-close"), parent=closer)
+    cb2.setToolTip(tr("Close the table after you pick a deck in it"))
     cb2.setChecked(_auto_close_on(dialog))
     cb2.toggled.connect(lambda v: set_auto_close(dialog, v))
     crow.addWidget(cb2, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -174,7 +175,7 @@ def install(dialog):
     strip.setObjectName("table_drawer_strip")
     strip.setFlat(True)
     strip.setCursor(Qt.CursorShape.PointingHandCursor)
-    strip.setToolTip("Show or hide the table (right-click: auto-close)")
+    strip.setToolTip(tr("Show or hide the table (right-click: auto-close)"))
     strip.setStyleSheet(
         "QPushButton#table_drawer_strip { border: none; border-left: 1px solid rgba(128,128,128,0.25); "
         "background: rgba(128,128,128,0.06); }"
@@ -243,7 +244,7 @@ def _key_toggle(dialog):
 
 def _strip_menu(dialog, strip, pos):
     menu = QMenu(strip)
-    act = QAction("Auto-close after picking", menu)
+    act = QAction(tr("Auto-close after picking"), menu)
     act.setCheckable(True)
     act.setChecked(_auto_close_on(dialog))
     act.toggled.connect(lambda v: set_auto_close(dialog, v))
@@ -717,9 +718,7 @@ def _disengage(dialog):
     _watch_content(dialog, False)
     try:
         dialog._drawer_esc.setEnabled(False)
-        app = QApplication.instance()
-        if app is not None:
-            app.removeEventFilter(dialog._drawer_outside)
+        _set_outside_filter(dialog, False)
     except Exception:
         log_swallowed()
     anim = getattr(dialog, "_drawer_anim", None)
@@ -859,13 +858,27 @@ def _make_snapshot(dialog):
 
 
 def _set_outside_filter(dialog, on):
-    app = QApplication.instance()
-    if app is None:
+    """Watch the clicks in the stats window while the table is open (_OutsideClick).
+
+    On the window's QWindow, which gets every click of the window before its widgets do.
+    It was on the whole application: every event of Anki and of the other add-ons then went
+    through Python, including events of objects being destroyed, which can crash Qt."""
+    target = getattr(dialog, "_drawer_outside_target", None)
+    if target is not None:
+        try:
+            target.removeEventFilter(dialog._drawer_outside)
+        except RuntimeError:
+            pass  # the window is gone
+        dialog._drawer_outside_target = None
+    if not on:
         return
-    if on:
-        app.installEventFilter(dialog._drawer_outside)
-    else:
-        app.removeEventFilter(dialog._drawer_outside)
+    try:
+        win = dialog.windowHandle()
+    except RuntimeError:
+        return
+    if win is not None:
+        win.installEventFilter(dialog._drawer_outside)
+        dialog._drawer_outside_target = win
 
 
 def _open_overlay(dialog, open_, instant=False, remember=True):
@@ -1009,6 +1022,15 @@ def sync(dialog):
         _place(dialog, getattr(dialog, "_drawer_p", 0.0))
 
 
+def _reviews_text(value):
+    """'1,234 reviews' from the tab's review count (a number or already formatted text)."""
+    try:
+        count = parse_num(value)
+    except ValueError:
+        count = 2
+    return tr_n("{count} review", "{count} reviews", count, count=value)
+
+
 def _update_bar(dialog):
     """Refresh the bar or side strip. Only touches widgets when something changed."""
     bar = getattr(dialog, "table_drawer_bar", None)
@@ -1028,7 +1050,7 @@ def _update_bar(dialog):
             st = dialog.tab_stats.get(dialog.tab_widget.currentIndex()) or {}
             bits = []
             if st.get("reviews"):
-                bits.append(f"{st['reviews']} reviews")
+                bits.append(_reviews_text(st["reviews"]))
             if st.get("ret_all") and st.get("ret_all") != "N/A":
                 bits.append(str(st["ret_all"]))
             summary = "  \u00b7  ".join(bits)
@@ -1053,7 +1075,7 @@ def _update_bar(dialog):
         strip.setIcon(_icon("chevron-right" if opened else "chevron-left"))
         return
     # Doubled "&": the button would read it as a keyboard shortcut.
-    label = "  Table: " + title.replace("&", "&&") if title else "  Table"
+    label = "  " + (tr("Table: {name}", name=title.replace("&", "&&")) if title else tr("Table"))
     if summary:
         label += "  \u00b7  " + summary
     dialog.table_drawer_btn.setText(label)

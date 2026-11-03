@@ -7,9 +7,16 @@ from aqt.qt import QSize
 from ....ui import day_end_with_rollover
 from .legend import legend_height
 from .metrics import compute_scales, entry_counts
+from . import years_ops
 
 
 _MAX_GROW = 6.0
+
+
+def _layout_h(widget):
+    from .settings import layout_height
+
+    return layout_height(widget)
 
 
 def _grow_factor(widget, ratio, unit_h):
@@ -19,7 +26,7 @@ def _grow_factor(widget, ratio, unit_h):
     if ratio <= 1.0:
         return 1.0
     g = min(ratio, _MAX_GROW)
-    h = widget.height()
+    h = _layout_h(widget)
     if h > 0 and unit_h > 0:
         fixed = (10 * widget.scale) + legend_height(widget)
         g = min(g, (h - fixed) / unit_h)
@@ -28,6 +35,10 @@ def _grow_factor(widget, ratio, unit_h):
 
 def compute_grid_info_impl(widget):
     today = widget.end_date
+    if years_ops.is_years(widget):
+        # The top row (the newest year); the other rows come from years_ops.
+        yr = years_ops.years_shown(widget)[0]
+        return years_ops.year_grid_start(widget, yr), (lambda d: d.year == yr)
     if widget.view_mode == "year":
         start_date = datetime(today.year, 1, 1)
         wd = start_date.weekday()
@@ -123,8 +134,8 @@ def get_continuous_layout_impl(widget):
 
         if widget.grid_mode:
             content_h = margin_top + 7 * (cell_size + spacing) - spacing + (10 * widget.scale) + legend_height(widget)
-            if content_h < widget.height():
-                extra_y = (widget.height() - content_h) / 2
+            if content_h < _layout_h(widget):
+                extra_y = (_layout_h(widget) - content_h) / 2
                 margin_top += extra_y
 
         extra_offset = 0
@@ -166,6 +177,8 @@ def continuous_hit_test_impl(widget, mx, my):
 
 
 def get_grid_geometry_impl(widget):
+    if years_ops.is_years(widget):
+        return years_ops.top_geometry(widget)
     if widget._grid_cache is not None:
         return widget._grid_cache
 
@@ -209,8 +222,8 @@ def get_grid_geometry_impl(widget):
 
     if widget.grid_mode:
         content_h = margin_top + 7 * (cell_size + spacing) - spacing + (10 * widget.scale) + legend_height(widget)
-        if content_h < widget.height():
-            extra_y = (widget.height() - content_h) / 2
+        if content_h < _layout_h(widget):
+            extra_y = (_layout_h(widget) - content_h) / 2
             start_y += extra_y
 
     widget._grid_cache = (cell_size, spacing, start_x, start_y, label_space)
@@ -226,7 +239,10 @@ def get_max_counts_impl(widget, data_source=None):
     future_counts = []
 
     visible_dates = []
-    if widget.view_mode == "continuous":
+    if years_ops.is_years(widget):
+        # One scale for all the years, so they compare at a glance.
+        visible_dates = years_ops.scale_date_strings(widget)
+    elif widget.view_mode == "continuous":
         for (_yr, _mo, _a, _b, days_in_month, first_day) in widget._get_continuous_months():
             for d in range(days_in_month):
                 visible_dates.append((first_day + timedelta(days=d)).isoformat()[:10])
@@ -272,6 +288,10 @@ def has_height_for_width_impl(widget):
 
 
 def height_for_width_impl(widget, width):
+    if years_ops.is_years(widget) and not years_ops.fits_height(widget):
+        # Its own height (main screen). A card with a height of its own (Deep Dive) keeps
+        # the year view's: the years fit into it (see years_ops).
+        return years_ops.content_height(widget, width)
     scale = widget.scale if hasattr(widget, "scale") else 1.0
     base_cell_size = 14.0
     target_cell_size = base_cell_size * scale
@@ -307,7 +327,9 @@ def height_for_width_impl(widget, width):
     req_h = current_margin + 7 * (cell_size + spacing) + (10 * scale) + legend_height(widget)
 
     if getattr(widget, "grid_mode", False):
-        return min(int(180 * grow), int(req_h))
+        # The cap grows with the scale (Anki's zoom on pinned widgets): fixed at 180, a
+        # zoomed heatmap asked for less height than its rows need.
+        return min(int(180 * grow * max(1.0, float(scale))), int(req_h))
 
     return int(req_h)
 

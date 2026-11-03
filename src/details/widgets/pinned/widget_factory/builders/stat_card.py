@@ -17,6 +17,7 @@ from ....stats_cards import (
 from ...context_access import get_pinned_context
 from ....chart_utils.own_colors import clean_own_colors
 from .....logic.data.section_fallbacks import resolve_card_counts_payload
+from ......i18n import tr, tr_name
 
 
 _STAT_VALUE_CACHE = {}
@@ -251,7 +252,7 @@ def _get_stat_info(widget_def, deck_id, cache=None, fail_if_not_cached=False, cf
         return None
     custom_label = widget_def.get("label")
     if custom_label is not None:
-        title = custom_label if str(custom_label).strip() else ""
+        title = tr_name(custom_label) if str(custom_label).strip() else ""
 
     if not stat_values:
         return (title, "...", base_color)
@@ -274,7 +275,7 @@ def _build_stat_card(widget_def, deck_id, cache=None, parent=None, cfg=None):
     from ....stats_cards import StatCardWidget
 
     if not info:
-        info = ("Loading...", "...", "#808080")
+        info = (tr("Loading..."), "...", "#808080")
 
     effective_conf = _effective_stat_card_config(widget_def, cfg=cfg)
     title, value, color = info

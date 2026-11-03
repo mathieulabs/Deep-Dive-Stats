@@ -5,6 +5,7 @@
 from .....ui import ADAPTIVE_CHART_BINNING, Config, Period, rollover_hour, get_color, get_svg_icon
 from .....logic.history_provider import HistoryProvider
 from .....logic import log_debug
+from ......i18n import tr_name, upper
 
 __all__ = [
     "ADAPTIVE_CHART_BINNING",
@@ -19,8 +20,11 @@ __all__ = [
 
 
 def pinned_title(widget_def, default):
-    """Title of a pinned chart. An emptied label means no title at all."""
+    """Title of a pinned chart. An emptied label means no title at all.
+
+    default is the English name (marked with N_), shown in capitals and translated; a
+    saved label goes through tr_name() (default names are saved in English)."""
     label = widget_def.get("label")
     if label is None:
-        return default
-    return label if str(label).strip() else ""
+        return upper(tr_name(default))
+    return tr_name(label) if str(label).strip() else ""

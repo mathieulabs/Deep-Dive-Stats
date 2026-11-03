@@ -688,6 +688,28 @@ def _bin_step(chart, span):
         return 1
 
 
+def _data_cache(chart):
+    """What a zoom works out from the chart's whole data (bins of each size, running totals),
+    kept on the chart from one zoom to the next while the data and the way it is binned stay
+    the same. Before, every zoom binned the whole data again (5 to 15 ms per chart, 25 ms
+    for 4599 days the first time) before its first frame."""
+    full = chart._full_data
+    sig = (
+        type(chart).__name__,
+        len(full),
+        bool(getattr(chart, "binning_active", True)),
+        tuple(c.get("key") for c in (getattr(chart, "series_config", None) or []) if isinstance(c, dict)),
+        getattr(chart, "value_mode", None),
+    )
+    cache = chart.__dict__.get("_zc_data_cache")
+    # The data list itself is kept in the cache: compared by identity, a new list is never
+    # mistaken for the old one.
+    if cache is None or cache["src"] is not full or cache["sig"] != sig:
+        cache = {"src": full, "sig": sig, "bins": {}, "prefix": None}
+        chart.__dict__["_zc_data_cache"] = cache
+    return cache
+
+
 def _smooth(x):
     x = max(0.0, min(1.0, x))
     return x * x * (3.0 - 2.0 * x)
@@ -787,11 +809,20 @@ class _VectorZoom(_Overlay):
         # from one to the other (see charts.common.zoom_view.cumulative_range).
         full = chart._full_data
         n_rows = len(full)
+        data_cache = _data_cache(chart)
+        prefix = data_cache["prefix"]
+        if prefix is None:
+            prefix = [0.0]
+            run = 0.0
+            for r in full:
+                run += _row_total(chart, r)
+                prefix.append(run)
+            data_cache["prefix"] = prefix
 
         def window_total(w0, w1):
             i0 = max(0, int(math.floor(w0)))
             i1 = min(n_rows, int(math.ceil(w1)))
-            return sum(_row_total(chart, r) for r in full[i0:i1])
+            return prefix[i1] - prefix[i0] if i1 > i0 else 0.0
 
         self._cum_ends = (max(1.0, window_total(*self._a)), max(1.0, window_total(*self._b)))
         self._end_ratio = tuple((x[1] / x[0]) if x[0] > 0 else 0.0 for x in ends)
@@ -821,7 +852,7 @@ class _VectorZoom(_Overlay):
     def _slice_binned(self, s, e, k):
         """Bins of size k for rows [s, e) (s a multiple of k). The whole data is binned once
         per size and sliced: the same bins as binning the slice itself, at no cost per frame."""
-        cache = self.__dict__.setdefault("_binned_all", {})
+        cache = _data_cache(self._chart)["bins"]
         allk = cache.get(k)
         if allk is None:
             allk = cache[k] = self._binned(self._chart._full_data, k)
@@ -1058,6 +1089,8 @@ class _VectorZoom(_Overlay):
     def _warm(self):
         # The axis maximum of every step of the animation is looked up (and cached) now, so
         # the first frames, which already draw two layers, do not also pay for it.
+        if self._camera_axis():
+            return  # the camera axis needs none of it
         for g in range(int(1.0 / self.HOLD_STEP) + 2):
             self._log_target(g)
     HOLD_W = 0.35  # how far back (in animation progress) the axis maximum is averaged
@@ -1144,6 +1177,33 @@ class _VectorZoom(_Overlay):
         cache[g] = val
         return val
 
+    AXIS_FALL_T = 0.15  # share of the animation over which a falling axis catches up
+    # Zoom in or out: the axis zooms with the same easing as the view, like a camera. The
+    # bars then grow (or shrink) with the view and settle with it. False: the axis follows
+    # the bars in view (held, eased, kept steady), which made the bars grow all at once
+    # after a tall bar had left the view, and the axis jump when one came in.
+    CAMERA_AXIS = True
+
+    def _camera_axis(self):
+        if not self.CAMERA_AXIS:
+            return False
+        zoom_out = self._a[0] >= self._b[0] - 1e-6 and self._a[1] <= self._b[1] + 1e-6
+        return self._zoom_in or zoom_out
+
+    def _ease_axis_down(self, mx, prev):
+        """A tall bar leaving the view lets the axis drop a lot within a frame or two, and
+        every bar then grows at once: the zoom seemed to jump. The axis comes down over a
+        few frames instead (a higher axis only makes the bars shorter, it never cuts one),
+        and catches up fully towards the end so the last frame is the chart itself."""
+        if prev is None or mx >= prev[1]:
+            return mx
+        dt = max(0.0, self._t - prev[0])
+        lag = self.AXIS_FALL_T * (1.0 - _smooth((self._t - 0.75) / 0.25))
+        if lag <= 1e-6:
+            return mx
+        keep = math.exp(-dt / lag)
+        return math.exp(math.log(mx) + (math.log(prev[1]) - math.log(mx)) * keep)
+
     def _build_frame(self):
         e = _EASE.valueForProgress(max(0.0, min(1.0, self._t)))
         v0, v1 = _zoom_path(self._a, self._b, e)
@@ -1153,46 +1213,57 @@ class _VectorZoom(_Overlay):
             self._frame = None
             return
         layers = self._layers(v0, v1, e)
-        log_mx = self._targets_of(layers, v0, v1, e)[0]
         avg = self._average(v0, v1, e)
-        # The axis stays at least on a steady glide from its start value to its end value:
-        # a tall bar leaving the view quickly does not rescale everything at once, and on a
+        # The glide: the axis from its start value to its end value with the view's easing.
+        # With the camera axis it is the axis; otherwise the axis stays at least on it, so a
+        # tall bar leaving the view quickly does not rescale everything at once, and on a
         # zoom-out the axis grows ahead of the tall bars coming in.
         ma, mb = self._end_max
         glide = math.exp(math.log(ma) + (math.log(mb) - math.log(ma)) * e)
-        # When the view moves fast (a big zoom), tall bars leave it within a frame or two:
-        # the axis comes down over the last few frames' average instead of in one step
-        # (never below the current target, so no bar is cut), and the averaging fades out
-        # towards the end so the last frame is exactly the chart.
-        width = self.HOLD_W * (1.0 - _smooth((e - 0.7) / 0.3))
-        hold = log_mx
-        if width > 1e-3:
-            g_hi = int(e / self.HOLD_STEP)
-            g_lo = max(0, int(math.ceil((e - width) / self.HOLD_STEP)))
-            vals = [self._log_target(g) for g in range(g_lo, g_hi + 1)]
-            vals = [v for v in vals if v is not None] + [log_mx]
-            hold = max(log_mx, sum(vals) / len(vals))
-        mx = max(math.exp(hold), glide)
-        # The bars' mean height (average / axis maximum) goes steadily from its start value to
-        # its end value. Without this the axis could stay high while the view moves to a quiet
-        # part, so the bars first shrink and then grow back.
-        r0, r1 = self._end_ratio
-        ratio = r0 + (r1 - r0) * e
-        if self.RATIO_FOLLOW and ratio > 1e-6 and avg > 0:
-            mx = max(math.exp(log_mx), avg / ratio)
-        # Zooming in only ever shows bars that were already in view, so the axis never needs
-        # to go back up (bars entering the edge weighting could make it wobble).
-        prev = getattr(self, "_mx_prev", None)
-        if self._zoom_in and prev is not None and self._t >= prev[0]:
-            mx = max(min(mx, prev[1]), glide)
-        mx = self._steady_bars(mx, math.exp(log_mx), e)
-        if not self._zoom_in:
-            # Zooming out, the axis follows its glide and only goes above it for a taller bar
-            # in view, so the bars do not shrink and grow back at the end.
-            mx = min(mx, max(glide, math.exp(log_mx)))
-            # Same for the average line: it moves from its start height to its end one with the view.
-            if ratio > 1e-6:
-                avg = mx * ratio
+        if self._camera_axis():
+            mx = glide
+            if not self._zoom_in:
+                # The average line moves from its start height to its end one with the view.
+                r0, r1 = self._end_ratio
+                ratio = r0 + (r1 - r0) * e
+                if ratio > 1e-6:
+                    avg = mx * ratio
+        else:
+            log_mx = self._targets_of(layers, v0, v1, e)[0]
+            # When the view moves fast (a big zoom), tall bars leave it within a frame or two:
+            # the axis comes down over the last few frames' average instead of in one step
+            # (never below the current target, so no bar is cut), and the averaging fades out
+            # towards the end so the last frame is exactly the chart.
+            width = self.HOLD_W * (1.0 - _smooth((e - 0.7) / 0.3))
+            hold = log_mx
+            if width > 1e-3:
+                g_hi = int(e / self.HOLD_STEP)
+                g_lo = max(0, int(math.ceil((e - width) / self.HOLD_STEP)))
+                vals = [self._log_target(g) for g in range(g_lo, g_hi + 1)]
+                vals = [v for v in vals if v is not None] + [log_mx]
+                hold = max(log_mx, sum(vals) / len(vals))
+            mx = max(math.exp(hold), glide)
+            # The bars' mean height (average / axis maximum) goes steadily from its start value to
+            # its end value. Without this the axis could stay high while the view moves to a quiet
+            # part, so the bars first shrink and then grow back.
+            r0, r1 = self._end_ratio
+            ratio = r0 + (r1 - r0) * e
+            if self.RATIO_FOLLOW and ratio > 1e-6 and avg > 0:
+                mx = max(math.exp(log_mx), avg / ratio)
+            # Zooming in only ever shows bars that were already in view, so the axis never needs
+            # to go back up (bars entering the edge weighting could make it wobble).
+            prev = getattr(self, "_mx_prev", None)
+            if self._zoom_in and prev is not None and self._t >= prev[0]:
+                mx = max(min(mx, prev[1]), glide)
+            mx = self._steady_bars(mx, math.exp(log_mx), e)
+            mx = self._ease_axis_down(mx, prev)
+            if not self._zoom_in:
+                # Zooming out, the axis follows its glide and only goes above it for a taller bar
+                # in view, so the bars do not shrink and grow back at the end.
+                mx = min(mx, max(glide, math.exp(log_mx)))
+                # Same for the average line: it moves from its start height to its end one with the view.
+                if ratio > 1e-6:
+                    avg = mx * ratio
         self._mx_prev = (self._t, mx)
         self._max = mx
         self._glide = glide

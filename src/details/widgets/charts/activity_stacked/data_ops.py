@@ -26,6 +26,7 @@ from ..common.metric import (
     transition_update_is_redundant,
 )
 from ....logic.logger import log_swallowed
+from .....i18n import tr
 
 
 def get_margins_impl(widget):
@@ -179,9 +180,9 @@ def get_stats_text_impl(widget):
     else:
         avg = sum(counts) / len(counts) if counts else 0
 
-    stats = [f"Total: {widget._format_metric_value(total, compact=False)}"]
+    stats = [tr("Total: {value}", value=widget._format_metric_value(total, compact=False))]
     if avg > 0:
-        stats.append(f"Avg: {widget._format_metric_value(avg, per_day=True, compact=False)}")
+        stats.append(tr("Avg: {value}", value=widget._format_metric_value(avg, per_day=True, compact=False)))
     return stats
 
 

@@ -56,6 +56,7 @@ class _TitleLabel(_ColorLabel):
         p.end()
 from ...chart_utils import is_night_mode
 from ...chart_utils.formatting import fmt_num
+from .....i18n import num, upper
 from ....animations.hover_effect import StatCardEffect
 from ....animations.motion import animations_enabled
 from ..ui.style import (
@@ -144,7 +145,7 @@ class StatCardWidget(QFrame):
         self._content_grid.setHorizontalSpacing(0)
         self._content_grid.setVerticalSpacing(2)
 
-        display_title = f"{icon}  {title.upper()}" if icon else title.upper()
+        display_title = f"{icon}  {upper(title)}" if icon else upper(title)
         self.title_lbl = _TitleLabel(display_title, parent=self)
         self.title_lbl.setObjectName("StatCardTitle")
         set_qss(self.title_lbl, title_label_style(0))
@@ -221,6 +222,14 @@ class StatCardWidget(QFrame):
         self.apply_visual_style()
         self.update_style_params(self.base_color, self.title_col)
 
+        # "⋯" on hover: the right-click menu, for those who never right click. It only
+        # shows where the title row has room for it.
+        from ...common.more_button import attach_more_button
+        attach_more_button(self)
+        if is_pinned:
+            from ...common.guided_tour import attach_guided_tour
+            attach_guided_tour(self)
+
         # Unlocked effects are read from the config (locked by default)
         unlocked_list = self.addon_config.get("UNLOCKED_EFFECTS", [])
         card_id = self.widget_id or self.config_key
@@ -239,10 +248,10 @@ class StatCardWidget(QFrame):
         t = max(0.0, min(1.0, self._roll_progress))
         curr = self._roll_start + ((self._roll_end - self._roll_start) * t)
         if self._roll_kind == "percent":
-            txt = f"{curr:.{self._roll_decimals}f}%"
+            txt = num(f"{curr:.{self._roll_decimals}f}%")
         else:
             if self._roll_decimals > 0:
-                txt = f"{curr:,.{self._roll_decimals}f}"
+                txt = fmt_num(curr, self._roll_decimals)
             else:
                 txt = fmt_num(int(round(curr)))
             txt = f"{self._roll_prefix}{txt}{self._roll_suffix}"
@@ -431,8 +440,7 @@ class StatCardWidget(QFrame):
         event.ignore()
 
     def _pick_color(self):
-        """Pick the card's color: its own one when it has own colors, else the shared one
-        of its stat (see logic/widget_persistence.set_card_color)."""
+        """Pick this card's own color (see logic/widget_persistence.set_card_color)."""
         pick_card_color_impl(
             self,
             read_config_fn=lambda: self.addon_config,

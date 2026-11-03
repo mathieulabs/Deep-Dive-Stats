@@ -3,6 +3,7 @@
 from aqt.qt import QAction
 
 from ..shared.menu import StyledMenu
+from .headers import header_key
 from ...logic.logger import log_swallowed
 
 
@@ -27,13 +28,13 @@ def show_header_menu(dialog, pos, table, header):
         item = table.horizontalHeaderItem(col_idx)
         if not item:
             continue
-        name = item.text()
+        name = header_key(item)
 
         if name in col_map:
             key = col_map[name]
             is_visible = not table.isColumnHidden(col_idx)
 
-            action = QAction(name, dialog)
+            action = QAction(item.text(), dialog)
             action.setCheckable(True)
             action.setChecked(is_visible)
 

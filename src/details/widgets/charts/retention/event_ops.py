@@ -12,6 +12,7 @@ from ...chart_utils.tooltip import (
     show_floating_label_at_y,
     show_tooltip_near,
 )
+from .....i18n import percent_text, tr, tr_name
 
 
 def _plot_left_margin(widget):
@@ -105,10 +106,10 @@ def mouse_move_event_impl(widget, event):
                     has_counts = isinstance(item, (list, tuple)) and len(item) >= 3 and item[2]
                     if val is None and not (has_counts and item[2][1]):
                         continue
-                    label = widget.SERIES_CONFIG[k]["label"]
+                    label = tr_name(widget.SERIES_CONFIG[k]["label"])
                     color = widget._get_series_color(k, widget)
                     txt = f"{label}"
-                    val_str = "too few reviews" if val is None else f"{fmt_num_compact(val)}%"
+                    val_str = tr("too few reviews") if val is None else percent_text(fmt_num_compact(val))
                     if has_counts:
                         passed, total = item[2]
                         val_str += f" ({fmt_num(passed)}/{fmt_num(total)})"
@@ -134,7 +135,7 @@ def mouse_move_event_impl(widget, event):
             show_floating_label_at_y(
                 widget,
                 tooltip,
-                text=f"avg: {fmt_num_compact(avg_val)}%",
+                text=tr("avg: {value}%", value=fmt_num_compact(avg_val)),
                 y_local=draw_y_local,
                 anchor_x_local=m_label_left,
                 theme_colors=t_colors,

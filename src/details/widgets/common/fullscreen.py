@@ -23,6 +23,7 @@ from ..chart_utils.theme import get_theme_colors
 from ...ui.theme.icons import get_svg_icon
 from ....qss import set_qss
 from ...logic.logger import log_swallowed
+from ....i18n import tr
 
 _QT_MAX = 16777215
 
@@ -146,7 +147,7 @@ class _FullscreenChartWindow(QDialog):
         close_btn.setIconSize(QSize(18, 18))
         close_btn.setFixedSize(32, 32)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setToolTip("Exit fullscreen (Esc)")
+        close_btn.setToolTip(tr("Exit fullscreen (Esc)"))
         close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         set_qss(
             close_btn,

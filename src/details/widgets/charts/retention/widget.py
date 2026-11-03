@@ -50,16 +50,17 @@ from .event_ops import (
 )
 from .render_ops import draw_bottom_stats_impl, draw_series_transition_impl, paint_event_impl
 from ....logic.logger import log_swallowed
+from .....i18n import N_
 
 
 class RetentionChart(ZoomableMixin, ChartAnimationMixin, QWidget):
     """A multi-series line chart for displaying retention data with toggleable series."""
 
     SERIES_CONFIG = {
-        "all": {"label": "All", "color": "#22c55e", "default_on": False},
-        "young": {"label": "Young", "color": "#00BCD4", "default_on": True},
-        "mature": {"label": "Mature", "color": "#4caf50", "default_on": True},
-        "true": {"label": "True", "color": "#9fa8da", "default_on": False},
+        "all": {"label": N_("All"), "color": "#22c55e", "default_on": False},
+        "young": {"label": N_("Young"), "color": "#00BCD4", "default_on": True},
+        "mature": {"label": N_("Mature"), "color": "#4caf50", "default_on": True},
+        "true": {"label": N_("True"), "color": "#9fa8da", "default_on": False},
     }
 
     @staticmethod

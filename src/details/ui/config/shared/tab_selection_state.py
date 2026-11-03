@@ -16,6 +16,7 @@ from ... import (
 
 from .range_options import RANGE_OPTIONS
 from ....logic.logger import log_swallowed
+from .....i18n import num, tr_name
 
 _BASE_CONTROL_ATTRS = (
     "enabled_check",
@@ -77,7 +78,8 @@ def apply_tab_selection_state(dialog: Any, row: int) -> None:
         checkbox.blockSignals(True)
     try:
         dialog.enabled_check.setChecked(tab.get("enabled", True))
-        dialog.title_edit.setText(tab.get("title", ""))
+        # A default name shows translated; it is only saved if the user edits it.
+        dialog.title_edit.setText(tr_name(tab.get("title", "")))
 
         range_val = tab.get("range", Period.WEEK)
         for i, (_label, val) in enumerate(RANGE_OPTIONS):
@@ -159,7 +161,7 @@ def apply_tab_selection_state(dialog: Any, row: int) -> None:
                 _sl.blockSignals(False)
                 _lbl = getattr(dialog, _attr.replace("slider", "lbl"), None)
                 if _lbl is not None:
-                    _lbl.setText(f"{_sl.value()}%")
+                    _lbl.setText(num(f"{_sl.value()}%"))
         for _attr, _key in (
             ("chart_show_grid_check", Config.CHART_SHOW_GRID),
         ):
@@ -210,10 +212,21 @@ def apply_tab_selection_state(dialog: Any, row: int) -> None:
             _cb.blockSignals(True)
             _cb.setChecked(bool(conf.get(Config.PINNED_CHARTS_COLLAPSIBLE, False)))
             _cb.blockSignals(False)
+        _cb = getattr(dialog, "pinned_card_labels_cb", None)
+        if _cb is not None:
+            _cb.blockSignals(True)
+            _cb.setChecked(bool(conf.get(Config.PINNED_CARD_LABELS, True)))
+            _cb.blockSignals(False)
+        _cb = getattr(dialog, "pinned_empty_hint_cb", None)
+        if _cb is not None:
+            _cb.blockSignals(True)
+            _cb.setChecked(bool(conf.get(Config.PINNED_EMPTY_HINT, True)))
+            _cb.blockSignals(False)
         for _attr, _key, _default in (
             ("pinned_margin_side_spin", Config.PINNED_MARGIN_SIDE, 20),
             ("pinned_margin_top_spin", Config.PINNED_MARGIN_TOP, 0),
             ("pinned_margin_bottom_spin", Config.PINNED_MARGIN_BOTTOM, 20),
+            ("pinned_section_spacing_spin", Config.PINNED_SECTION_SPACING, 10),
         ):
             _spin = getattr(dialog, _attr, None)
             if _spin is not None:

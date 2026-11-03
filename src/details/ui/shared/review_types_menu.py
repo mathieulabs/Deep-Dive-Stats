@@ -4,6 +4,7 @@
 from aqt.qt import QAction
 
 from ...logic.data.transforms.activity_series import REVIEW_TYPE_CHOICES, normalize_hidden_types
+from ....i18n import tr, tr_name
 
 
 def add_review_type_actions(menu, hidden, on_change):
@@ -12,10 +13,10 @@ def add_review_type_actions(menu, hidden, on_change):
     At least one type always stays on, so the chart never ends up blank by accident.
     """
     hidden = set(normalize_hidden_types(hidden))
-    sub = menu.addMenu("Review Types")
+    sub = menu.addMenu(tr("Review Types"))
     visible_count = len(REVIEW_TYPE_CHOICES) - len(hidden)
     for key, label in REVIEW_TYPE_CHOICES:
-        act = QAction(label, sub)
+        act = QAction(tr_name(label), sub)
         act.setCheckable(True)
         shown = key not in hidden
         act.setChecked(shown)

@@ -6,6 +6,7 @@ from aqt.qt import (
 from .theme import get_theme_colors
 from .tooltip_fields import filter_tooltip_lines
 from ...logic.logger import log_swallowed
+from ....i18n import localize_dates
 
 
 def _resolve_tooltip_colors(widget):
@@ -171,11 +172,29 @@ def hide_tooltips_on_window_deactivate(widget, event, *attr_names):
     if event.type() == QEvent.Type.ActivationChange and not widget.isActiveWindow():
         hide_tooltip_targets(widget, *attr_names)
 
+def built_offscreen(widget):
+    """True for a widget built out of sight (a preview of the widget gallery): its popups
+    must not show, they would be small windows of their own on the screen."""
+    w = widget
+    while w is not None:
+        if w.property("dd_offscreen"):
+            return True
+        w = w.parentWidget()
+    return False
+
+
 class _ShowOnlyWhenActiveMixin:
     """Popup windows only show while their parent is visible and the host window is active."""
 
+    def setVisible(self, visible):
+        if visible and built_offscreen(self):
+            return
+        super().setVisible(visible)
+
     def show(self):
         if QApplication.mouseButtons() & Qt.MouseButton.RightButton:
+            return
+        if built_offscreen(self):
             return
         p = self.parentWidget()
         if p and not p.isVisible():
@@ -234,9 +253,37 @@ class TooltipWindow(_ShowOnlyWhenActiveMixin, QWidget):
         return super().eventFilter(obj, event)
 
     def update_content(self, lines):
-        self.lines = lines
-        self.adjustSize()
+        # Chart data keeps its date labels in English: show them in the interface language.
+        self.lines = [
+            dict(line, text=localize_dates(line["text"])) if isinstance(line.get("text"), str) else line
+            for line in (lines or [])
+        ]
+        # Sized here, never while it paints: resizing a window from its own paintEvent swaps
+        # its drawing surface under the open painter, which corrupted Qt's painting state
+        # and could crash Anki a moment later in any window.
+        tw, th = self._content_size()
+        if (self.width(), self.height()) != (tw, th):
+            self.resize(tw, th)
         self.update()
+
+    def _content_size(self):
+        fm_normal = QFontMetrics(self.font())
+        font_bold = self.font()
+        font_bold.setBold(True)
+        fm_bold = QFontMetrics(font_bold)
+        max_w = 0
+        box_h = 10
+        for line in self.lines:
+            use_fm = fm_bold if (line.get("header") or line.get("bold")) else fm_normal
+            tw_left = use_fm.horizontalAdvance(line["text"])
+            if line.get("color"):
+                tw_left += 15
+            tw_right = use_fm.horizontalAdvance(line.get("value", ""))
+            gap = 40
+            total_w = tw_left + (gap if line.get("value") else 0) + tw_right
+            max_w = max(max_w, total_w)
+            box_h += use_fm.height() + 4
+        return int(max_w + 30), int(box_h)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -244,29 +291,7 @@ class TooltipWindow(_ShowOnlyWhenActiveMixin, QWidget):
         cols = _resolve_tooltip_colors(self.parentWidget() or self)
 
         fm_normal = painter.fontMetrics()
-        font_bold = painter.font()
-        font_bold.setBold(True)
-        fm_bold = QFontMetrics(font_bold)
-
-        max_w = 0
-        box_h = 10
-
-        for line in self.lines:
-            use_fm = fm_bold if (line.get("header") or line.get("bold")) else fm_normal
-
-            tw_left = use_fm.horizontalAdvance(line["text"])
-            if line.get("color"): tw_left += 15
-            tw_right = use_fm.horizontalAdvance(line.get("value", ""))
-
-            gap = 40
-            total_w = tw_left + (gap if line.get("value") else 0) + tw_right
-            if total_w > max_w: max_w = total_w
-            box_h += use_fm.height() + 4
-
-        tw = max_w + 30
-        th = box_h
-
-        self.resize(tw, th)
+        tw = self.width()
 
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         painter.setBrush(cols["bg"])

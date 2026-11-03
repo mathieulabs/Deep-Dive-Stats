@@ -23,55 +23,56 @@ from ... import Config
 from ...theme.icons import get_svg_icon
 from .....qss import set_qss
 from ....logic.logger import log_swallowed
+from .....i18n import tr, N_, tr_name
 
 OWN_KEY = "own_colors"
 
-_BAR = (Config.COLOR_BAR, "Bars")
+_BAR = (Config.COLOR_BAR, N_("Bars"))
 _CARD_TYPES = (
-    (Config.COLOR_MATURE, "Mature"),
-    (Config.COLOR_YOUNG, "Young"),
-    (Config.COLOR_LEARN, "Learning"),
-    (Config.COLOR_RELEARN, "Relearning"),
-    (Config.COLOR_CRAM, "Filtered"),
+    (Config.COLOR_MATURE, N_("Mature")),
+    (Config.COLOR_YOUNG, N_("Young")),
+    (Config.COLOR_LEARN, N_("Learning")),
+    (Config.COLOR_RELEARN, N_("Relearning")),
+    (Config.COLOR_CRAM, N_("Filtered")),
 )
-_GRADIENT = ((Config.COLOR_GRADIENT_LOW, "Low end"), (Config.COLOR_GRADIENT_HIGH, "High end"))
+_GRADIENT = ((Config.COLOR_GRADIENT_LOW, N_("Low end")), (Config.COLOR_GRADIENT_HIGH, N_("High end")))
 
 WIDGET_COLOR_KEYS = {
     "activity": (_BAR, *_CARD_TYPES),
     "retention": (
-        (Config.COLOR_RETENTION, "All"),
-        (Config.COLOR_YOUNG, "Young"),
-        (Config.COLOR_MATURE, "Mature"),
-        (Config.COLOR_CRAM, "True"),
+        (Config.COLOR_RETENTION, N_("All")),
+        (Config.COLOR_YOUNG, N_("Young")),
+        (Config.COLOR_MATURE, N_("Mature")),
+        (Config.COLOR_CRAM, N_("True")),
     ),
     "added": (_BAR,),
     "hourly": (_BAR,),
     "review_intervals": (_BAR,),
     "stability": (_BAR,),
     "distribution": (
-        (Config.COLOR_AGAIN, "Again"),
-        (Config.COLOR_HARD, "Hard"),
-        (Config.COLOR_GOOD, "Good"),
-        (Config.COLOR_EASY, "Easy"),
+        (Config.COLOR_AGAIN, N_("Again")),
+        (Config.COLOR_HARD, N_("Hard")),
+        (Config.COLOR_GOOD, N_("Good")),
+        (Config.COLOR_EASY, N_("Easy")),
     ),
     "card_counts": (
-        (Config.COLOR_NEW, "New"),
-        (Config.COLOR_LEARN, "Learning"),
-        (Config.COLOR_RELEARN, "Relearning"),
-        (Config.COLOR_YOUNG, "Young"),
-        (Config.COLOR_MATURE, "Mature"),
-        (Config.COLOR_SUSPENDED, "Suspended"),
-        (Config.COLOR_BURIED, "Buried"),
-        (Config.COLOR_DELETED, "Deleted"),
+        (Config.COLOR_NEW, N_("New")),
+        (Config.COLOR_LEARN, N_("Learning")),
+        (Config.COLOR_RELEARN, N_("Relearning")),
+        (Config.COLOR_YOUNG, N_("Young")),
+        (Config.COLOR_MATURE, N_("Mature")),
+        (Config.COLOR_SUSPENDED, N_("Suspended")),
+        (Config.COLOR_BURIED, N_("Buried")),
+        (Config.COLOR_DELETED, N_("Deleted")),
     ),
-    "future_due": ((Config.COLOR_FUTURE_DUE, "Due"), (Config.COLOR_BACKLOG, "Backlog")),
+    "future_due": ((Config.COLOR_FUTURE_DUE, N_("Due")), (Config.COLOR_BACKLOG, N_("Backlog"))),
     "difficulty": _GRADIENT,
     "retrievability": _GRADIENT,
-    "heatmap": ((Config.HEATMAP_COLOR, "Activity"),),
+    "heatmap": ((Config.HEATMAP_COLOR, N_("Activity")),),
 }
 
-_SHARED_TIP = "Shared with Settings > Colors: a color changed here changes everywhere it is used."
-_OWN_TIP = "Own colors: these colors are for this widget only, the others keep the shared ones."
+_SHARED_TIP = N_("Shared with Settings > Colors: a color changed here changes everywhere it is used.")
+_OWN_TIP = N_("Own colors: these colors are for this widget only, the others keep the shared ones.")
 
 
 def color_keys_for(dialog):
@@ -79,7 +80,7 @@ def color_keys_for(dialog):
         from ....widgets.stats_cards.logic.own_color import card_color_key
 
         key = card_color_key(_StatRef(dialog))
-        return ((key, "Value"),) if key else ()
+        return ((key, N_("Value")),) if key else ()
     return WIDGET_COLOR_KEYS.get(dialog.type, ())
 
 
@@ -305,11 +306,11 @@ def _color_row(dialog, box, label, current_fn, is_default_fn, set_fn, reset_fn, 
     row = QHBoxLayout()
     row.addWidget(QLabel(label))
     row.addStretch()
-    swatch = QPushButton()
+    swatch = QPushButton(dialog)  # parented: a lone button would show as a window
     swatch.setFixedSize(28, 22)
     swatch.setCursor(Qt.CursorShape.PointingHandCursor)
-    swatch.setToolTip("Click to pick a color")
-    reset = QPushButton()
+    swatch.setToolTip(tr("Click to pick a color"))
+    reset = QPushButton(dialog)
     reset.setIcon(get_svg_icon("rotate-ccw", size=13, context_ref=dialog))
     reset.setFixedSize(22, 22)
     reset.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -321,7 +322,7 @@ def _color_row(dialog, box, label, current_fn, is_default_fn, set_fn, reset_fn, 
         reset.setVisible(not is_default_fn())
 
     def pick(_checked=False):
-        chosen = QColorDialog.getColor(QColor(current_fn()), dialog, "Pick Color")
+        chosen = QColorDialog.getColor(QColor(current_fn()), dialog, tr("Pick Color"))
         if chosen.isValid():
             set_fn(chosen.name())
             show()
@@ -347,10 +348,10 @@ def build_widget_color_section(dialog):
     from ....widgets.chart_utils.own_colors import clean_own_colors
 
     dialog._own_colors_backup = clean_own_colors(dialog.widget_def.get(OWN_KEY))
-    group = QGroupBox("Colors")
+    group = QGroupBox(tr("Colors"))
     box = QVBoxLayout(group)
-    own_cb = QCheckBox("Own colors (this widget only)")
-    own_cb.setToolTip("Off: the shared colors of Settings > Colors. On: colors for this widget only.")
+    own_cb = QCheckBox(tr("Own colors (this widget only)"))
+    own_cb.setToolTip(tr("Off: the shared colors of Settings > Colors. On: colors for this widget only."))
     own_cb.setChecked(_own_colors(dialog) is not None)
     box.addWidget(own_cb)
     dialog.own_colors_cb = own_cb
@@ -389,18 +390,18 @@ def build_widget_color_section(dialog):
         swatch, show = _color_row(
             dialog,
             box,
-            label,
+            tr_name(label),
             current_fn=lambda key=key: current(key),
             is_default_fn=lambda key=key: is_default(key),
             set_fn=lambda color, key=key: set_color(key, color),
             reset_fn=lambda key=key: reset_color(key),
-            reset_tip="Back to the shared color",
+            reset_tip=tr("Back to the shared color"),
         )
         dialog.widget_color_buttons[key] = swatch
         shows.append(show)
 
     def refresh():
-        group.setToolTip(_OWN_TIP if is_own() else _SHARED_TIP)
+        group.setToolTip(tr_name(_OWN_TIP if is_own() else _SHARED_TIP))
         for show in shows:
             show()
 

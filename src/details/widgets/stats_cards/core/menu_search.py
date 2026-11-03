@@ -5,14 +5,15 @@
 Typing in it hides the group submenus and shows the matching entries as one flat list.
 """
 from aqt.qt import QAction, QLineEdit, QTimer, QWidget, QWidgetAction, QHBoxLayout
+from .....i18n import tr
 
 
 class MenuSearch:
-    def __init__(self, menu, placeholder="Search stats..."):
+    def __init__(self, menu, placeholder=None):
         self.menu = menu
         self.groups = []  # submenu actions, hidden while searching
         self.results = []  # (label, action) flat copies, shown while searching
-        self.empty = QAction("No match", menu)
+        self.empty = QAction(tr("No match"), menu)
         self.empty.setEnabled(False)
         self.empty.setVisible(False)
 
@@ -20,7 +21,7 @@ class MenuSearch:
         lay = QHBoxLayout(holder)
         lay.setContentsMargins(8, 4, 8, 4)
         self.edit = QLineEdit(holder)
-        self.edit.setPlaceholderText(placeholder)
+        self.edit.setPlaceholderText(placeholder or tr("Search stats..."))
         self.edit.setClearButtonEnabled(True)
         lay.addWidget(self.edit)
         action = QWidgetAction(menu)

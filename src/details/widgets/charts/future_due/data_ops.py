@@ -11,6 +11,7 @@ from ..common.discrete import (
     set_chart_opacity_impl,
     set_cumulative_mode_impl,
 )
+from .....i18n import tr, tr_n
 
 
 def get_min_day_impl(widget):
@@ -127,6 +128,15 @@ def update_data_impl(widget, new_data, adaptive_binning=None, transition_mode=No
     old_points_count = int(widget._points_count or len(old_values))
     old_max = max(1.0, float(widget.max_val or 0.0))
 
+    def _backlog_flags(dist, max_days, count):
+        """Which bars are backlog (overdue) bars, to fade their colour during a transition."""
+        min_day = widget._get_min_day_for_dist(dist, widget.show_backlog)
+        if min_day >= 0:
+            return [False] * int(count or 0)
+        return [widget._get_bin_day_range_for(i, count, min_day, max_days)[0] < 0 for i in range(int(count or 0))]
+
+    old_flags = _backlog_flags(old_dist, widget.max_days, old_points_count)
+
     def _has_backlog(dist):
         if not widget.show_backlog:
             return False
@@ -140,6 +150,7 @@ def update_data_impl(widget, new_data, adaptive_binning=None, transition_mode=No
     new_values = [float(v or 0.0) for v in (widget._display_values or [])]
     new_points_count = int(widget._points_count or len(new_values))
     new_max = max(new_values) if new_values and max(new_values) > 0 else 1.0
+    widget._backlog_flags = (old_flags, _backlog_flags(dist, widget.max_days, new_points_count))
 
     backlog_presence_changed = _has_backlog(old_dist) != _has_backlog(dist)
     effective_transition_mode = transition_mode
@@ -184,20 +195,33 @@ def update_data_impl(widget, new_data, adaptive_binning=None, transition_mode=No
 
 
 def get_tooltip_text_impl(widget, idx, points_count):
+    text = _bin_tooltip_line(widget, idx, points_count)
+    if getattr(widget, "cumulative_visible", True):
+        # The running total the cumulative curve shows at this bar.
+        dist = widget.data_dict.get("distribution", {})
+        first, _ = widget._get_bin_day_range(0, points_count)
+        _day, next_day = widget._get_bin_day_range(idx, points_count)
+        running = sum(dist.get(d, 0) for d in range(first, next_day))
+        text += "\n" + tr_n("Total: {count} review", "Total: {count} reviews", running, count=fmt_num(running))
+    return text
+
+
+def _bin_tooltip_line(widget, idx, points_count):
     dist = widget.data_dict.get("distribution", {})
     day, next_day = widget._get_bin_day_range(idx, points_count)
     bucket_sum = sum(dist.get(d, 0) for d in range(day, next_day))
+    reviews = tr_n("{count} review", "{count} reviews", bucket_sum, count=fmt_num(bucket_sum))
     if next_day - day > 1:
         if day < 0 and next_day <= 0:
-            return f"{abs(day)}-{abs(next_day-1)} days ago: {fmt_num(bucket_sum)} reviews"
-        return f"Days {day}-{next_day-1}: {fmt_num(bucket_sum)} reviews"
+            return tr("{start}-{end} days ago: {reviews}", start=abs(day), end=abs(next_day - 1), reviews=reviews)
+        return tr("Days {start}-{end}: {reviews}", start=day, end=next_day - 1, reviews=reviews)
     if day == -1:
-        return f"Yesterday: {fmt_num(bucket_sum)} reviews"
+        return tr("Yesterday: {reviews}", reviews=reviews)
     if day < -1:
-        return f"{abs(day)} days ago: {fmt_num(bucket_sum)} reviews"
+        return tr("{days} days ago: {reviews}", days=abs(day), reviews=reviews)
     if day == 0:
-        return f"Today: {fmt_num(bucket_sum)} reviews"
-    return f"Day {day}: {fmt_num(bucket_sum)} reviews"
+        return tr("Today: {reviews}", reviews=reviews)
+    return tr("Day {day}: {reviews}", day=day, reviews=reviews)
 
 
 def get_stats_text_impl(widget):
@@ -206,10 +230,10 @@ def get_stats_text_impl(widget):
     tomorrow = widget.data_dict.get("tomorrow", 0)
     backlog = widget.data_dict.get("backlog", 0)
     stats = [
-        f"Total: {fmt_num_compact(total)} reviews",
-        f"Average: {fmt_num_compact(avg)} reviews/day",
-        f"Due tomorrow: {fmt_num_compact(tomorrow)} reviews",
+        tr_n("Total: {count} review", "Total: {count} reviews", total, count=fmt_num_compact(total)),
+        tr("Average: {count} reviews/day", count=fmt_num_compact(avg)),
+        tr_n("Due tomorrow: {count} review", "Due tomorrow: {count} reviews", tomorrow, count=fmt_num_compact(tomorrow)),
     ]
     if widget.show_backlog and backlog > 0:
-        stats.append(f"Backlog: {fmt_num_compact(backlog)} overdue")
+        stats.append(tr("Backlog: {count} overdue", count=fmt_num_compact(backlog)))
     return stats

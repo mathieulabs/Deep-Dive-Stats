@@ -21,11 +21,12 @@ from aqt.qt import (
 
 from ... import ThemePalettes
 from .....qss import set_qss
+from .....i18n import tr
 
 
 def get_builtin_theme_defs():
     return [
-        (ThemePalettes.NATIVE, "Anki Native"),
+        (ThemePalettes.NATIVE, tr("Anki Native")),
         (ThemePalettes.CHARCOAL, "Charcoal"),
         (ThemePalettes.DEEP_OCEAN, "Deep Ocean"),
         (ThemePalettes.NORD, "Nord"),
@@ -83,16 +84,16 @@ def get_builtin_theme_defs():
 
 def get_theme_color_keys():
     return [
-        ("bg_root", "Window Background"),
-        ("bg_surface", "Surface / Tab"),
-        ("bg_element", "Element / Button"),
-        ("text_primary", "Main Text"),
-        ("text_secondary", "Secondary Text"),
-        ("accent", "Accent"),
-        ("accent_hover", "Accent Hover"),
-        ("border_strong", "Border Strong"),
-        ("border_subtle", "Border Subtle"),
-        ("total_line", "Total / Avg"),
+        ("bg_root", tr("Window Background")),
+        ("bg_surface", tr("Surface / Tab")),
+        ("bg_element", tr("Element / Button")),
+        ("text_primary", tr("Main Text")),
+        ("text_secondary", tr("Secondary Text")),
+        ("accent", tr("Accent")),
+        ("accent_hover", tr("Accent Hover")),
+        ("border_strong", tr("Border Strong")),
+        ("border_subtle", tr("Border Subtle")),
+        ("total_line", tr("Total / Avg")),
     ]
 
 
@@ -114,7 +115,7 @@ def build_theme_base_mode_selector(parent_widget, on_mode_clicked):
     row.setContentsMargins(0, 0, 0, 0)
     row.setSpacing(8)
 
-    label = QLabel("Graph Adaptation Mode:")
+    label = QLabel(tr("Graph Adaptation Mode:"))
     row.addWidget(label)
 
     selector = QWidget()
@@ -124,9 +125,9 @@ def build_theme_base_mode_selector(parent_widget, on_mode_clicked):
 
     buttons = {}
     for text, mode in (
-        ("Follow Anki", ThemePalettes.MODE_NATIVE),
-        ("Dark", ThemePalettes.MODE_DARK),
-        ("Light", ThemePalettes.MODE_LIGHT),
+        (tr("Follow Anki"), ThemePalettes.MODE_NATIVE),
+        (tr("Dark"), ThemePalettes.MODE_DARK),
+        (tr("Light"), ThemePalettes.MODE_LIGHT),
     ):
         btn = QPushButton(text, parent=selector)
         btn.setCheckable(True)
@@ -140,18 +141,18 @@ def build_theme_base_mode_selector(parent_widget, on_mode_clicked):
 
 
 def build_pinned_theme_mode_group(on_mode_changed):
-    pinned_mode_group = QGroupBox("Pinned Theme Mode")
+    pinned_mode_group = QGroupBox(tr("Pinned Theme Mode"))
     pinned_mode_layout = QFormLayout(pinned_mode_group)
     pinned_mode_layout.setContentsMargins(10, 10, 10, 10)
     pinned_mode_layout.setSpacing(6)
 
     combo = QComboBox()
-    combo.addItem("Use Native (Anki)", "native")
-    combo.addItem("Use Details Theme", "linked")
-    combo.addItem("Use Separate Pinned Theme", "separate")
-    combo.setToolTip("Choose how pinned widgets pick their theme.")
+    combo.addItem(tr("Use Native (Anki)"), "native")
+    combo.addItem(tr("Use Details Theme"), "linked")
+    combo.addItem(tr("Use Separate Pinned Theme"), "separate")
+    combo.setToolTip(tr("Choose how pinned widgets pick their theme."))
     combo.currentIndexChanged.connect(on_mode_changed)
-    pinned_mode_layout.addRow("Pinned Theme:", combo)
+    pinned_mode_layout.addRow(tr("Pinned Theme:"), combo)
 
     hint = QLabel("")
     hint.setObjectName("theme_info_label")
@@ -401,11 +402,11 @@ def build_theme_filter_bar(on_changed):
     row.setContentsMargins(0, 0, 0, 0)
     row.setSpacing(6)
     search = QLineEdit()
-    search.setPlaceholderText("Search themes...")
+    search.setPlaceholderText(tr("Search themes..."))
     search.setClearButtonEnabled(True)
     row.addWidget(search, 1)
     chips = {}
-    for mode, label in (("all", "All"), ("dark", "Dark"), ("light", "Light"), ("custom", "Custom")):
+    for mode, label in (("all", tr("All")), ("dark", tr("Dark")), ("light", tr("Light")), ("custom", tr("Custom"))):
         b = QPushButton(label)
         b.setCheckable(True)
         b.setChecked(mode == "all")

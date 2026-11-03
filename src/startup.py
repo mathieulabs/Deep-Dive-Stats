@@ -8,6 +8,7 @@ from .config import ConfigManager, dev_label
 from .qss import set_qss
 from .details.logic.logger import log_error
 from .details.logic.logger import log_swallowed
+from .i18n import tr
 # DetailedStatsDialog is imported lazily in on_show_details(): importing it at module level forced the whole Deep Dive UI stack to load at every Anki launch.
 
 
@@ -57,8 +58,13 @@ def register_hooks():
         gui_hooks.profile_will_close.append(DeepDiveLogger.flush)
     except Exception:
         log_swallowed()
+    gui_hooks.profile_will_close.append(_end_guided_tour_for_profile_close)
     gui_hooks.profile_will_close.append(_close_dialog_for_profile_close)
     gui_hooks.profile_will_close.append(_discard_parked_dialog)
+    # The language setting is per profile: the next profile reads its own.
+    from . import i18n
+
+    gui_hooks.profile_will_close.append(i18n.reset)
     gui_hooks.profile_did_open.append(_seed_rollover)
     gui_hooks.operation_did_execute.append(_on_operation_for_rollover)
     gui_hooks.theme_did_change.append(_on_anki_theme_change)
@@ -89,7 +95,11 @@ def apply_shortcut(*_args):
         open_action = getattr(mw, "_deep_dive_open_action", None)
         if open_action is not None:
             hint = QKeySequence(seq).toString(QKeySequence.SequenceFormat.NativeText)
-            open_action.setText("Open Deep Dive" + (f"\t{hint}" if hint else ""))
+            open_action.setText(tr("Open Deep Dive") + (f"\t{hint}" if hint else ""))
+        # The profile is open: the add-on's language is known, the menu can use it.
+        retranslate = getattr(mw, "_deep_dive_retranslate_menu", None)
+        if callable(retranslate):
+            retranslate()
     except Exception:
         log_swallowed()
 
@@ -111,7 +121,7 @@ def add_toolbar_action():
 
     menu = QMenu(mw)
 
-    open_action = menu.addAction("Open Deep Dive")
+    open_action = menu.addAction(tr("Open Deep Dive"))
     open_action.triggered.connect(on_show_details)
     mw._deep_dive_open_action = open_action
 
@@ -171,7 +181,7 @@ def add_toolbar_action():
             config_dialog = DetailedStatsConfigDialog(host)
             try:
                 for i in range(config_dialog.tabs_widget.count()):
-                    if config_dialog.tabs_widget.tabText(i).strip().lower() == "general":
+                    if config_dialog.tabs_widget.tabText(i).strip().lower() == tr("General").lower():
                         config_dialog.tabs_widget.setCurrentIndex(i)
                         break
             except Exception:
@@ -187,7 +197,7 @@ def add_toolbar_action():
         finally:
             _settings_open_guard = False
 
-    settings_action = menu.addAction("Settings")
+    settings_action = menu.addAction(tr("Settings"))
     settings_action.triggered.connect(on_open_settings)
 
     menu.addSeparator()
@@ -221,14 +231,14 @@ def add_toolbar_action():
                 with open(log_file, "r", encoding="utf-8") as f:
                     content = f.read()
                 if not content.strip():
-                    content = "(No logs yet)"
+                    content = tr("(No logs yet)")
             else:
-                content = "(Log file not found. Logs will appear after the next Anki restart.)"
+                content = tr("(Log file not found. Logs will appear after the next Anki restart.)")
         except Exception as e:
-            content = f"Error reading logs: {e}"
+            content = tr("Error reading logs: {error}", error=e)
 
         dlg = QDialog(mw)
-        dlg.setWindowTitle("Deep Dive Troubleshooting")
+        dlg.setWindowTitle(tr("Deep Dive Troubleshooting"))
         dlg.resize(900, 600)
 
         layout = QVBoxLayout(dlg)
@@ -246,7 +256,7 @@ def add_toolbar_action():
         copy_path_btn.setFixedSize(24, 24)
         copy_path_btn.setFlat(True)
         copy_path_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        copy_path_btn.setToolTip("Copy path")
+        copy_path_btn.setToolTip(tr("Copy path"))
         def do_copy_path():
             QApplication.clipboard().setText(log_file)
             copy_path_btn.setIcon(get_svg_icon("check", size=14, context_ref=dlg))
@@ -267,9 +277,9 @@ def add_toolbar_action():
 
         btn_row = QHBoxLayout()
 
-        report_btn = QPushButton(" Report a Bug")
+        report_btn = QPushButton(' ' + tr('Report a Bug'))
         report_btn.setIcon(get_svg_icon("bug", size=16, context_ref=dlg))
-        report_btn.setToolTip("Copies the debug info, then opens the bug report page: paste it there")
+        report_btn.setToolTip(tr("Copies the debug info, then opens the bug report page: paste it there"))
 
         def do_report():
             _copy_debug_info(dlg)
@@ -278,15 +288,15 @@ def add_toolbar_action():
         report_btn.clicked.connect(do_report)
         btn_row.addWidget(report_btn)
 
-        debug_btn = QPushButton(" Copy Debug Info")
+        debug_btn = QPushButton(' ' + tr('Copy Debug Info'))
         debug_btn.setIcon(get_svg_icon("file-text", size=16, context_ref=dlg))
-        debug_btn.setToolTip("Versions, settings and the latest errors, to paste in a bug report")
+        debug_btn.setToolTip(tr("Versions, settings and the latest errors, to paste in a bug report"))
         debug_btn.clicked.connect(lambda _=False: _copy_debug_info(dlg))
         btn_row.addWidget(debug_btn)
 
         btn_row.addStretch()
 
-        clear_cache_btn = QPushButton(" Clear Cache")
+        clear_cache_btn = QPushButton(' ' + tr('Clear Cache'))
         clear_cache_btn.setIcon(get_svg_icon("trash", color="#ffffff", size=16))
         set_qss(clear_cache_btn,
             "QPushButton { background-color: #c0392b; color: white; font-weight: bold; "
@@ -295,9 +305,9 @@ def add_toolbar_action():
         )
         def do_clear_cache():
             reply = QMessageBox.question(
-                dlg, "Clear Cache",
-                "Are you sure you want to clear the Deep Dive cache?\n"
-                "It will be rebuilt automatically (may take a few seconds).",
+                dlg, tr("Clear Cache"),
+                tr("Are you sure you want to clear the Deep Dive cache?\n"
+                "It will be rebuilt automatically (may take a few seconds)."),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
@@ -307,7 +317,7 @@ def add_toolbar_action():
         clear_cache_btn.clicked.connect(do_clear_cache)
         btn_row.addWidget(clear_cache_btn)
 
-        clear_logs_btn = QPushButton(" Clear Logs")
+        clear_logs_btn = QPushButton(' ' + tr('Clear Logs'))
         clear_logs_btn.setIcon(get_svg_icon("eraser", color="#ffffff", size=16))
         set_qss(clear_logs_btn,
             "QPushButton { background-color: #7f8c8d; color: white; font-weight: bold; "
@@ -316,30 +326,68 @@ def add_toolbar_action():
         )
         def do_clear_logs():
             reply = QMessageBox.question(
-                dlg, "Clear Logs",
-                "Are you sure you want to clear the debug log file?",
+                dlg, tr("Clear Logs"),
+                tr("Are you sure you want to clear the debug log file?"),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
                 from .details.logic import DeepDiveLogger
                 DeepDiveLogger.clear_logs()
-                text_edit.setPlainText("(Logs cleared)")
-                clear_logs_btn.setText(" Logs Cleared")
+                text_edit.setPlainText(tr("(Logs cleared)"))
+                clear_logs_btn.setText(' ' + tr('Logs Cleared'))
                 clear_logs_btn.setIcon(get_svg_icon("check", color="#ffffff", size=16))
                 clear_logs_btn.setEnabled(False)
         clear_logs_btn.clicked.connect(do_clear_logs)
         btn_row.addWidget(clear_logs_btn)
 
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(tr("Close"))
         close_btn.clicked.connect(dlg.accept)
         btn_row.addWidget(close_btn)
 
         layout.addLayout(btn_row)
+        # One height for the whole row: the styled Clear Cache / Clear Logs buttons set it.
+        row_btns = (report_btn, debug_btn, clear_cache_btn, clear_logs_btn, close_btn)
+        for b in row_btns:
+            b.ensurePolished()
+        row_h = max(clear_cache_btn.sizeHint().height(), clear_logs_btn.sizeHint().height())
+        for b in row_btns:
+            b.setFixedHeight(row_h)
         dlg.exec()
 
-    troubleshooting_action = menu.addAction("Troubleshooting...")
+    def on_guided_tour():
+        from .details.widgets.common.guided_tour import start_from_menu
+        start_from_menu()
+
+    tour_action = menu.addAction(tr("Guided Tour"))
+    tour_action.triggered.connect(on_guided_tour)
+
+    troubleshooting_action = menu.addAction(tr("Troubleshooting..."))
     troubleshooting_action.triggered.connect(on_troubleshooting)
+
+    def on_rate():
+        from .details.ui.details_dialog import links
+        from .details.ui.details_dialog.rate_prompt import mark_rated
+
+        links.open_link(links.RATE_URL)
+        mark_rated()  # the banner in Deep Dive no longer asks
+
+    menu.addSeparator()
+    rate_action = menu.addAction(tr("Rate this add-on"))
+    rate_action.triggered.connect(on_rate)
+
+    def _retranslate_menu():
+        # The menu is built before the profile opens, when the add-on's own language
+        # setting cannot be read yet: its texts are set again each time it opens.
+        hint = open_action.text().partition("\t")[2]
+        open_action.setText(tr("Open Deep Dive") + (f"\t{hint}" if hint else ""))
+        settings_action.setText(tr("Settings"))
+        tour_action.setText(tr("Guided Tour"))
+        troubleshooting_action.setText(tr("Troubleshooting..."))
+        rate_action.setText(tr("Rate this add-on"))
+
+    menu.aboutToShow.connect(_retranslate_menu)
+    mw._deep_dive_retranslate_menu = _retranslate_menu
 
     action.setMenu(menu)
     mw._deep_dive_menu = menu
@@ -494,6 +542,15 @@ def _on_anki_theme_change():
     QTimer.singleShot(0, _restyle)
 
 
+def _end_guided_tour_for_profile_close(*_args):
+    try:
+        from .details.widgets.common.guided_tour import end_for_profile_close
+
+        end_for_profile_close()
+    except Exception:
+        log_swallowed()
+
+
 def _close_dialog_for_profile_close(*_args):
     """Close the Deep Dive window before its profile's collection goes away: left open, it
     kept reading a closed collection (and Anki reports it as a window not closed)."""
@@ -586,7 +643,7 @@ def open_details_for(deck=None, period_range=None):
     elif ids == -1:
         identifier, title = "Deleted Cards", "Deleted Cards"
     elif isinstance(ids, list):
-        identifier, title = ids, f"{len(ids)} decks"
+        identifier, title = ids, f"{len(ids)} decks"  # shown through deck_title()
     else:
         identifier = ids
         try:

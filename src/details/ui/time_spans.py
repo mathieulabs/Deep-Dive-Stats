@@ -5,6 +5,7 @@ from aqt.qt import QAction, QEvent, QObject, QTimer
 
 from ..logic.logger import log_swallowed
 from .shared.menu import StyledMenu
+from ...i18n import tr, tr_name
 
 
 def _is_time_view(dialog):
@@ -12,7 +13,10 @@ def _is_time_view(dialog):
 
 
 def _span_title(tab, idx):
-    return str(tab.get("title") or tab.get("range") or f"Span {idx + 1}")
+    title = tab.get("title")
+    if title:
+        return tr_name(str(title))
+    return str(tab.get("range") or tr("Span {number}", number=idx + 1))
 
 
 def _reload(dialog, keep_range):
@@ -42,7 +46,7 @@ def add_time_span_actions(menu, dialog):
     if not tabs:
         return
     menu.addSeparator()
-    sub = menu.addMenu("Time Spans")
+    sub = menu.addMenu(tr("Time Spans"))
     enabled_count = sum(1 for t in tabs if t.get("enabled", True))
     for i, tab in enumerate(tabs):
         on = tab.get("enabled", True)

@@ -14,6 +14,46 @@ _REVIEW_RETURN_BROWSER_MAX_WAIT_MS = 420
 
 
 _REVIEW_RETURN_WATCHDOG_MS = (1500, 4000)
+# Longest wait for the deck list / deck screen page after a review before the widgets show
+# anyway.
+_REVIEW_RETURN_PAGE_MAX_WAIT_MS = 1500
+
+
+def _hold_overlay_until_page_load(manager):
+    """After a review, show the widgets only once the new page has loaded.
+
+    They sit on the main web view, which still shows the last card until the deck list or
+    the deck screen page has loaded. When the reviews run out, Anki goes back to the deck
+    on its own and that page can take a while: the widgets came up over the last card.
+    """
+    try:
+        page = mw.web.page()
+    except Exception:
+        return
+    token = object()
+    manager._review_return_page_wait = token
+
+    def _release(*_args):
+        if getattr(manager, "_review_return_page_wait", None) is not token:
+            return
+        manager._review_return_page_wait = None
+        try:
+            page.loadFinished.disconnect(_release)
+        except Exception:
+            pass
+        pending = getattr(manager, "_review_return_pending_show", None)
+        manager._review_return_pending_show = None
+        if pending is not None:
+            from ..rebuild.finalize import show_overlay
+
+            show_overlay(manager, pending)
+
+    try:
+        page.loadFinished.connect(_release)
+    except Exception:
+        manager._review_return_page_wait = None
+        return
+    QTimer.singleShot(_REVIEW_RETURN_PAGE_MAX_WAIT_MS, _release)
 
 
 def _end_review_return(manager, reason):
@@ -84,6 +124,8 @@ def _arm_review_return_watchdog(manager, seq):
 
 def on_state_did_change(manager, new_state, old_state):
     if new_state == "review":
+        manager._review_return_page_wait = None
+        manager._review_return_pending_show = None
         if manager._overlay:
             manager._overlay.hide()
         manager._update_placeholder_height(0)
@@ -124,6 +166,7 @@ def on_state_did_change(manager, new_state, old_state):
             except Exception:
                 manager._current_deck_id = None
 
+        _hold_overlay_until_page_load(manager)
         manager._schedule_rebuild(manager._current_deck_id, force=True)
 
         def _deferred_prewarm():
@@ -306,13 +349,21 @@ def on_reviewer_did_init(manager, _reviewer):
     except Exception:
         manager._last_review_deck_id = None
     if manager._overlay:
-        manager._overlay.hide()
-        manager._update_placeholder_height(0)
+        try:
+            manager._overlay.hide()
+            manager._update_placeholder_height(0)
+        except RuntimeError:
+            manager._overlay = None  # deleted on the C++ side (Anki closing)
 
 
 def on_reviewer_will_end(manager):
+    # Also called while Anki closes, when the overlay may be gone already: the error then
+    # went up to Anki's hook runner.
     if manager._overlay:
-        manager._overlay.hide()
+        try:
+            manager._overlay.hide()
+        except RuntimeError:
+            manager._overlay = None
 
 
 

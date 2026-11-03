@@ -16,6 +16,7 @@ from .data_ops import (
 from .event_ops import change_event_impl, hide_event_impl, leave_event_impl, mouse_move_event_impl, resize_event_impl
 from .layout_ops import get_bar_at_pos_impl, recalculate_layout_impl
 from .render_ops import paint_event_impl
+from .....i18n import tr
 
 
 class GroupedBarWidget(ChartAnimationMixin, QWidget):
@@ -32,8 +33,8 @@ class GroupedBarWidget(ChartAnimationMixin, QWidget):
         self.group_labels_rects = []
 
         self.colors = get_review_button_colors(self)
-        self.group_labels = {"learning": "Learning", "young": "Young", "mature": "Mature"}
-        self.button_labels = ["Again", "Hard", "Good", "Easy"]
+        self.group_labels = {"learning": tr("Learning"), "young": tr("Young"), "mature": tr("Mature")}
+        self.button_labels = [tr("Again"), tr("Hard"), tr("Good"), tr("Easy")]
         self._group_order = ["learning", "young", "mature"]
         self._buttons_per_group = len(self.button_labels)
         self._data_transition_active = False

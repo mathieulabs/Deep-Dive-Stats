@@ -1,13 +1,64 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+import time
+
 from .. import AddedChartWidget, log_debug
 from ....animations.chart_policy import local_chart_animation_batch
 
 
 # Each part of the stats update runs in its own timer tick, so no single tick holds the
-# UI thread long enough to make a zoom frame late. The heatmap one, the heaviest, runs
-# right after the zoom (280 ms). Every part plays its own transition.
+# UI thread long. None of them runs while a zoom still animates: each part takes 15 to 70 ms,
+# which made zoom frames late (measured: gaps of 45 to 125 ms between frames). They wait for
+# the end of the zoom, then run one after the other, STATS_SPACING_MS apart, the heatmap (the
+# heaviest) last. Every part plays its own transition.
 STATS_STEPS = (("cards", 90), ("dist", 120), ("hourly", 150), ("heatmap", 310))
+STATS_SPACING_MS = 40
+_ZOOM_POLL_MS = 30
+_ZOOM_WAIT_MAX_S = 1.5  # never wait longer (an animation left behind must not block the stats)
+
+
+def _zoom_animating(manager):
+    """True while one of the zoomed charts still shows its zoom animation."""
+    for attr in ("activity_chart", "stacked_chart", "retention_chart", "added_chart"):
+        chart = getattr(manager, attr, None)
+        try:
+            if chart is not None and getattr(chart, "_zoom_camera", None) is not None:
+                return True
+        except RuntimeError:
+            pass
+    return False
+
+
+def _after_zoom(manager, timers):
+    """Wait for the zoom animation to end, then start the pending parts one after the other."""
+    from aqt.qt import QTimer
+
+    wait = getattr(manager, "_stats_wait_timer", None)
+    if wait is None:
+        wait = manager._stats_wait_timer = QTimer()
+        wait.setSingleShot(True)
+
+        def _check():
+            try:
+                since = getattr(manager, "_stats_wait_since", None) or time.perf_counter()
+                if _zoom_animating(manager) and time.perf_counter() - since < _ZOOM_WAIT_MAX_S:
+                    wait.start(_ZOOM_POLL_MS)
+                    return
+                manager._stats_wait_since = None
+                jobs = getattr(manager, "_stats_jobs", None) or {}
+                k = 0
+                for part, _delay in STATS_STEPS:
+                    if part in jobs and part in timers:
+                        timers[part].start(k * STATS_SPACING_MS)
+                        k += 1
+            except RuntimeError:
+                pass
+
+        wait.timeout.connect(_check)
+    if not wait.isActive():
+        if getattr(manager, "_stats_wait_since", None) is None:
+            manager._stats_wait_since = time.perf_counter()
+        wait.start(_ZOOM_POLL_MS)
 
 
 def _stats_candidates(manager):
@@ -51,6 +102,17 @@ def schedule_stats(manager, data):
             timer.setSingleShot(True)
 
             def _run(part=part):
+                if not jobs.get(part):
+                    return
+                try:
+                    since = getattr(manager, "_stats_wait_since", None)
+                    waited_long = since is not None and time.perf_counter() - since >= _ZOOM_WAIT_MAX_S
+                    if _zoom_animating(manager) and not waited_long:
+                        # Not during the zoom: the part waits for its end (see _after_zoom).
+                        _after_zoom(manager, timers)
+                        return
+                except RuntimeError:
+                    return
                 pending = jobs.pop(part, None)
                 if not pending:
                     return

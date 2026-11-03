@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ....chart_utils import ChartGeometry, get_theme_colors
 from ....chart_utils.tooltip import show_floating_label_at_y
+from ......i18n import tr
 
 
 def get_plot_geometry(widget):
@@ -68,7 +69,7 @@ def update_avg_hover_state(
 
 def refresh_avg_hover_tooltip(widget, *, avg_value, y_avg, anchor_x_local):
     if widget.hover_avg and y_avg is not None:
-        avg_text = f"Avg: {widget._format_metric_value(avg_value, compact=False)}"
+        avg_text = tr("Avg: {value}", value=widget._format_metric_value(avg_value, compact=False))
         theme_colors = get_theme_colors(widget)
         text_color = (
             theme_colors.get("total_line")

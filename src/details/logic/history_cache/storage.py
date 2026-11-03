@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from .shared import mw, os, pickle, time
+from ....const.addon_dir import addon_removed
 from ..logger import log_swallowed
 from .exclusion import exclusion_signature
 
@@ -49,6 +50,8 @@ class StorageMixin:
                     "excluded": exclusion_signature(),
                 }
                 payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+            if addon_removed():
+                return False
             tmp_path = cache_file + ".tmp"
             with open(tmp_path, "wb") as f:
                 f.write(payload)

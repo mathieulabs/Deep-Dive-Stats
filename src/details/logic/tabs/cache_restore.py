@@ -4,6 +4,7 @@ from aqt.qt import QTableWidget, QVBoxLayout, QWidget
 
 from .. import Config
 from ...widgets import HorizontalScrollTable
+from ....i18n import tr_name
 
 
 def ensure_time_tab_table(dialog, index):
@@ -115,7 +116,7 @@ def restore_time_view_from_cache(dialog, cache, populate_time_tab_fn, ensure_tim
                 lay = QVBoxLayout(w)
                 lay.setContentsMargins(0, 0, 0, 0)
             tab_index = dialog.tab_widget.count()
-            dialog.tab_widget.addTab(w, entry.get("title", tab_config.get("title", "Stats")))
+            dialog.tab_widget.addTab(w, entry.get("title", tr_name(tab_config.get("title", "Stats"))))
             dialog.tab_widget.setTabVisible(tab_index, bool(entry.get("visible", True)))
 
             range_type = tab_config.get("range", "week")
@@ -250,7 +251,7 @@ def restore_time_view_from_cache(dialog, cache, populate_time_tab_fn, ensure_tim
         tab_layout.setContentsMargins(0, 0, 0, 0)
 
         tab_index = dialog.tab_widget.count()
-        dialog.tab_widget.addTab(tab, title)
+        dialog.tab_widget.addTab(tab, tr_name(title))
 
         params = [
             None,

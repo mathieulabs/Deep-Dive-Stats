@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from aqt.qt import QFrame, QVBoxLayout, QSizePolicy, QTimer
+from aqt.qt import QFrame, QVBoxLayout, QSizePolicy, QSpacerItem, QTimer
 
 from ..logic.row_state import (
     group_cards_by_row,
@@ -28,7 +28,11 @@ class RowGroupedStatContainer(QFrame):
 
         self._outer = QVBoxLayout(self)
         self._outer.setContentsMargins(0, 0, 0, 0)
-        self._outer.setSpacing(4)
+        # The space between two lines: a spacer above each line but the first, so each
+        # one can have its own size (set_line_gaps).
+        self._outer.setSpacing(0)
+        self._line_gaps = {}
+        self._spacers = []
 
         self.cards = []
         self._row_nums = {}
@@ -57,8 +61,38 @@ class RowGroupedStatContainer(QFrame):
                 change_fn=self._on_row_num_change,
             )
             self._apply_row_runtime_options(row)
+            spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+            self._outer.addItem(spacer)
+            self._spacers.append(spacer)
             self._outer.addWidget(row)
             self._rows.append(row)
+
+    LINE_GAP = 4
+
+    def set_line_gaps(self, gaps):
+        """{line index: space under it}. True if it changed."""
+        gaps = {int(k): int(v) for k, v in (gaps or {}).items()}
+        if gaps == self._line_gaps:
+            return False
+        self._line_gaps = gaps
+        self._apply_line_gaps()
+        self._update_height()
+        return True
+
+    def _apply_line_gaps(self):
+        """Size the spacer above each line: the space under the line shown before it."""
+        prev = None
+        changed = False
+        for i, (row, spacer) in enumerate(zip(self._rows, self._spacers)):
+            shown = not row.isHidden()
+            h = self._line_gaps.get(prev, self.LINE_GAP) if (shown and prev is not None) else 0
+            if spacer.sizeHint().height() != h:
+                spacer.changeSize(0, h, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+                changed = True
+            if shown:
+                prev = i
+        if changed:
+            self._outer.invalidate()
 
     def _schedule_height_refresh(self, delay_ms=HEIGHT_REFRESH_DELAY_MS):
         QTimer.singleShot(int(delay_ms), self._update_height)
@@ -104,8 +138,9 @@ class RowGroupedStatContainer(QFrame):
         if not visible:
             self.setFixedHeight(0)
             return
+        self._apply_line_gaps()
         total_h = sum(r.height() for r in visible)
-        gaps = max(0, len(visible) - 1) * self._outer.spacing()
+        gaps = sum(s.sizeHint().height() for r, s in zip(self._rows, self._spacers) if r.isVisible())
         self.setFixedHeight(total_h + gaps)
 
     def _on_row_num_change(self, key, delta):

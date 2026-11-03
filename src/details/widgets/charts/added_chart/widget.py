@@ -4,17 +4,18 @@ from aqt.qt import QSizePolicy
 
 from ..activity_stacked import ActivityStackedChart
 from .data_ops import normalize_rows_impl, stats_text_impl
+from .....i18n import tr, N_
 
 
 class AddedChartWidget(ActivityStackedChart):
     """Added chart powered by the same transition/render pipeline as ActivityStackedChart."""
 
-    _SERIES_CONFIG = [{"key": "count", "label": "Added", "color": "#669ff7"}]
+    _SERIES_CONFIG = [{"key": "count", "label": N_("Added"), "color": "#669ff7"}]
 
     def __init__(self, data, parent=None, adaptive_binning=True):
         from ....ui import Config, get_chart_color
 
-        series_config = [{"key": "count", "label": "Added", "color": get_chart_color(Config.COLOR_BAR, parent)}]
+        series_config = [{"key": "count", "label": tr("Added"), "color": get_chart_color(Config.COLOR_BAR, parent)}]
         super().__init__(
             self._normalize_rows(data),
             series_config,

@@ -7,9 +7,11 @@ from .. import format_hours
 from ...widgets import SegmentedBarWidget
 from ...logic.data.core.forecast import forecast_days
 from .retention_visual import retention_bar, retention_visual_on
+from .headers import header_key
 from ...widgets.chart_utils.formatting import fmt_num, stats_precision
 from ...widgets.chart_utils.theme import get_theme_colors
 from ....qss import set_qss
+from ....i18n import num, tr, tr_n, deck_title
 
 
 def populate_table(
@@ -73,7 +75,7 @@ def populate_table(
         for path, info in tree_data.items():
             children_map.setdefault(info.get("parent"), []).append(path)
 
-        header_text = table.horizontalHeaderItem(sort_col).text() if table.horizontalHeaderItem(sort_col) else ""
+        header_text = header_key(table.horizontalHeaderItem(sort_col))
 
         def get_val(d):
             if header_text == "Deck": return d.get("display_name", d.get("full_name", "")).lower()
@@ -178,7 +180,7 @@ def populate_table(
         cached = days_text_cache.get(days_int)
         if cached is not None:
             return cached
-        cached = f"{days_int} days"
+        cached = tr_n("{n} day", "{n} days", days_int)
         days_text_cache[days_int] = cached
         return cached
 
@@ -194,10 +196,10 @@ def populate_table(
             return cached
 
         ret = (passed / rev_count * 100)
-        text = "0%" if ret == 0 else f"{ret:.{stats_precision()}f}%"
+        text = num("0%" if ret == 0 else f"{ret:.{stats_precision()}f}%")
         prev_ret = (prev_pass / prev_rev * 100) if (prev_rev or 0) > 0 else 0
         trend = get_trend_html_local(ret, prev_ret, points=True)
-        tooltip = f"Pass: {passed} / Fail: {rev_count - passed}"
+        tooltip = tr("Pass: {passed} / Fail: {failed}", passed=passed, failed=rev_count - passed)
 
         if show_counts:
             failed = rev_count - passed
@@ -319,6 +321,8 @@ def populate_table(
         row = (row_idx + 1) if pin_top else row_idx
         full_name = data["full_name"]
         display_name = data.get("display_name", data["full_name"])
+        if data.get("is_deleted"):
+            display_name = deck_title(display_name)
         has_children = data.get("has_children", False)
         tree_prefix = data.get("tree_prefix", "")
 
@@ -426,7 +430,7 @@ def populate_table(
                 prev_rev = data.get("prev_reviews", 0)
                 prev_avg = (prev_time / 1000) / prev_rev if prev_rev > 0 else 0
                 avg_trend = get_trend_html_local(avg_secs, prev_avg, bigger_is_better=False)
-                add_data_item(row, col, f"{avg_secs:.{stats_precision()}f}s{avg_trend}", row_color, sort_value=avg_secs)
+                add_data_item(row, col, tr("{value}s", value=num(f"{avg_secs:.{stats_precision()}f}")) + avg_trend, row_color, sort_value=avg_secs)
             else:
                 add_data_item(row, col, "N/A", row_color, sort_value=-1)
             col += 1
@@ -461,10 +465,10 @@ def populate_table(
             days_left = None if data.get("is_deleted") else forecast_days(target_rate, data.get("max_days"), rem_new)
             if days_left is None:
                 ft = "-"
-                tooltip = f"New cards off | New cards left: {rem_new}"
+                tooltip = tr("New cards off | New cards left: {count}", count=rem_new)
             else:
                 ft = days_text_local(days_left)
-                tooltip = f"{target_rate} new/day | New cards left: {rem_new}"
+                tooltip = tr("{rate} new/day | New cards left: {count}", rate=target_rate, count=rem_new)
 
             add_data_item(row, col, ft, row_color, tooltip, sort_value=-1 if days_left is None else days_left)
             col += 1
@@ -492,7 +496,7 @@ def populate_table(
         table.setItem(total_row_idx, col, it)
         return it
 
-    set_total_item(0, "Total")
+    set_total_item(0, tr("Total"))
 
     col = 1
     if show_time:
@@ -520,14 +524,14 @@ def populate_table(
             table.setCellWidget(total_row_idx, col, retention_bar(passed, rev, parent=table, background=total_bar_bg))
         elif rev > 0:
             ret = (passed / rev * 100)
-            text = "0%" if ret == 0 else f"{ret:.{stats_precision()}f}%"
+            text = num("0%" if ret == 0 else f"{ret:.{stats_precision()}f}%")
             prev_ret = (prev_pass / prev_rev * 100) if prev_rev > 0 else 0
             trend = get_trend_html_local(ret, prev_ret, points=True)
             if show_counts:
                     failed = rev - passed
-                    text_bold = "0%" if ret == 0 else f"{ret:.{stats_precision()}f}%"
+                    text_bold = num("0%" if ret == 0 else f"{ret:.{stats_precision()}f}%")
                     text = f"<b>{text_bold}</b> (<span style='color:{_color_good}'>{fmt_num_local(passed)}</span>/<span style='color:{_color_bad}'>{fmt_num_local(failed)}</span>)"
-            set_total_item(col, f"{text}{trend}", tooltip=f"Total Pass: {fmt_num_local(passed)} / Fail: {fmt_num_local(rev - passed)}" if rev > 0 else "", sort_value=ret)
+            set_total_item(col, f"{text}{trend}", tooltip=tr("Total Pass: {passed} / Fail: {failed}", passed=fmt_num_local(passed), failed=fmt_num_local(rev - passed)) if rev > 0 else "", sort_value=ret)
         else:
             set_total_item(col, "N/A", sort_value=-1)
         col += 1
@@ -567,7 +571,7 @@ def populate_table(
              avg_sec = (totals["time"] * 3600) / totals["rev"]
              prev_avg = (totals["prev_time"] * 3600) / totals["prev_rev"] if totals["prev_rev"] > 0 else 0
              trend = get_trend_html_local(avg_sec, prev_avg, bigger_is_better=False)
-             set_total_item(col, f"{avg_sec:.{stats_precision()}f}s{trend}", sort_value=avg_sec)
+             set_total_item(col, tr("{value}s", value=num(f"{avg_sec:.{stats_precision()}f}")) + trend, sort_value=avg_sec)
         else:
              set_total_item(col, "N/A", sort_value=-1)
         col += 1
@@ -597,10 +601,10 @@ def populate_table(
         days_left = forecast_days(totals.get("limit", 0), totals["max_days"], t_rem)
         if days_left is None:
             ft = "-"
-            tooltip = f"New cards off | New cards left: {t_rem}"
+            tooltip = tr("New cards off | New cards left: {count}", count=t_rem)
         else:
             ft = days_text_local(days_left)
-            tooltip = f"Slowest deck | New cards left: {t_rem}"
+            tooltip = tr("Slowest deck | New cards left: {count}", count=t_rem)
         set_total_item(col, ft, tooltip, sort_value=-1 if days_left is None else days_left)
         col += 1
 
@@ -610,7 +614,7 @@ def populate_table(
         buttons_col = None
         for c in range(table.columnCount()):
             h = table.horizontalHeaderItem(c)
-            if h and h.text() == "Buttons":
+            if h and header_key(h) == "Buttons":
                 buttons_col = c
                 break
         if buttons_col is not None:

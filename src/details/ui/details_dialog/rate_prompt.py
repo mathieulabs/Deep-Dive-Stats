@@ -4,23 +4,23 @@
 
 It only shows after RATE_MIN_DAYS days and RATE_MIN_OPENS openings of the window, then
 again RATE_GAPS_DAYS later (30, then 90 days), so three times at most. A showing only
-counts once the banner stayed on screen RATE_SEEN_MS, or "Later" was clicked. "Rate" and "Don't ask again" end it for good. The state is shared by all
-profiles and survives updates (user_files).
+counts once the banner stayed on screen RATE_SEEN_MS, or "Later" was clicked. "Rate" and
+"Don't ask again" end it for good. The state is shared by all profiles and survives
+updates (user_files).
 """
 
-import json
-import os
 import time
 
 from aqt.qt import QColor, QFrame, QHBoxLayout, QLabel, QPushButton, QSize, QSizePolicy, Qt, QTimer, QWidget
 
-from ...logic.logger import log_swallowed
+from ...logic.user_state import load_state, save_state
 from ....qss import set_qss
 from ..theme.icons import get_svg_icon
 from ...widgets.chart_utils.theme import relative_luminance
 from . import links
+from ....i18n import tr
 
-RATE_MIN_DAYS = 14
+RATE_MIN_DAYS = 10
 RATE_MIN_OPENS = 10
 RATE_GAPS_DAYS = (30, 90)
 RATE_MAX_SHOWS = len(RATE_GAPS_DAYS) + 1
@@ -29,33 +29,12 @@ RATE_SEEN_MS = 12000
 _DAY = 86400
 
 
-def _state_path():
-    addon_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-    return os.path.join(addon_dir, "user_files", "rate_prompt.json")
-
-
 def _load():
-    try:
-        with open(_state_path(), encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except FileNotFoundError:
-        return {}
-    except Exception:
-        log_swallowed()
-        return {}
+    return load_state("rate_prompt.json")
 
 
 def _save(state):
-    try:
-        path = _state_path()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(state, f)
-        os.replace(tmp, path)
-    except Exception:
-        log_swallowed()
+    save_state("rate_prompt.json", state)
 
 
 def _should_show(state, now):
@@ -183,15 +162,15 @@ def _build_banner(dialog):
     lay.addWidget(icon)
     lay.addSpacing(5)
 
-    text = QLabel("Enjoying Deep Dive Stats? A rating on AnkiWeb helps others find it :)", banner)
+    text = QLabel(tr("Enjoying Deep Dive Stats? A rating on AnkiWeb helps others find it :)"), banner)
     text.setObjectName("rate_banner_text")
     lay.addWidget(text)
     lay.addSpacing(16)
 
     buttons = (
-        ("rate_banner_rate", "Rate", True),
-        ("rate_banner_later", "Later", False),
-        ("rate_banner_never", "Don't ask again", False),
+        ("rate_banner_rate", tr("Rate"), True),
+        ("rate_banner_later", tr("Later"), False),
+        ("rate_banner_never", tr("Don't ask again"), False),
     )
     for name, label, primary in buttons:
         btn = QPushButton(label, banner)

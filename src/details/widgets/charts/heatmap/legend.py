@@ -7,6 +7,7 @@ from aqt.qt import QColor, QEasingCurve, QFont, QFontMetrics, QPen, QRectF, QVar
 
 from ...chart_utils import get_theme_colors
 from .metrics import components
+from .....i18n import num, tr
 
 LEGEND_STEPS = 5
 
@@ -54,20 +55,20 @@ def format_threshold(metric, value):
     comps = components(metric) or [("reviews", None)]
     if len(comps) > 1:
         # Several measures: the cell shows an index from 0 to 100 against each one's own scale.
-        return f"{int(round(value))}%"
+        return num(f"{int(round(value))}%")
     key = comps[0][0]
     if key == "time":
         secs = value / 1000.0
         if secs >= 3600:
-            return f"{secs / 3600.0:.1f}h"
+            return tr("{value}h", value=num(f"{secs / 3600.0:.1f}"))
         if secs >= 60:
-            return f"{int(round(secs / 60.0))}m"
-        return f"{int(round(secs))}s"
+            return tr("{value}m", value=int(round(secs / 60.0)))
+        return tr("{value}s", value=int(round(secs)))
     if key == "avg_time":
         secs = value / 1000.0
-        return f"{secs:.1f}s" if secs < 10 else f"{int(round(secs))}s"
+        return tr("{value}s", value=num(f"{secs:.1f}") if secs < 10 else int(round(secs)))
     if key == "retention":
-        return f"{int(round(value))}%"
+        return num(f"{int(round(value))}%")
     if value >= 10000:
         return f"{value / 1000.0:.0f}k"
     return f"{int(math.ceil(value))}"
@@ -123,8 +124,8 @@ def legend_items(widget):
 
 
 def _animate_legend_change(widget, previous, items):
-    """Blend the swatch colors and cross-fade the numbers when the legend values change
-    (another deck, period or metric), in step with the cells."""
+    """Blend the swatch colors when the legend values change (another deck, period or
+    metric), in step with the cells; the numbers change at once."""
     if not previous or len(previous) != len(items) or not widget.isVisible():
         return
     if all(a[1] == b[1] for a, b in zip(previous, items)):
@@ -132,8 +133,9 @@ def _animate_legend_change(widget, previous, items):
         return
     try:
         from ....animations.chart_policy import chart_animations_allowed
+        from .settings import USER_ACTION_MAX_CHARTS
 
-        if not chart_animations_allowed(widget):
+        if not chart_animations_allowed(widget, max_visible_charts=USER_ACTION_MAX_CHARTS):
             return
     except Exception:
         return
@@ -164,6 +166,53 @@ def _legend_anim_done(widget):
     widget.update()
 
 
+def legend_anchor(widget, h):
+    """(right edge, top) of the legend at rest: under the grid, lined up with it."""
+    right = widget.width() - 6.0
+    from .settings import layout_height
+
+    top = layout_height(widget) - h  # the final height while it is on its way
+    if getattr(widget, "view_mode", "year") == "years":
+        try:
+            from .years_ops import layout
+
+            lay = layout(widget)
+            right = min(right, lay["start_x"] + 53 * lay["step"] - lay["spacing"])
+            top = min(top, lay["bottom"] + 10 * getattr(widget, "scale", 1.0))
+        except Exception:
+            pass
+    elif getattr(widget, "grid_mode", False) and getattr(widget, "view_mode", "year") != "continuous":
+        # Under the grid, lined up with its right edge, instead of in the corner of a taller card.
+        try:
+            cell, spacing, start_x, start_y, _label = widget._get_grid_geometry()
+            right = min(right, start_x + 53 * (cell + spacing) - spacing)
+            top = min(top, start_y + 7 * (cell + spacing) - spacing + 10 * getattr(widget, "scale", 1.0))
+        except Exception:
+            pass
+    elif getattr(widget, "view_mode", "year") == "continuous":
+        # Lined up with the right edge of the month boxes (where the controls end), not
+        # with the card's corner.
+        try:
+            from .layout_ops import _CONT_BOX_COLS
+            _cell, spacing, step, gap_w, _label, _top, start_x, months = widget._get_continuous_layout()
+            box_left = start_x - (_CONT_BOX_COLS - sum(m[3] for m in months)) * step / 2.0
+            right = min(right, box_left + _CONT_BOX_COLS * step + (len(months) - 1) * gap_w - spacing)
+        except Exception:
+            pass
+    return right, top
+
+
+def legend_rest_top(widget):
+    """Top of the legend at rest, or None when there is none (start of a transition)."""
+    h = legend_height(widget)
+    if h <= 0:
+        return None
+    try:
+        return min(legend_anchor(widget, h)[1], widget.height() - h)
+    except Exception:
+        return None
+
+
 def paint_legend(widget, painter):
     h = legend_height(widget)
     if h <= 0:
@@ -183,32 +232,33 @@ def paint_legend(widget, painter):
     sq = 13.0 * scale
     gap = 5.0 * scale
     between = 11.0 * scale
-    less, more = "Less", "More"
-
     def total_width(with_numbers):
-        w = fm.horizontalAdvance(less) + gap + fm.horizontalAdvance(more) + gap
+        # The numbers already say which way the scale goes: "Less" and "More" are only
+        # shown when the card is too narrow for them.
+        w = 0.0 if with_numbers else fm.horizontalAdvance(tr("Less")) + gap + fm.horizontalAdvance(tr("More")) + gap
         for _c, t in items:
             w += sq + (gap + fm.horizontalAdvance(t) if with_numbers else 0) + between
-        return w - between + gap
+        return w - between + (0.0 if with_numbers else gap)
 
     with_numbers = total_width(True) <= widget.width() - 8
+    less, more = ("", "") if with_numbers else (tr("Less"), tr("More"))
     total = total_width(with_numbers)
-    right = widget.width() - 6.0
-    top = widget.height() - h
-    if getattr(widget, "grid_mode", False) and getattr(widget, "view_mode", "year") != "continuous":
-        # Under the grid, lined up with its right edge, instead of in the corner of a taller card.
-        try:
-            cell, spacing, start_x, start_y, _label = widget._get_grid_geometry()
-            right = min(right, start_x + 53 * (cell + spacing) - spacing)
-            top = min(top, start_y + 7 * (cell + spacing) - spacing + 10 * getattr(widget, "scale", 1.0))
-        except Exception:
-            pass
+    right, top = legend_anchor(widget, h)
+    from_top = getattr(widget, "_legend_top_from", None)
+    if from_top is not None and getattr(widget, "_mode_transition_active", False):
+        # The legend glides with the cells (a switch that changes the height): jumping to
+        # its new place at once, it showed under cells still on their way, or cut off
+        # below a card not resized yet.
+        t = max(0.0, min(1.0, float(getattr(widget, "_mode_transition_progress", 1.0))))
+        top = from_top + (top - from_top) * (t * t * (3.0 - 2.0 * t))
+    top = min(top, widget.height() - h)  # never under the card's edge
     x = max(4.0, right - total)
     y = top + (h - sq) / 2.0 - 1
 
     painter.setPen(text_col)
-    painter.drawText(QRectF(x, y - 4, fm.horizontalAdvance(less) + 2, sq + 8), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, less)
-    x += fm.horizontalAdvance(less) + gap
+    if less:
+        painter.drawText(QRectF(x, y - 4, fm.horizontalAdvance(less) + 2, sq + 8), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, less)
+        x += fm.horizontalAdvance(less) + gap
     radius = (sq / 2.0) * (widget.rounding / 100.0)
     hidden = getattr(widget, "hidden_legend_steps", None) or frozenset()
     old_items = getattr(widget, "_legend_from", None)
@@ -240,18 +290,9 @@ def paint_legend(widget, painter):
             painter.setPen(text_col)
             w = fm.horizontalAdvance(text)
             rect = QRectF(x, y - 4, w + 2, sq + 8)
-            flags = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
-            old_text = old_items[i][1] if old_items is not None else text
-            if old_text != text:
-                base = painter.opacity()
-                if t < 0.5:
-                    painter.setOpacity(base * (1.0 - t * 2.0))
-                    painter.drawText(rect, flags, old_text)
-                else:
-                    painter.setOpacity(base * (t * 2.0 - 1.0))
-                    painter.drawText(rect, flags, text)
-            else:
-                painter.drawText(rect, flags, text)
+            # The new numbers at once: faded out and in, laid out at the new widths, they
+            # blinked and the old ones were cut. Only the swatch colors blend.
+            painter.drawText(rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
             if off:
                 mid = y + sq / 2.0
                 painter.drawLine(int(x), int(mid), int(x + w), int(mid))
@@ -261,7 +302,16 @@ def paint_legend(widget, painter):
             hits.append((QRectF(x0 - 2, y - 3, x - x0 + 4, sq + 6), step))
         x += between
     widget._legend_hits = hits
-    x += gap - between
-    painter.setPen(text_col)
-    painter.drawText(QRectF(x, y - 4, fm.horizontalAdvance(more) + 2, sq + 8), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, more)
+    if more:
+        x += gap - between
+        painter.setPen(text_col)
+        painter.drawText(QRectF(x, y - 4, fm.horizontalAdvance(more) + 2, sq + 8), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, more)
     painter.restore()
+    if getattr(widget, "view_mode", "") == "years":
+        # "+ N older years" on the legend's line, on the left (see years_ops.toggle_in_legend).
+        try:
+            from .years_ops import draw_toggle_in_legend
+
+            draw_toggle_in_legend(widget, painter, top, h)
+        except Exception:
+            pass

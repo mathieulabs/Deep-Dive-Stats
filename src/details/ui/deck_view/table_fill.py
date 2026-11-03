@@ -7,13 +7,16 @@ from ...logic.logger import log_swallowed
 from ...widgets import SegmentedBarWidget
 from ...widgets.chart_utils.formatting import fmt_num, stats_precision
 from ..table import add_table_item
+from ..table.core import pinned_total_role
+from ..table.headers import header_key
 from ...logic.data.core.forecast import forecast_days
 from ..table.retention_visual import retention_bar, retention_visual_on
 from ....qss import set_qss
+from ....i18n import num, tr, tr_n, tr_name
 
 
 def _days_text(n):
-    return f"{fmt_num(n)} day" if n == 1 else f"{fmt_num(n)} days"
+    return tr_n("{count} day", "{count} days", n, count=fmt_num(n))
 
 
 def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=True, deleted_tab_did="__deleted_cards__"):
@@ -122,7 +125,14 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
             else:
                 table.setRowHidden(row, False)
 
-            it = add_data_item(row, col, title, row_color, bold=is_total_row)
+            # Sorted by the length of the period (Today before Yesterday at equal length),
+            # not by its name: the alphabet put "Last Year" first and "Yesterday" last.
+            start_ms, end_ms = data.get("start_ms"), data.get("end_ms")
+            if isinstance(start_ms, (int, float)) and isinstance(end_ms, (int, float)) and end_ms > start_ms:
+                period_sort = float(end_ms - start_ms) - float(end_ms) * 1e-6
+            else:
+                period_sort = title
+            it = add_data_item(row, col, tr_name(title), row_color, bold=is_total_row, sort_value=period_sort)
             it.setData(Qt.ItemDataRole.UserRole, range_type)
             col += 1
 
@@ -149,12 +159,12 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
                     prev_ret = (prev_passed / prev_reviews * 100) if prev_reviews > 0 else 0
                     ret_trend = get_trend_html(ret, prev_ret, points=True)
                     failed = reviews - passed
-                    text_fmt = "0%" if ret == 0 else f"{ret:.{stats_precision()}f}%"
+                    text_fmt = num("0%" if ret == 0 else f"{ret:.{stats_precision()}f}%")
                     if show_counts:
                         text = f"{'<b>' if is_total_row else ''}{text_fmt}{'</b>' if is_total_row else ''} (<span style='color:{_dv_color_good}'>{fmt_num(passed)}</span>/<span style='color:{_dv_color_bad}'>{fmt_num(failed)}</span>){ret_trend}"
                     else:
                         text = f"{text_fmt}{ret_trend}"
-                    add_data_item(row, col, text, row_color, tooltip=f"Pass: {fmt_num(passed)} / Fail: {fmt_num(failed)}", bold=is_total_row, sort_value=ret)
+                    add_data_item(row, col, text, row_color, tooltip=tr("Pass: {passed} / Fail: {failed}", passed=fmt_num(passed), failed=fmt_num(failed)), bold=is_total_row, sort_value=ret)
                 else:
                     add_data_item(row, col, "N/A", row_color)
                 col += 1
@@ -167,7 +177,7 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
                 ret = (pass_young / rev_young * 100) if rev_young > 0 else 0
                 prev_ret = (prev_pass_young / prev_rev_young * 100) if prev_rev_young > 0 else 0
                 ret_trend = get_trend_html(ret, prev_ret, points=True)
-                text_ret = "0%" if ret == 0 else f"{ret:.{stats_precision()}f}%"
+                text_ret = num("0%" if ret == 0 else f"{ret:.{stats_precision()}f}%")
                 if rev_young > 0:
                     if show_counts:
                         failed = rev_young - pass_young
@@ -176,7 +186,7 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
                         text = f"{text_ret}{ret_trend}"
                 else:
                     text = "N/A"
-                add_data_item(row, col, text, row_color, tooltip=f"Pass: {fmt_num(pass_young)} / Fail: {fmt_num(rev_young - pass_young)}" if rev_young > 0 else "", bold=is_total_row, sort_value=ret)
+                add_data_item(row, col, text, row_color, tooltip=tr("Pass: {passed} / Fail: {failed}", passed=fmt_num(pass_young), failed=fmt_num(rev_young - pass_young)) if rev_young > 0 else "", bold=is_total_row, sort_value=ret)
                 col += 1
 
             if show_retention_mature and retention_visual_on("mature") and rev_mat > 0:
@@ -187,7 +197,7 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
                 ret = (pass_mat / rev_mat * 100) if rev_mat > 0 else 0
                 prev_ret = (prev_pass_mat / prev_rev_mat * 100) if prev_rev_mat > 0 else 0
                 ret_trend = get_trend_html(ret, prev_ret, points=True)
-                text_ret = "0%" if ret == 0 else f"{ret:.{stats_precision()}f}%"
+                text_ret = num("0%" if ret == 0 else f"{ret:.{stats_precision()}f}%")
                 if rev_mat > 0:
                     if show_counts:
                         failed = rev_mat - pass_mat
@@ -196,7 +206,7 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
                         text = f"{text_ret}{ret_trend}"
                 else:
                     text = "N/A"
-                add_data_item(row, col, text, row_color, tooltip=f"Pass: {fmt_num(pass_mat)} / Fail: {fmt_num(rev_mat - pass_mat)}" if rev_mat > 0 else "", bold=is_total_row, sort_value=ret)
+                add_data_item(row, col, text, row_color, tooltip=tr("Pass: {passed} / Fail: {failed}", passed=fmt_num(pass_mat), failed=fmt_num(rev_mat - pass_mat)) if rev_mat > 0 else "", bold=is_total_row, sort_value=ret)
                 col += 1
 
             if show_buttons_dist:
@@ -214,8 +224,8 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
                     row_required_w = 22
                     for i, c in enumerate(counts):
                         v = (c if show_counts else (c / reviews * 100)) if reviews > 0 else 0
-                        display_text = fmt_num(v) if show_counts else f"{v:.{stats_precision()}f}%"
-                        basis_text = display_text if show_counts else "100.00%"
+                        display_text = fmt_num(v) if show_counts else num(f"{v:.{stats_precision()}f}%")
+                        basis_text = display_text if show_counts else num("100.00%")
                         ts = f"{'<b>' if is_total_row else ''}{display_text}{'</b>' if is_total_row else ''}"
                         cell_w = max(44, fm.horizontalAdvance(basis_text) + 24)
                         row_required_w += cell_w
@@ -233,7 +243,7 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
                 avg = (time_ms / 1000 / reviews) if reviews > 0 else 0
                 prev_avg = (prev_time_ms / 1000 / prev_reviews) if prev_reviews > 0 else 0
                 avg_trend = get_trend_html(avg, prev_avg, bigger_is_better=False)
-                text = f"{fmt_num(avg, stats_precision())}s{avg_trend}" if reviews > 0 else "N/A"
+                text = tr("{value}s", value=fmt_num(avg, stats_precision())) + avg_trend if reviews > 0 else "N/A"
                 add_data_item(row, col, text, row_color, bold=is_total_row, sort_value=avg)
                 col += 1
 
@@ -265,14 +275,22 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
                         days_left = forecast_days(limit, data.get("max_days"), remaining_new)
                     if days_left is None:
                         f_text = "-"
-                        tooltip = f"New cards off | New cards left: {remaining_new}"
+                        tooltip = tr("New cards off | New cards left: {count}", count=remaining_new)
                     else:
                         f_text = _days_text(days_left)
-                        tooltip = f"Slowest deck | New cards left: {remaining_new}"
+                        tooltip = tr("Slowest deck | New cards left: {count}", count=remaining_new)
                     add_data_item(row, col, f_text, row_color, tooltip=tooltip, bold=True)
                 else:
                     add_data_item(row, col, "-", row_color, sort_value=0)
                 col += 1
+
+            if is_total_row:
+                # Kept at the top or bottom whatever the column sorted (see pinned_total_role).
+                role = pinned_total_role()
+                for c in range(table.columnCount()):
+                    cell = table.item(row, c)
+                    if cell is not None:
+                        cell.setData(role, True)
 
             results.append(
                 {
@@ -347,7 +365,7 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
             show_buttons_visual = bool(dialog.addon_config.config.get(Config.SHOW_BUTTONS_DIST_VISUAL, True))
             for c in range(table.columnCount()):
                 h = table.horizontalHeaderItem(c)
-                if h and h.text() == "Buttons":
+                if h and header_key(h) == "Buttons":
                     prev_w = table.columnWidth(c)
                     if not show_buttons_visual:
                         table.resizeColumnToContents(c)

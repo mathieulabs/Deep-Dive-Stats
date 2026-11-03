@@ -12,6 +12,7 @@ from ...theme.icons import get_svg_icon
 from .preset_helpers import get_custom_theme_presets
 from .ui_helpers import clear_layout, set_theme_color_button_hex
 from .....qss import set_qss
+from .....i18n import tr
 
 if TYPE_CHECKING:
     from ..dialogs.tabs_config_dialog import DetailedStatsConfigDialog
@@ -82,7 +83,7 @@ def make_pinned_theme_color_control(
     btn = QPushButton(parent=container)
     btn.setFixedSize(28, 22)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setToolTip("Click to pick color")
+    btn.setToolTip(tr("Click to pick color"))
     dialog._pinned_theme_color_buttons[color_key] = btn
 
     hex_lbl = QLabel(current_hex.upper(), parent=container)
@@ -93,7 +94,7 @@ def make_pinned_theme_color_control(
     btn_reset.setIcon(get_svg_icon("rotate-ccw", size=13))
     btn_reset.setFixedSize(22, 22)
     btn_reset.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn_reset.setToolTip("Reset to preset value")
+    btn_reset.setToolTip(tr("Reset to preset value"))
     set_qss(btn_reset,
         "QPushButton { background: transparent; border: none; } "
         "QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }"
@@ -104,7 +105,7 @@ def make_pinned_theme_color_control(
         cur_hex = dialog._get_current_pinned_theme_effective_palette().get(
             color_key, ThemePalettes.CHARCOAL_PALETTE.get(color_key, "#000000")
         )
-        chosen = QColorDialog.getColor(QColor(cur_hex), dialog, f"Pick {color_key}")
+        chosen = QColorDialog.getColor(QColor(cur_hex), dialog, tr("Pick Color"))
         if not chosen.isValid():
             return
         dialog._set_pinned_theme_override_color(color_key, chosen.name())

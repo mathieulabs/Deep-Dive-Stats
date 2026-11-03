@@ -11,6 +11,7 @@ from ...theme import get_settings_dialog_style
 from ... import Config
 from .....qss import set_qss
 from ....logic.logger import log_swallowed
+from .....i18n import tr, tr_name
 
 
 def restore_initial_config_snapshot(dialog) -> None:
@@ -117,9 +118,9 @@ def refresh_dialog_styles(dialog) -> None:
 def load_tabs_list(dialog) -> None:
     dialog.tabs_list.clear()
     for tab in dialog.tabs_data:
-        title = tab.get("title", "Untitled")
+        title = tr_name(tab.get("title", "Untitled"))
         if not tab.get("enabled", True):
-            title = f"(Archived) {title}"
+            title = tr("(Archived) {name}", name=title)
         dialog.tabs_list.addItem(title)
     if dialog.tabs_data:
         dialog.tabs_list.setCurrentRow(0)

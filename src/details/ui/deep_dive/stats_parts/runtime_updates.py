@@ -149,6 +149,13 @@ def update_stats_from_history(self, history_slice, part=None):
                             # Follow the last day shown by the other charts (zoom end).
                             # A slice reaching the newest day means the full period.
                             anchor_day = latest_dt.date()
+                            first_day = None
+                            try:
+                                first_str = str(history_slice[0].get("logical_date") or "")[:10]
+                                first_day = datetime.strptime(first_str, "%Y-%m-%d").date() if first_str else None
+                            except ValueError:
+                                first_day = None
+                            full_period = False
                             try:
                                 full_hist = getattr(self, "last_history_data", None) or []
                                 newest = max(
@@ -158,14 +165,37 @@ def update_stats_from_history(self, history_slice, part=None):
                                 range_last = getattr(self, "_dd_range_last_day", None)
                                 if range_last is not None and newest and d_str[:10] >= newest[:10]:
                                     anchor_day = range_last
+                                    full_period = True
                             except Exception:
                                 log_swallowed()
-                            from ..runtime.heatmap_anchor import resolve_heatmap_state
+                            from ..runtime.heatmap_anchor import (
+                                continuous_offset_for_zoom,
+                                resolve_heatmap_state,
+                                zoom_year_anchor,
+                            )
 
+                            if current_mode == "year" and not full_period:
+                                anchor_day = zoom_year_anchor(first_day, anchor_day)
+                            anchor_changed = getattr(self, "_hm_anchor_key", None) != (current_mode, anchor_day)
                             self.heatmap_year, self.end_date_365, target_end = resolve_heatmap_state(
                                 self, current_mode, anchor_day, now=datetime.now()
                             )
-                            heatmap_chart.transition_to(new_heatmap_data, target_end)
+                            old_offset = int(getattr(heatmap_chart, "cont_month_offset", 0) or 0)
+                            new_offset = old_offset
+                            if current_mode == "continuous" and anchor_changed:
+                                new_offset = int(continuous_offset_for_zoom(
+                                    None if full_period else first_day, anchor_day, old_offset
+                                ))
+                            if new_offset != old_offset:
+                                # Out of the months on screen: slide like the arrows do, with
+                                # the new data already in the destination frame.
+                                heatmap_chart.begin_navigation_transition(new_offset - old_offset)
+                                heatmap_chart._suppress_next_transition = True
+                                heatmap_chart.update_data(new_heatmap_data)
+                                heatmap_chart.shift_continuous(new_offset - old_offset)
+                                heatmap_chart.finalize_navigation_transition()
+                            else:
+                                heatmap_chart.transition_to(new_heatmap_data, target_end)
                             heatmap_applied = True
                             parent = heatmap_chart.parentWidget()
                             if parent:

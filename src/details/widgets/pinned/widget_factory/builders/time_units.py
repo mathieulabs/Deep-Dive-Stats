@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Show a duration in the unit the user picked (seconds, minutes, hours, days)."""
 from ....chart_utils.formatting import fmt_num
+from ......i18n import tr, N_
 
 UNIT_TOKENS: dict = {
     "s": "s", "sec": "s", "second": "s", "seconds": "s",
@@ -10,9 +11,8 @@ UNIT_TOKENS: dict = {
     "d": "d", "day": "d", "days": "d",
 }
 # (value, label) for settings combos; "auto" keeps the default text.
-UNIT_CHOICES: tuple = (("auto", "Auto"), ("s", "Seconds"), ("min", "Minutes"), ("h", "Hours"), ("d", "Days"))
+UNIT_CHOICES: tuple = (("auto", N_("Auto")), ("s", N_("Seconds")), ("min", N_("Minutes")), ("h", N_("Hours")), ("d", N_("Days")))
 _UNIT_SECONDS = {"s": 1.0, "min": 60.0, "h": 3600.0, "d": 86400.0}
-_UNIT_SUFFIX = {"s": "s", "min": " min", "h": "h", "d": "d"}
 # stat field -> (raw key in the stat map, unit of that raw number)
 TIME_RAW: dict = {
     "total_time": ("_raw_total_time_h", "h"),
@@ -31,4 +31,9 @@ def apply_time_unit(field, unit_token, raw_values, precision):
     if raw is None:
         return None
     seconds = float(raw) * _UNIT_SECONDS[spec[1]]
-    return f"{fmt_num(seconds / _UNIT_SECONDS[unit], precision)}{_UNIT_SUFFIX[unit]}"
+    value = fmt_num(seconds / _UNIT_SECONDS[unit], precision)
+    if unit == "d":
+        return tr("{n}d", n=value)
+    if unit == "min":
+        return tr("{value} min", value=value)
+    return tr("{value}h", value=value) if unit == "h" else tr("{value}s", value=value)

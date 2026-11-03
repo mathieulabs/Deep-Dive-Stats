@@ -6,6 +6,7 @@ from aqt import mw
 
 from .config import ConfigManager
 from .const import DEFAULT_ROLLOVER_HOUR, Config
+from .i18n import N_, tr_name, unit_sep
 
 _EPOCH_DAY = date(1970, 1, 1)
 
@@ -184,6 +185,10 @@ def excluded_decks_clause(excluded_dids: list = None):
     return f'AND {_HOME_DECK} IN {sql_id_list(kept)}'
 
 
+# Short units the stat cards and tables pass to format_hours() (saved in the settings).
+_UNIT_NAMES = (N_("h"), N_("min"), N_("hrs"))
+
+
 def format_hours(hours: float, precision: int = None, use_decimal=True, hrs_text="", min_text=""):
     """Format a duration given in hours.
 
@@ -198,13 +203,16 @@ def format_hours(hours: float, precision: int = None, use_decimal=True, hrs_text
         from .details.widgets.chart_utils.formatting import fmt_num
         # Units may come with their own leading space (" min"): one space only.
         hrs_text, min_text = str(hrs_text or "").strip(), str(min_text or "").strip()
+        # Units come from the tab settings, saved in English ("hrs"): shown translated.
+        hrs_text, min_text = tr_name(hrs_text), tr_name(min_text)
+        sep = unit_sep()
         if hours == 0:
-            return f"0 {min_text}" if min_text else "0"
+            return f"0{sep}{min_text}" if min_text else "0"
         if hours > 1:
             value, unit = fmt_num(hours, precision), hrs_text
         else:
             value, unit = fmt_num(hours * 60, precision), min_text
-        return f"{value} {unit}" if unit else str(value)
+        return f"{value}{sep}{unit}" if unit else str(value)
 
     total_seconds = int(round(hours * 3600))
     if hours > 1:

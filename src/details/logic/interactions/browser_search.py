@@ -9,6 +9,7 @@ from aqt import mw
 
 from .. import ConfigManager, rollover_hour
 from ..logger import log_error
+from ....i18n import tr
 
 _MONTHS = {m: i + 1 for i, m in enumerate(
     ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])}
@@ -101,7 +102,7 @@ def open_search(terms):
 def open_query(query, deck):
     """Open the browser on a plain search string, limited to the deck selection."""
     if is_deleted_selection(deck):
-        _tip("Deleted cards cannot be shown in the browser")
+        _tip(tr("Deleted cards cannot be shown in the browser"))
         return
     clause = deck_clause(deck)
     open_search(" ".join(p for p in (query, clause) if p))
@@ -132,7 +133,7 @@ def _fetch_cids(kind, start_ms, end_ms, deck):
 def open_cards_for_range(kind, start_ms, end_ms, deck):
     """kind: 'reviewed' (cards with a review in the range) or 'added' (cards created in it)."""
     if is_deleted_selection(deck):
-        _tip("Deleted cards cannot be shown in the browser")
+        _tip(tr("Deleted cards cannot be shown in the browser"))
         return
 
     def _done(fut):
@@ -142,7 +143,7 @@ def open_cards_for_range(kind, start_ms, end_ms, deck):
             log_error(f"browser_search result failed: {e}")
             return
         if not cids:
-            _tip("No cards found")
+            _tip(tr("No cards found"))
             return
         clause = deck_clause(deck)
         terms = "cid:" + ",".join(str(c) for c in cids)
@@ -189,7 +190,7 @@ def _fetch_hour_cids(hour, span, deck):
 def open_cards_for_hour(hour, span, deck):
     """Cards reviewed during a given hour of the day, inside the chart's period."""
     if is_deleted_selection(deck):
-        _tip("Deleted cards cannot be shown in the browser")
+        _tip(tr("Deleted cards cannot be shown in the browser"))
         return
 
     def _done(fut):
@@ -199,7 +200,7 @@ def open_cards_for_hour(hour, span, deck):
             log_error(f"browser_search result failed: {e}")
             return
         if not cids:
-            _tip("No cards found")
+            _tip(tr("No cards found"))
             return
         terms = "cid:" + ",".join(str(c) for c in cids)
         clause = deck_clause(deck)

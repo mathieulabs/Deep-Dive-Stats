@@ -19,6 +19,7 @@ from .....config import set_live_config_override
 from ... import COLOR_DEFAULTS, Config, ThemePalettes, get_color
 
 from typing import TYPE_CHECKING
+from .....i18n import tr
 if TYPE_CHECKING:
     from ....dialog import DetailedStatsDialog
 
@@ -86,6 +87,7 @@ from ..theme.data_color_ops import (
 from ..shared import (
     apply_tab_selection_state,
     apply_standard_dialog_sizing,
+    show_when_painted,
     refresh_binning_live,
     clamp_dialog_height,
     find_visible_settings_dialog as find_visible_settings_dialog_shared,
@@ -134,10 +136,11 @@ class DetailedStatsConfigDialog(QDialog):
     def __init__(self, parent: "DetailedStatsDialog"):
         super().__init__(parent)
         self.parent_dialog = parent
-        self.setWindowTitle("Settings")
+        self.setWindowTitle(tr("Settings"))
         self._cancel_restored = False
 
         apply_standard_dialog_sizing(self, min_width=600)
+        show_when_painted(self)
 
         self.tabs_data = parent.get_tabs_config().copy()
 
@@ -157,9 +160,9 @@ class DetailedStatsConfigDialog(QDialog):
         dialog_btns = QHBoxLayout(self.bottom_area)
         dialog_btns.setContentsMargins(0, 5, 0, 5)
         dialog_btns.addStretch()
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton(tr("Cancel"))
         self.cancel_btn.clicked.connect(self.reject)
-        self.ok_btn = QPushButton("Save")
+        self.ok_btn = QPushButton(tr("Save"))
         self.ok_btn.clicked.connect(self.save_and_close)
         dialog_btns.addWidget(self.cancel_btn)
         dialog_btns.addWidget(self.ok_btn)
@@ -335,11 +338,11 @@ class DetailedStatsConfigDialog(QDialog):
         if hasattr(self, "data_color_context_hint"):
             if self._is_editing_pinned_data_colors():
                 self.data_color_context_hint.setText(
-                    "Data colors currently target Pinned (separate pinned theme mode)."
+                    tr("Data colors currently target Pinned (separate pinned theme mode).")
                 )
             else:
                 self.data_color_context_hint.setText(
-                    "Data colors currently target Details (global details theme)."
+                    tr("Data colors currently target Details (global details theme).")
                 )
         for storage_key, btn in self._color_buttons.items():
             key = self._resolve_data_color_storage_key(storage_key)

@@ -28,6 +28,7 @@ from ...widgets.stats_cards.logic.own_color import dashboard_card_color
 from ....const.theme.color_resolver import OWN_COLORS_ATTR
 from aqt.qt import QSplitter
 from ....qss import set_qss
+from ....i18n import tr
 
 
 class _NameTabWidget(QTabWidget):
@@ -152,7 +153,7 @@ def setup_dashboard_and_overlays(dialog):
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 6)  # small gap above the charts
 
-        dialog.expanded_title = QLabel("CHART DETAIL", parent=dialog.expanded_container)
+        dialog.expanded_title = QLabel(tr("CHART DETAIL"), parent=dialog.expanded_container)
         dialog.expanded_title.setObjectName("expanded_title")
         header_layout.addWidget(dialog.expanded_title, 0, Qt.AlignmentFlag.AlignVCenter)
 

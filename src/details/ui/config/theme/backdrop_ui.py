@@ -44,6 +44,7 @@ from ...theme.theme_mode import get_theme_effective_is_dark
 from ..widgets.components import SettingsSlider
 from .ui_helpers import apply_base_mode_button_styles
 from ....logic.logger import log_swallowed
+from .....i18n import tr, N_, tr_name
 
 
 def _theme_colors(stats_dialog):
@@ -135,7 +136,7 @@ class _GlowColorButton(QPushButton):
         self._key = key  # "color1" / "color2"
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumWidth(150)
-        self.setToolTip("Click to pick a color. 'Auto' uses your theme's accent color.")
+        self.setToolTip(tr("Click to pick a color. 'Auto' uses your theme's accent color."))
 
     def current_color(self):
         _bg, accent, _dark = _theme_colors(self._stats)
@@ -148,7 +149,7 @@ class _GlowColorButton(QPushButton):
         return not s[self._key]
 
     def refresh(self):
-        self.setText("     " + ("Auto" if self.is_auto() else self.current_color().upper()))
+        self.setText("     " + (tr("Auto") if self.is_auto() else self.current_color().upper()))
         self.update()
 
     def paintEvent(self, event):
@@ -163,16 +164,16 @@ class _GlowColorButton(QPushButton):
 
 
 _SLIDERS = (
-    ("tone", "Background tone", 0, 100, "%", "How much deeper than the theme color the window background is."),
-    ("glow", "Glow", 0, 100, "%", "Soft light at the top of the window."),
+    ("tone", N_("Background tone"), 0, 100, "%", N_("How much deeper than the theme color the window background is.")),
+    ("glow", N_("Glow"), 0, 100, "%", N_("Soft light at the top of the window.")),
 )
 
 _PRESET_BUTTONS = (
-    ("off", "Off"),
-    ("clean", "Clean"),
-    ("subtle", "Subtle"),
-    ("balanced", "Balanced"),
-    ("vivid", "Vivid"),
+    ("off", N_("Off")),
+    ("clean", N_("Clean")),
+    ("subtle", N_("Subtle")),
+    ("balanced", N_("Balanced")),
+    ("vivid", N_("Vivid")),
 )
 
 
@@ -181,14 +182,14 @@ def build_backdrop_group(dialog) -> QGroupBox:
     stats = dialog.parent_dialog
     cfg = stats.addon_config.config
 
-    group = QGroupBox("Window Background")
+    group = QGroupBox(tr("Window Background"))
     lay = QVBoxLayout(group)
     lay.setContentsMargins(10, 10, 10, 10)
     lay.setSpacing(8)
 
     hint = QLabel(
-        "Background of the Deep Dive window. Pick a style, then adjust if you want. "
-        "Changes preview live."
+        tr("Background of the Deep Dive window. Pick a style, then adjust if you want. "
+        "Changes preview live.")
     )
     hint.setObjectName("theme_info_label")
     hint.setWordWrap(True)
@@ -197,21 +198,21 @@ def build_backdrop_group(dialog) -> QGroupBox:
     # Style presets
     preset_row = QHBoxLayout()
     preset_row.setSpacing(6)
-    preset_row.addWidget(QLabel("Style:"))
+    preset_row.addWidget(QLabel(tr("Style:")))
     buttons = {}
     for key, text in _PRESET_BUTTONS:
-        btn = QPushButton(text)
+        btn = QPushButton(tr_name(text))
         btn.setCheckable(True)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         buttons[key] = btn
         preset_row.addWidget(btn)
-    custom_lbl = QLabel("Custom")
+    custom_lbl = QLabel(tr("Custom"))
     custom_lbl.setObjectName("theme_info_label")
     preset_row.addWidget(custom_lbl)
     preset_row.addStretch()
-    reset_btn = QPushButton("Reset")
+    reset_btn = QPushButton(tr("Reset"))
     reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    reset_btn.setToolTip("Back to the default look (Clean).")
+    reset_btn.setToolTip(tr("Back to the default look (Clean)."))
     preset_row.addWidget(reset_btn)
     lay.addLayout(preset_row)
 
@@ -221,16 +222,16 @@ def build_backdrop_group(dialog) -> QGroupBox:
     # Glow colors
     color_row = QHBoxLayout()
     color_row.setSpacing(6)
-    color_lbl = QLabel("Glow color:")
+    color_lbl = QLabel(tr("Glow color:"))
     color_lbl.setMinimumWidth(120)
     color_row.addWidget(color_lbl)
     color_btns = {}
     auto_btns = {}
-    for key, title in (("color1", "Color"),):
+    for key, title in (("color1", tr("Color")),):
         cb = _GlowColorButton(stats, key, title)
-        ab = QPushButton("Auto")
+        ab = QPushButton(tr("Auto"))
         ab.setCursor(Qt.CursorShape.PointingHandCursor)
-        ab.setToolTip("Go back to the theme's accent color.")
+        ab.setToolTip(tr("Go back to the theme's accent color."))
         color_btns[key] = cb
         auto_btns[key] = ab
         color_row.addWidget(cb)
@@ -241,8 +242,8 @@ def build_backdrop_group(dialog) -> QGroupBox:
 
     sliders = {}
     for key, label, lo, hi, suffix, tip in _SLIDERS:
-        sl = SettingsSlider(label, BACKDROP_DEFAULTS[key], lo, hi, suffix=suffix, label_min_width=120)
-        sl.setToolTip(tip)
+        sl = SettingsSlider(tr_name(label), BACKDROP_DEFAULTS[key], lo, hi, suffix=suffix, label_min_width=120)
+        sl.setToolTip(tr_name(tip))
         sliders[key] = sl
         lay.addWidget(sl)
 
@@ -319,7 +320,7 @@ def build_backdrop_group(dialog) -> QGroupBox:
         btn = color_btns[key]
         before = get_backdrop_settings(cfg)[key]
         picker = QColorDialog(QColor(btn.current_color()), dialog)
-        picker.setWindowTitle("Glow color")
+        picker.setWindowTitle(tr("Glow color"))
         # Live preview while choosing; Cancel puts the previous color back.
         picker.currentColorChanged.connect(lambda c, k=key: set_color(k, c.name()))
         if picker.exec():

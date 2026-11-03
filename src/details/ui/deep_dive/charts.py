@@ -37,6 +37,7 @@ from .charts_parts.runtime_sections import (
 from .charts_parts.views import create_activity_chart_view, create_retention_chart_view
 from .charts_parts.heatmap_section import build_heatmap_section
 from ....qss import set_qss
+from ....i18n import tr
 
 class DeepDiveChartsMixin:
     def _control_theme_tokens(self):
@@ -342,7 +343,7 @@ class DeepDiveChartsMixin:
 
         header_widget, header_lay, _ = create_chart_header(parent=self.dialog)
 
-        cb_sep = self._make_styled_checkbox("Sep. Susp.", checked=self.last_pie_sep, parent=header_widget)
+        cb_sep = self._make_styled_checkbox(tr("Sep. Susp."), checked=self.last_pie_sep, parent=header_widget)
         def on_sep_toggled(checked):
             self.last_pie_sep = checked
             self.addon_config.set_value(Config.PIE_CHART_SEPARATE_SUSPENDED, checked)

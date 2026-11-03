@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Debug info to paste in a bug report: versions, the settings that change how dates and
-colors are computed, the add-ons, and the latest errors of the debug log (copied as
-logged). Nothing is read from the collection for it."""
+colors are computed, the add-ons, the latest errors of the debug log (copied as logged)
+and the latest Anki crashes that went through this add-on. Nothing is read from the
+collection for it."""
 
 import os
 import re
@@ -10,10 +11,17 @@ import time
 from datetime import datetime
 
 from ...logic.logger import DeepDiveLogger, log_swallowed
+from ....i18n import tr
 
 _ENTRY_START = re.compile(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] \[")
 MAX_ERRORS = 5
 MAX_ERROR_CHARS = 1500
+MAX_CRASHES = 2
+MAX_CRASH_CHARS = 2500
+# Anki's crash.log only grows; reading its end is enough for the latest crashes.
+_CRASH_LOG_TAIL_BYTES = 512 * 1024
+# How Python starts a crash dump (faulthandler) on Windows, macOS and Linux.
+_CRASH_START = re.compile(r"^(Windows fatal exception|Fatal Python error)")
 
 
 def _section(title, body):
@@ -86,6 +94,65 @@ def recent_errors(limit=MAX_ERRORS):
     return out
 
 
+def _crash_frames_only(block, markers):
+    """The crash line, the stack of the thread that crashed, then the other stacks that go
+    through this add-on. Idle threads and the long list of loaded modules are dropped."""
+    head, current, others, stack = [], [], [], None
+    for line in block.splitlines():
+        if line.startswith("Extension modules:"):
+            break
+        if line.startswith(("Thread 0x", "Current thread 0x")):
+            stack = [line]
+            (current if line.startswith("Current") else others).append(stack)
+        elif stack is not None:
+            if line.strip():
+                stack.append(line)
+        elif line.strip():
+            head.append(line)
+    ours = [st for st in others if any(m in line for line in st for m in markers)]
+    parts = ["\n".join(head)] + ["\n".join(st) for st in current + ours]
+    return "\n\n".join(p for p in parts if p).strip()
+
+
+def recent_crashes(limit=MAX_CRASHES):
+    """The last `limit` crashes in Anki's crash.log whose stack goes through this add-on.
+
+    Anki writes the Python stack of every thread there when it dies (faulthandler). The
+    file has no dates, so the time it was last written is shown instead.
+    """
+    from aqt import mw
+
+    path = os.path.join(mw.pm.base, "crash.log")
+    if not os.path.exists(path):
+        return [], None
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - _CRASH_LOG_TAIL_BYTES))
+        text = f.read().decode("utf-8", errors="replace")
+    blocks, current = [], None
+    for line in text.splitlines():
+        if _CRASH_START.match(line):
+            if current is not None:
+                blocks.append(current)
+            current = [line]
+        elif current is not None:
+            current.append(line)
+    if current is not None:
+        blocks.append(current)
+    folder = __name__.split(".", 1)[0]
+    markers = (f"addons21\\{folder}\\", f"addons21/{folder}/")
+    ours = ["\n".join(b) for b in blocks if any(m in line for line in b for m in markers)]
+    out = []
+    for block in ours[-limit:]:
+        block = DeepDiveLogger._redact(_crash_frames_only(block, markers))
+        if len(block) > MAX_CRASH_CHARS:
+            block = block[:MAX_CRASH_CHARS] + "\n[...]"
+        out.append(block)
+    written = time.strftime("%Y-%m-%d %H:%M", time.localtime(os.path.getmtime(path)))
+    return out, written
+
+
 def build_debug_info():
     from aqt.errors import addon_debug_info
     from aqt.utils import supportText
@@ -99,6 +166,14 @@ def build_debug_info():
         log_swallowed()
     parts.append(_section("Latest errors", "\n\n".join(errors) if errors else "None"))
     try:
+        crashes, written = recent_crashes()
+        body = "None"
+        if crashes:
+            body = f"crash.log last written {written}\n\n" + "\n\n".join(crashes)
+        parts.append(_section("Latest crashes with Deep Dive in the stack", body))
+    except Exception:
+        log_swallowed()
+    try:
         parts.append(addon_debug_info().strip() + "\n")
     except Exception:
         log_swallowed()
@@ -111,7 +186,7 @@ def copy_debug_info(parent=None):
 
     try:
         QApplication.clipboard().setText(build_debug_info())
-        tooltip("Debug info copied: paste it in your report.", parent=parent)
+        tooltip(tr("Debug info copied: paste it in your report."), parent=parent)
     except Exception:
         log_swallowed()
-        tooltip("Could not build the debug info.", parent=parent)
+        tooltip(tr("Could not build the debug info."), parent=parent)

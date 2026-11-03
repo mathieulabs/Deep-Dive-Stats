@@ -20,6 +20,7 @@ from ....widgets.common import apply_chart_display_config, create_chart_header_f
 from ....logic.logger import log_swallowed
 from ....widgets.charts.activity.review_dots import ReviewDotsChart
 from ..controls_parts.review_dots import refresh_review_dots
+from .....i18n import tr, tr_name
 
 
 def create_activity_chart_view(manager, activity_data, history_oldest_first):
@@ -86,17 +87,17 @@ def create_activity_chart_view(manager, activity_data, history_oldest_first):
         )
         stack.addWidget(normal_chart)
     else:
-        manager._add_empty_label(stack, "No activity data")
+        manager._add_empty_label(stack, tr("No activity data"))
 
     stacked_chart = None
     if activity_data or is_skeleton:
         conf = manager.dialog.addon_config.config
         series_config = [
-            {"key": "mature_count", "label": "Mature", "color": get_color(conf, Config.COLOR_MATURE)},
-            {"key": "young_count", "label": "Young", "color": get_color(conf, Config.COLOR_YOUNG)},
-            {"key": "relearn_count", "label": "Relearning", "color": get_color(conf, Config.COLOR_RELEARN)},
-            {"key": "learn_count", "label": "Learning", "color": get_color(conf, Config.COLOR_LEARN)},
-            {"key": "cram_count", "label": "Filtered", "color": get_color(conf, Config.COLOR_CRAM)},
+            {"key": "mature_count", "label": tr("Mature"), "color": get_color(conf, Config.COLOR_MATURE)},
+            {"key": "young_count", "label": tr("Young"), "color": get_color(conf, Config.COLOR_YOUNG)},
+            {"key": "relearn_count", "label": tr("Relearning"), "color": get_color(conf, Config.COLOR_RELEARN)},
+            {"key": "learn_count", "label": tr("Learning"), "color": get_color(conf, Config.COLOR_LEARN)},
+            {"key": "cram_count", "label": tr("Filtered"), "color": get_color(conf, Config.COLOR_CRAM)},
         ]
         hidden_types = normalize_hidden_types(manager._get_dd_widget_setting("activity", "hidden_review_types", None))
         series_config = [s for s in series_config if s["key"].replace("_count", "") not in hidden_types]
@@ -156,7 +157,7 @@ def create_activity_chart_view(manager, activity_data, history_oldest_first):
     if stacked_chart:
         stacked_chart.show_stats = stats_state["show_chart_stats"]
     cb = manager._make_styled_checkbox(
-        "Breakdown by Type", checked=manager.last_activity_breakdown, parent=header_widget
+        tr("Breakdown by Type"), checked=manager.last_activity_breakdown, parent=header_widget
     )
 
     def on_breakdown(checked):
@@ -184,7 +185,7 @@ def create_activity_chart_view(manager, activity_data, history_oldest_first):
     cb.toggled.connect(on_breakdown)
     header_lay.addWidget(cb)
 
-    cb_time = manager._make_styled_checkbox("Time", checked=time_mode_enabled, parent=header_widget)
+    cb_time = manager._make_styled_checkbox(tr("Time"), checked=time_mode_enabled, parent=header_widget)
 
     def on_time_mode(checked):
         next_mode = "time" if bool(checked) else "reviews"
@@ -301,7 +302,7 @@ def create_retention_chart_view(manager, retention_data):
     if chart:
         series_checkboxes = {}
         for key, series in RetentionChart.SERIES_CONFIG.items():
-            label = series["label"]
+            label = tr_name(series["label"])
             is_checked = manager.last_retention_visibility.get(key, series["default_on"])
             cb = QCheckBox(label, parent=header_widget)
             cb.setChecked(is_checked)

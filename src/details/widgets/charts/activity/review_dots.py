@@ -11,9 +11,10 @@ from ....animations.motion import animations_enabled
 from ...chart_utils.theme import get_theme_colors
 from ...chart_utils.tooltip import TooltipWindow, show_tooltip_near
 from ....logic.logger import log_swallowed
+from .....i18n import tr, N_, num, tr_name, format_date
 
-_KIND_NAMES = ("Learning", "Young", "Mature", "Relearning", "Filtered")
-_EASE_NAMES = {1: "Again", 2: "Hard", 3: "Good", 4: "Easy"}
+_KIND_NAMES = (N_("Learning"), N_("Young"), N_("Mature"), N_("Relearning"), N_("Filtered"))
+_EASE_NAMES = {1: N_("Again"), 2: N_("Hard"), 3: N_("Good"), 4: N_("Easy")}
 _MARGIN_L, _MARGIN_R, _MARGIN_T, _MARGIN_B = 45, 20, 10, 30
 
 
@@ -252,9 +253,9 @@ class ReviewDotsChart(QWidget):
                 labels.append((morph, ymax_from, 1.0 - me))
             for lab_mode, lab_max, lab_alpha in labels:
                 val = lab_max * frac
-                label = f"{val:.0f}" if (lab_mode == "reviews" or lab_max >= 10) else f"{val:.1f}"
+                label = f"{val:.0f}" if (lab_mode == "reviews" or lab_max >= 10) else num(f"{val:.1f}")
                 if lab_mode == "time":
-                    label += "s"
+                    label = tr("{value}s", value=label)
                 p.setOpacity(axes_opacity * lab_alpha)
                 p.drawText(0, int(y) - 8, px - 6, 16, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, label)
             p.setOpacity(axes_opacity)
@@ -377,13 +378,13 @@ class ReviewDotsChart(QWidget):
             self.tooltip_window.hide()
             return
         dt = datetime.fromtimestamp(best[0] / 1000)
-        kind_line = {"text": _KIND_NAMES[best[3]], "value": f"{best[1] / 1000:.1f}s"}
+        kind_line = {"text": tr_name(_KIND_NAMES[best[3]]), "value": tr("{value}s", value=num(f"{best[1] / 1000:.1f}"))}
         if self._breakdown:
             kind_line["color"] = self._kind_colors[best[3]]
         lines = [
-            {"text": dt.strftime("%b %d, %H:%M:%S"), "header": True},
+            {"text": format_date(dt, dt.strftime("%H:%M:%S")), "header": True},
             kind_line,
-            {"text": "Answer", "value": _EASE_NAMES.get(best[2], "?")},
+            {"text": tr("Answer"), "value": tr_name(_EASE_NAMES.get(best[2], "?"))},
         ]
         show_tooltip_near(self, self.tooltip_window, event.pos(), lines=lines, show_only_if_hidden=True)
 

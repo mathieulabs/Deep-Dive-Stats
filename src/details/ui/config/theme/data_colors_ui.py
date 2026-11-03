@@ -10,6 +10,7 @@ from ... import COLOR_DEFAULTS
 from ...theme.icons import get_svg_icon
 from .....qss import set_qss
 from ....logic.logger import log_swallowed
+from .....i18n import tr
 
 if TYPE_CHECKING:
     from ..dialogs.tabs_config_dialog import DetailedStatsConfigDialog
@@ -53,7 +54,7 @@ def make_color_button(
     btn = QPushButton(parent=container)
     btn.setFixedSize(28, 22)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setToolTip("Click to pick color")
+    btn.setToolTip(tr("Click to pick color"))
     set_qss(btn,
         f"background-color: {current_hex}; border: 1px solid rgba(128,128,128,0.45); border-radius: 4px;"
     )
@@ -67,7 +68,7 @@ def make_color_button(
     btn_reset.setIcon(get_svg_icon("rotate-ccw", size=13))
     btn_reset.setFixedSize(22, 22)
     btn_reset.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn_reset.setToolTip("Reset to preset value")
+    btn_reset.setToolTip(tr("Reset to preset value"))
     set_qss(btn_reset,
         "QPushButton { background: transparent; border: none; } "
         "QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }"
@@ -95,7 +96,7 @@ def make_color_button(
         else:
             cur_hex = dialog.parent_dialog.addon_config.config.get(config_key, baseline_hex)
         cur = QColor(cur_hex)
-        chosen = QColorDialog.getColor(cur, dialog, "Pick Color")
+        chosen = QColorDialog.getColor(cur, dialog, tr("Pick Color"))
         if not chosen.isValid():
             return
         new_hex = chosen.name()

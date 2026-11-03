@@ -85,8 +85,8 @@ class FutureDueDataProvider:
         backlog_count = 0
         if ghc.is_initialized and not isinstance(lookup_id, list) and lookup_id in ghc.cache:
             ctx = ghc.get_context(lookup_id, Period.TOTAL, allow_sync_check=False)
-            if ctx and "future_due" in ctx:
-                raw_dist = ctx["future_due"].get("distribution", {})
+            if ctx and ctx.get("future_due"):
+                raw_dist = ctx["future_due"].get("distribution") or {}
 
                 # The cache stores absolute Anki due days (queues 2 and 3): make them relative.
                 distribution = {}

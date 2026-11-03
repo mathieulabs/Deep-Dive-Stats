@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ....animations.chart_policy import chart_animations_allowed
-from aqt.qt import QWidget
+from aqt.qt import QTimer, QWidget
+
+# A click on this heatmap animates only this heatmap, so the usual limit of visible charts
+# (meant for page-wide animations) would wrongly turn it off once the page is scrolled.
+USER_ACTION_MAX_CHARTS = 24
 
 
 _UNSET = object()
@@ -25,6 +29,22 @@ def set_end_date_impl(widget, date):
         _retarget_mode_transition(widget)
         widget._mode_transition_new_labels_pixmap = widget._render_labels_to_pixmap()
     widget.update()
+
+
+def _years_change_with(widget, next_data):
+    """True when next_data shows other years than the current data (years view)."""
+    from . import years_ops
+
+    current = widget.data
+    try:
+        before = tuple(years_ops.years_shown(widget))
+        widget.data = next_data
+        after = tuple(years_ops.years_shown(widget))
+    except Exception:
+        return False
+    finally:
+        widget.data = current
+    return before != after
 
 
 def _retarget_mode_transition(widget):
@@ -103,6 +123,14 @@ def update_data_impl(widget, new_data):
         widget._pixmap_cache = None
         widget.maybe_start_initial_animation()
         widget.update()
+        return
+    if getattr(widget, "view_mode", "") == "years" and _years_change_with(widget, next_data):
+        # Another deck with other years: rows come and go and the card changes height,
+        # which would cut the color fade short. The rows move instead, like a fold.
+        widget._data_transition_anim.stop()
+        widget._clear_data_transition_state()
+        widget.data = old_data
+        relayout_years_impl(widget, lambda: setattr(widget, "data", next_data))
         return
     delta_ratio = widget._visual_delta_ratio(old_data, next_data)
     if (delta_ratio < 0.015) and (not force_transition):
@@ -309,6 +337,13 @@ def set_view_mode_impl(widget, mode):
     widget._clear_nav_transition_state()
 
     widget._mode_transition_anim.stop()
+    old_h = widget.height()
+    try:
+        from .legend import legend_rest_top
+
+        widget._legend_top_from = legend_rest_top(widget)
+    except Exception:
+        widget._legend_top_from = None
     old_cells = widget._build_current_cell_visuals(widget.data)
     widget._mode_transition_old_labels_pixmap = widget._render_labels_to_pixmap()
 
@@ -321,8 +356,7 @@ def set_view_mode_impl(widget, mode):
     widget._labels_pixmap_cache_key = None
     widget._cont_layout_cache = None
     widget.updateGeometry()
-    h = widget.heightForWidth(widget.width())
-    widget.setMinimumHeight(h)
+    _set_height_for_switch(widget, old_h)
     new_cells = widget._build_current_cell_visuals(widget.data)
     widget._mode_transition_new_labels_pixmap = widget._render_labels_to_pixmap()
 
@@ -335,7 +369,198 @@ def set_view_mode_impl(widget, mode):
     ]
     widget._mode_transition_active = True
     widget._mode_transition_progress = 0.0
-    if chart_animations_allowed(widget):
+    if chart_animations_allowed(widget, max_visible_charts=USER_ACTION_MAX_CHARTS):
+        widget._mode_transition_anim.start()
+    else:
+        widget._on_mode_transition_finished()
+    widget.update()
+
+
+def toggle_years_fold_impl(widget):
+    """Fold or unfold the older years of the years view."""
+    relayout_years_impl(
+        widget, lambda: setattr(widget, "_years_expanded", not bool(getattr(widget, "_years_expanded", False)))
+    )
+
+
+def set_years_no_gap_impl(widget, no_gap):
+    """Years view without the space between the years (the button next to YRS)."""
+    if bool(getattr(widget, "years_no_gap", False)) == bool(no_gap):
+        return
+    relayout_years_impl(widget, lambda: setattr(widget, "years_no_gap", bool(no_gap)))
+
+
+def set_years_fold_impl(widget, count):
+    """Years shown before the older ones fold (0: never)."""
+    try:
+        count = max(0, int(count))
+    except (TypeError, ValueError):
+        return
+    if int(getattr(widget, "years_fold", 3)) == count:
+        return
+    relayout_years_impl(widget, lambda: setattr(widget, "years_fold", count))
+
+
+def _invalidate_up(widget):
+    """Every layout from the heatmap up to the main screen's area works out its height
+    again (each one keeps its heightForWidth until told)."""
+    w = widget
+    while w is not None:
+        try:
+            lay = w.layout()
+            if lay is not None:
+                lay.invalidate()
+            w.updateGeometry()
+            w = w.parentWidget()
+        except RuntimeError:
+            return
+
+
+def _follow_height_now(widget):
+    """A pinned heatmap that changes height: the main screen's area that holds it follows
+    at once. Left to its own timer it caught up a moment later, and meanwhile the bottom of
+    the heatmap (its legend) was cut off."""
+    try:
+        if not widget.property("pinned_widget"):
+            return
+        from ...pinned.main_menu.manager import MainMenuWidgetManager
+
+        if not MainMenuWidgetManager.instance_exists():
+            return
+        manager = MainMenuWidgetManager.instance()
+        if getattr(manager, "_rebuild_in_progress", False):
+            return  # the rebuild sizes everything when it ends
+        _invalidate_up(widget)
+        manager._resize_overlay()
+        # Once more after Qt has laid the new height out.
+        QTimer.singleShot(0, manager._resize_overlay)
+    except Exception:
+        pass
+
+
+def _set_height_for_switch(widget, old_h):
+    """The height after a switch that animates (mode, fold, gap). On the main screen the
+    height goes from the old to the new one along with the cells (step_height_anim), so the
+    charts under the heatmap slide with it instead of jumping at the start or the end."""
+    # An animation still running (a click during the previous one, a deck change) is
+    # forgotten first: heightForWidth would answer its height on the way.
+    widget._height_anim = None
+    widget._hold_min_height = None
+    new_h = widget.heightForWidth(widget.width())
+    if new_h != old_h and widget.property("pinned_widget") and chart_animations_allowed(widget, max_visible_charts=USER_ACTION_MAX_CHARTS):
+        widget._height_anim = (int(old_h), int(new_h))
+        widget._hold_min_height = old_h
+        widget.setMinimumHeight(old_h)
+        # heightForWidth above may have cached a grid placed for the current height.
+        widget._grid_cache = None
+        widget._cont_layout_cache = None
+        return
+    widget._hold_min_height = None
+    widget.setMinimumHeight(new_h)
+    _follow_height_now(widget)
+
+
+def layout_height(widget):
+    """Height the grid is placed for: the final one while the height is still on its way
+    (step_height_anim). Placed for the current height, the cells changed size and place at
+    each frame along with the card."""
+    anim = getattr(widget, "_height_anim", None)
+    if anim is not None:
+        return anim[1]
+    return widget.height()
+
+
+def height_anim_active(widget):
+    return getattr(widget, "_height_anim", None) is not None and getattr(widget, "_mode_transition_active", False)
+
+
+def step_height_anim(widget):
+    """One frame of the mode transition: the height follows the cells (same easing as
+    the legend glide in legend.paint_legend)."""
+    anim = getattr(widget, "_height_anim", None)
+    if anim is None or not getattr(widget, "_mode_transition_active", False):
+        return
+    t = max(0.0, min(1.0, float(getattr(widget, "_mode_transition_progress", 1.0))))
+    tt = t * t * (3.0 - 2.0 * t)
+    h = int(round(anim[0] + (anim[1] - anim[0]) * tt))
+    if h == getattr(widget, "_hold_min_height", None):
+        return
+    widget._hold_min_height = h
+    widget.setMinimumHeight(h)
+    try:
+        if not widget.property("pinned_widget"):
+            return
+        from ...pinned.main_menu.manager import MainMenuWidgetManager
+
+        if not MainMenuWidgetManager.instance_exists():
+            return
+        manager = MainMenuWidgetManager.instance()
+        if getattr(manager, "_rebuild_in_progress", False):
+            return
+        _invalidate_up(widget)
+        manager._resize_overlay()
+    except Exception:
+        pass
+
+
+def release_height_hold(widget):
+    """End of the animation: the height kept for it goes to the new one."""
+    if getattr(widget, "_height_anim", None) is not None:
+        widget._height_anim = None
+        widget._grid_cache = None
+        widget._cont_layout_cache = None
+    if getattr(widget, "_hold_min_height", None) is None:
+        return
+    widget._hold_min_height = None
+    widget.updateGeometry()
+    widget.setMinimumHeight(widget.heightForWidth(widget.width()))
+    _follow_height_now(widget)
+
+
+def relayout_years_impl(widget, change):
+    """Apply change() to the years view. The cells move to their new place and the years
+    that come or go fade, with the animation of a mode switch. In another view, change()
+    is only stored for later."""
+    if getattr(widget, "view_mode", "") != "years":
+        change()
+        return
+    widget._data_transition_anim.stop()
+    widget._clear_data_transition_state()
+    widget._mode_transition_anim.stop()
+    old_h = widget.height()
+    try:
+        from .legend import legend_rest_top
+
+        widget._legend_top_from = legend_rest_top(widget)
+    except Exception:
+        widget._legend_top_from = None
+    old_cells = widget._build_current_cell_visuals(widget.data)
+    widget._mode_transition_old_labels_pixmap = widget._render_labels_to_pixmap()
+    try:
+        from . import years_ops
+
+        label_from = years_ops.row_tops(widget)
+    except Exception:
+        label_from = None
+
+    change()
+    widget._years_scroll = 0.0
+    widget._pixmap_cache = None
+    widget._labels_pixmap_cache = None
+    widget._labels_pixmap_cache_key = None
+    widget.updateGeometry()
+    _set_height_for_switch(widget, old_h)
+    new_cells = widget._build_current_cell_visuals(widget.data)
+    widget._mode_transition_new_labels_pixmap = widget._render_labels_to_pixmap()
+
+    widget._mode_transition_old_cells = old_cells
+    widget._mode_transition_new_cells = new_cells
+    keys = set(old_cells.keys()) | set(new_cells.keys())
+    widget._mode_transition_cell_pairs = [(old_cells.get(key), new_cells.get(key)) for key in keys]
+    widget._mode_transition_active = True
+    widget._mode_transition_progress = 0.0
+    widget._years_label_from = label_from
+    if chart_animations_allowed(widget, max_visible_charts=USER_ACTION_MAX_CHARTS):
         widget._mode_transition_anim.start()
     else:
         widget._on_mode_transition_finished()
@@ -352,9 +577,10 @@ def shift_continuous_impl(widget, delta):
 
 def resize_event_impl(widget, event):
     QWidget.resizeEvent(widget, event)
-
     req_h = widget.heightForWidth(widget.width())
     min_h = 40 if widget.grid_mode else req_h
+    if getattr(widget, "_hold_min_height", None) is not None:
+        min_h = widget._hold_min_height  # kept until the animation ends (_set_height_for_switch)
     if widget.minimumHeight() != min_h:
         widget.setMinimumHeight(min_h)
 
@@ -367,8 +593,27 @@ def resize_event_impl(widget, event):
     widget._clear_data_transition_state()
     widget._nav_transition_anim.stop()
     widget._clear_nav_transition_state()
-    widget._mode_transition_anim.stop()
-    widget._clear_mode_transition_state()
+    if height_anim_active(widget) and event.oldSize().width() == event.size().width():
+        # The height following the cells (step_height_anim): the grid is already placed for
+        # the final height (layout_height), so the cells keep their path; only the labels
+        # are drawn again for the new size.
+        try:
+            widget._mode_transition_new_labels_pixmap = widget._render_labels_to_pixmap()
+        except Exception:
+            pass
+        widget.update()
+        return
+    if getattr(widget, "_mode_transition_active", False):
+        # A mode switch that changes the height (the all years view is taller than the
+        # others) resizes the widget right as its animation starts: stopping it there made
+        # that switch the only one without animation. The cells keep moving, towards their
+        # place in the new size.
+        try:
+            _retarget_mode_transition(widget)
+            widget._mode_transition_new_labels_pixmap = widget._render_labels_to_pixmap()
+        except Exception:
+            widget._mode_transition_anim.stop()
+            widget._clear_mode_transition_state()
     widget.update()
 
 
@@ -428,6 +673,7 @@ def set_hidden_legend_steps_impl(widget, steps):
     widget._nav_transition_anim.stop()
     widget._clear_nav_transition_state()
     widget._mode_transition_anim.stop()
+    widget._legend_top_from = None  # the legend stays where it is
 
     widget.hidden_legend_steps = steps
     widget._grid_cache = None
@@ -445,7 +691,7 @@ def set_hidden_legend_steps_impl(widget, steps):
     widget._mode_transition_cell_pairs = [(old_cells.get(k), new_cells.get(k)) for k in keys]
     widget._mode_transition_active = True
     widget._mode_transition_progress = 0.0
-    if chart_animations_allowed(widget):
+    if chart_animations_allowed(widget, max_visible_charts=USER_ACTION_MAX_CHARTS):
         widget._mode_transition_anim.start()
     else:
         widget._on_mode_transition_finished()
@@ -491,6 +737,7 @@ def transition_to_impl(widget, new_data, end_date):
     widget._nav_transition_anim.stop()
     widget._clear_nav_transition_state()
     widget._mode_transition_anim.stop()
+    widget._legend_top_from = None
 
     widget._suppress_next_transition = False
     widget.data = next_data
@@ -510,7 +757,7 @@ def transition_to_impl(widget, new_data, end_date):
     widget._mode_transition_cell_pairs = [(old_cells.get(k), new_cells.get(k)) for k in keys]
     widget._mode_transition_active = True
     widget._mode_transition_progress = 0.0
-    if chart_animations_allowed(widget):
+    if chart_animations_allowed(widget, max_visible_charts=USER_ACTION_MAX_CHARTS):
         widget._mode_transition_anim.start()
     else:
         widget._on_mode_transition_finished()

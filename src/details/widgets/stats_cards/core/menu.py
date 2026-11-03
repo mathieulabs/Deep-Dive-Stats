@@ -6,6 +6,7 @@ from aqt.qt import QAction, Qt
 from ....ui import StyledMenu, get_svg_icon
 from ..logic.model import get_dashboard_local_stat_style
 from ..logic.widget_persistence import card_has_own_color
+from .....i18n import tr, tr_name
 
 
 def _find_clicked_card(container, event, stat_card_cls):
@@ -64,7 +65,10 @@ def _pin_card(card):
     from ...pinned import WidgetRegistry
     from ...pinned.main_menu.manager import MainMenuWidgetManager
 
-    WidgetRegistry.add("stat_card", card.display_name, stat_key=card.config_key, deck_id=None, time_span=card.time_span)
+    from ..logic.model import stat_card_label_to_save
+
+    label = stat_card_label_to_save(card.config_key, card.display_name)
+    WidgetRegistry.add("stat_card", label, stat_key=card.config_key, deck_id=None, time_span=card.time_span)
     MainMenuWidgetManager.instance().refresh()
 
 
@@ -77,7 +81,7 @@ def _add_row_move_actions(menu, container, clicked_card):
         _wdef = next((d for d in _WR.get_all() if d.get("id") == clicked_card.widget_id), None)
         _row_num = int(_wdef.get("row_num", 0)) if _wdef else 0
         menu.addSeparator()
-        _down_act = QAction("Move to next line", menu)
+        _down_act = QAction(tr("Move to next line"), menu)
 
         def _do_down(_=None, wid=clicked_card.widget_id, rn=_row_num):
             _WR.update_setting(wid, "row_num", rn + 1)
@@ -89,7 +93,7 @@ def _add_row_move_actions(menu, container, clicked_card):
         _down_act.triggered.connect(_do_down)
         menu.addAction(_down_act)
         if _row_num > 0:
-            _up_act = QAction("Move up a line", menu)
+            _up_act = QAction(tr("Move up a line"), menu)
 
             def _do_up(_=None, wid=clicked_card.widget_id, rn=_row_num):
                 new_rn = rn - 1
@@ -106,11 +110,11 @@ def _add_row_move_actions(menu, container, clicked_card):
     if not clicked_card.is_pinned and card_key and container._row_num_change_fn:
         _row_num = container._row_num_fn(card_key) if container._row_num_fn else 0
         menu.addSeparator()
-        _down_act = QAction("Move to next line", menu)
+        _down_act = QAction(tr("Move to next line"), menu)
         _down_act.triggered.connect(lambda _=None, k=card_key: container._row_num_change_fn(k, +1))
         menu.addAction(_down_act)
         if _row_num > 0:
-            _up_act = QAction("Move up a line", menu)
+            _up_act = QAction(tr("Move up a line"), menu)
             _up_act.triggered.connect(lambda _=None, k=card_key: container._row_num_change_fn(k, -1))
             menu.addAction(_up_act)
 
@@ -132,21 +136,21 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
 
     if clicked_card and clicked_card.stat_type:
         shown_name = str(clicked_card.display_name).replace("&", "&&")  # not a shortcut
-        color_action = menu.addAction(f"Change {shown_name} Color...")
+        color_action = menu.addAction(tr("Change {name} Color...", name=shown_name))
         color_action.setIcon(get_svg_icon("palette", size=16))
         color_action.triggered.connect(clicked_card._pick_color)
         if card_has_own_color(clicked_card):
-            reset_action = menu.addAction(f"Use Shared {shown_name} Color")
+            reset_action = menu.addAction(tr("Use Shared {name} Color", name=shown_name))
             reset_action.setIcon(get_svg_icon("rotate-ccw", size=16))
             reset_action.triggered.connect(clicked_card._reset_color)
 
-        pin_action = menu.addAction(f"Pin {shown_name}")
+        pin_action = menu.addAction(tr("Pin {name}", name=shown_name))
         pin_action.setIcon(get_svg_icon("push-pin", size=16))
         pin_action.triggered.connect(lambda _, c=clicked_card: _pin_card(c))
         menu.addSeparator()
 
         if clicked_card.is_pinned:
-            deck_act = QAction("Select Decks...", menu)
+            deck_act = QAction(tr("Select Decks..."), menu)
             deck_act.setIcon(get_svg_icon("layers", size=16))
 
             def on_deck_select():
@@ -185,7 +189,8 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
             menu.addAction(deck_act)
             menu.addSeparator()
         else:
-            settings_action = QAction("Settings", menu)
+            settings_action = QAction(tr("Settings"), menu)
+            settings_action.setMenuRole(QAction.MenuRole.NoRole)  # macOS would otherwise move it into the app menu as Preferences/Quit
             settings_action.setIcon(get_svg_icon("settings", size=16))
             settings_action.triggered.connect(lambda: _open_dashboard_card_settings(container, clicked_card))
             menu.addAction(settings_action)
@@ -225,7 +230,7 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
         if not members:
             continue
         shown = sum(1 for c in members if c.isVisible())
-        sub = menu.addMenu(f"{name} ({shown}/{len(members)})")
+        sub = menu.addMenu(f"{tr_name(name)} ({shown}/{len(members)})")
         for c in members:
             sub.addAction(make_vis_action(sub, c, c.display_name))
         search.add_group(sub)

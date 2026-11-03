@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ..common import get_review_button_colors
+from ...chart_utils.formatting import fmt_num
+from .....i18n import num, tr
 
 
 def refresh_data_colors_impl(widget):
@@ -14,5 +16,5 @@ def tooltip_text_impl(widget):
     tips = []
     for i, count in enumerate(widget.counts):
         pct = (count / total) * 100
-        tips.append(f"{widget.labels[i]}: {count} ({pct:.2f}%)")
+        tips.append(tr("{name}: {count} ({value})", name=widget.labels[i], count=fmt_num(count), value=num(f"{pct:.2f}%")))
     return " | ".join(tips)

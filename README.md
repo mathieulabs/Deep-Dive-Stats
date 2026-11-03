@@ -26,6 +26,9 @@ Detailed statistics for Anki, in a separate window or pinned under your deck lis
   overview.
 - Settings per chart, built-in themes and custom colors.
 - Export as PNG, JPEG, PDF or CSV.
+- In English, French, German, Spanish, Italian, Portuguese (Brazil), Russian, Polish,
+  Turkish, Japanese, Korean and Chinese (Simplified). The language follows Anki's;
+  Settings > General > Language sets another one.
 
 ## Install
 
@@ -44,6 +47,18 @@ Settings > General > "Disable Pinned Widgets".
 
 Open an issue on GitHub. The log is `user_files/debug.log` in the add-on folder.
 Paths and the profile name are redacted, so you can attach the relevant lines.
+
+## Translations
+
+The translations may contain mistakes. To report one, open an issue with the language,
+the current text and the correct one. A pull request is welcome too.
+
+The texts are in `src/i18n/<language>.json`, keyed by the English text. To add a
+language, run `python dev_tools/check_translations.py --new <code>`, fill in the file
+and add the language to `LANGUAGES` in `src/i18n/__init__.py` (with `PLURAL_FORMS` when it
+does not have two plural forms, and `_NUMBER_STYLE` for how it writes numbers). An empty entry
+shows the English text. `python dev_tools/check_translations.py --sync` adds new texts
+to every file, and the build checks that the `{placeholders}` match.
 
 ## Build
 

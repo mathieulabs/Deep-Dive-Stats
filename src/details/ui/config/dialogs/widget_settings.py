@@ -49,9 +49,10 @@ from ..widgets.label_defaults import (
     update_reset_button_visibility as update_label_reset_button_visibility,
 )
 from ..widgets.save_persistence import persist_widget_settings
-from ..shared import apply_standard_dialog_sizing, clamp_dialog_height, clamp_dialog_width, install_no_wheel_filters
+from ..shared import apply_standard_dialog_sizing, clamp_dialog_height, clamp_dialog_width, install_no_wheel_filters, show_when_painted
 from .....qss import set_qss
 from .....config import ConfigManager, set_live_config_override
+from .....i18n import tr, tr_name, upper
 
 class WidgetSettingsDialog(QDialog):
     """A focused dialog for configuring a specific pinned or deep dive widget."""
@@ -141,9 +142,10 @@ class WidgetSettingsDialog(QDialog):
         self.update_timer.setSingleShot(True)
         self.update_timer.timeout.connect(self.apply_live_changes)
 
-        self.setWindowTitle(f"Configure Widget: {self.type.replace('_', ' ').title()}")
+        self.setWindowTitle(tr("Configure Widget: {name}", name=self._get_default_label()))
 
         apply_standard_dialog_sizing(self, min_width=500)
+        show_when_painted(self)
 
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -160,33 +162,42 @@ class WidgetSettingsDialog(QDialog):
         self.scroll.setWidget(self.scroll_content)
         self.main_layout.addWidget(self.scroll)
 
-        self.unlink_cb = QCheckBox("Unlink settings (Separate from other widgets)")
+        self.unlink_cb = QCheckBox(tr("Own style for this widget"))
         self.unlink_cb.setChecked(self.is_unlinked)
         self.unlink_cb.toggled.connect(self.toggle_unlink)
+        # Says what the box changes: shared style or this widget's own.
+        self.unlink_hint = QLabel()
+        self.unlink_hint.setWordWrap(True)
+        set_qss(self.unlink_hint, "color: rgba(127,127,127,0.95);")
+        self._update_unlink_hint()
+        self.unlink_cb.toggled.connect(lambda _c: self._update_unlink_hint())
         # Heatmap settings do not use the unlink concept
         if self.type == "heatmap":
             self.unlink_cb.setVisible(False)
+            self.unlink_hint.setVisible(False)
         self.content_layout.addWidget(self.unlink_cb)
+        self.content_layout.addWidget(self.unlink_hint)
 
         if self.type != "text_label":
-            group_gen = QGroupBox("General")
+            group_gen = QGroupBox(tr("General"))
             layout_gen = QFormLayout(group_gen)
 
             label_row = QHBoxLayout()
-            self.label_edit = QLineEdit(widget_def.get("label", ""))
-            self.label_edit.setPlaceholderText("Empty = no title")
+            # Default names are saved in English and shown translated (see _label_to_save).
+            self.label_edit = QLineEdit(tr_name(widget_def.get("label", "")))
+            self.label_edit.setPlaceholderText(tr("Empty = no title"))
             self.label_edit.textChanged.connect(self._update_reset_button_visibility)
             label_row.addWidget(self.label_edit)
 
             self.reset_label_btn = QPushButton()
             self.reset_label_btn.setIcon(get_svg_icon("rotate-ccw", size=14, context_ref=self))
             self.reset_label_btn.setFixedSize(24, 24)
-            self.reset_label_btn.setToolTip("Reset to Default")
+            self.reset_label_btn.setToolTip(tr("Reset to Default"))
             set_qss(self.reset_label_btn, "QPushButton { background: transparent; border: none; } QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }")
             self.reset_label_btn.clicked.connect(self._reset_label)
             label_row.addWidget(self.reset_label_btn)
 
-            layout_gen.addRow("Display Label:", label_row)
+            layout_gen.addRow(tr("Display Label:"), label_row)
 
             if self.type == "stat_card" and not self.is_dashboard_context:
                  self.stat_key_combo = QComboBox()
@@ -203,17 +214,17 @@ class WidgetSettingsDialog(QDialog):
                      self.stat_key_combo.setCurrentIndex(idx)
 
                  self.stat_key_combo.currentIndexChanged.connect(self._update_reset_button_visibility)
-                 layout_gen.addRow("Metric:", self.stat_key_combo)
+                 layout_gen.addRow(tr("Metric:"), self.stat_key_combo)
 
                  from ....widgets.pinned.widget_factory.builders.time_units import UNIT_CHOICES
                  from ....widgets.pinned.widget_factory.builders.stat_card import TIME_STAT_FIELDS
                  self.time_unit_combo = QComboBox()
                  for _val, _label in UNIT_CHOICES:
-                     self.time_unit_combo.addItem(_label, _val)
+                     self.time_unit_combo.addItem(tr_name(_label), _val)
                  _ti = self.time_unit_combo.findData(widget_def.get("time_unit", "auto"))
                  self.time_unit_combo.setCurrentIndex(_ti if _ti >= 0 else 0)
-                 self.time_unit_combo.setToolTip("Auto: minutes under 1 hour, hours above (as before).\nOr force seconds, minutes, hours or days.")
-                 self.time_unit_label = QLabel("Time unit:")
+                 self.time_unit_combo.setToolTip(tr("Auto: minutes under 1 hour, hours above (as before).\nOr force seconds, minutes, hours or days."))
+                 self.time_unit_label = QLabel(tr("Time unit:"))
                  layout_gen.addRow(self.time_unit_label, self.time_unit_combo)
 
                  def _sync_time_unit_row(*_a, _combo=self.stat_key_combo):
@@ -253,7 +264,7 @@ class WidgetSettingsDialog(QDialog):
 
         if self.type not in ("stat_card", "text_label"):
             _reset_handler = self._reset_heatmap if self.type == "heatmap" else self._reset_chart_settings
-            self.reset_btn = QPushButton(" Reset to Defaults")
+            self.reset_btn = QPushButton(' ' + tr('Reset to Defaults'))
             self.reset_btn.setIcon(get_svg_icon("rotate-ccw", size=14, context_ref=self))
             self.reset_btn.setMinimumHeight(28)
             self.reset_btn.clicked.connect(_reset_handler)
@@ -261,9 +272,9 @@ class WidgetSettingsDialog(QDialog):
 
         btn_layout.addStretch()
 
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton(tr("Cancel"))
         self.cancel_btn.clicked.connect(self.reject)
-        self.ok_btn = QPushButton("Save")
+        self.ok_btn = QPushButton(tr("Save"))
         self.ok_btn.setDefault(True)
         self.ok_btn.clicked.connect(self.save_and_close)
 
@@ -401,6 +412,15 @@ class WidgetSettingsDialog(QDialog):
             node = node.parentWidget() if hasattr(node, "parentWidget") else None
         return False
 
+    def _update_unlink_hint(self):
+        if self.unlink_cb.isChecked():
+            self.unlink_hint.setText(tr("This widget has its own style: the changes below only apply to it."))
+        else:
+            self.unlink_hint.setText(tr(
+                "The style below (box, border, opacity) is shared by all widgets: a change here "
+                "applies to all of them. The title and the options of this widget stay its own."
+            ))
+
     def toggle_unlink(self, checked):
         """Switch between Global and Local config context."""
         self.is_unlinked = checked
@@ -429,9 +449,11 @@ class WidgetSettingsDialog(QDialog):
 
         if self.type == "text_label":
             if hasattr(self, "_tl_editor"):
-                self._tl_editor.set_template(self.widget_def.get("template", ""))
+                from ....widgets.pinned.widget_factory.builders.text_label import shown_template
+
+                self._tl_editor.set_template(shown_template(self.widget_def.get("template", "")))
             if hasattr(self, "glass_cb"): set_val(self.glass_cb, "setChecked", conf.get(Config.TEXT_WIDGET_SHOW_GLASS, True))
-            if hasattr(self, "int_slider"): set_val(self.int_slider, "setValue", conf.get(Config.TEXT_WIDGET_GLASS_INTENSITY, 20))
+            if hasattr(self, "int_slider"): set_val(self.int_slider, "setValue", conf.get(Config.TEXT_WIDGET_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.TEXT_WIDGET_GLASS_INTENSITY]))
             if hasattr(self, "border_slider"): set_val(self.border_slider, "setValue", conf.get(Config.TEXT_WIDGET_GLASS_BORDER, 50))
             if hasattr(self, "hover_border_cb"): set_val(self.hover_border_cb, "setChecked", conf.get(Config.TEXT_WIDGET_HOVER_BORDER, True))
         elif self.type == "stat_card":
@@ -467,18 +489,20 @@ class WidgetSettingsDialog(QDialog):
             if hasattr(self, "intensity_curve_slider"): set_val(self.intensity_curve_slider, "setValue", conf.get(Config.HEATMAP_INTENSITY_CURVE, 100))
             if hasattr(self, "hm_levels_slider"): set_val(self.hm_levels_slider, "setValue", conf.get(Config.HEATMAP_COLOR_LEVELS, 15))
             if hasattr(self, "hm_glass_cb"): set_val(self.hm_glass_cb, "setChecked", conf.get(Config.HEATMAP_SHOW_GLASS, False))
-            if hasattr(self, "hm_int_slider"): set_val(self.hm_int_slider, "setValue", conf.get(Config.HEATMAP_GLASS_INTENSITY, 43))
+            if hasattr(self, "hm_int_slider"): set_val(self.hm_int_slider, "setValue", conf.get(Config.HEATMAP_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.HEATMAP_GLASS_INTENSITY]))
             if hasattr(self, "hm_border_slider"): set_val(self.hm_border_slider, "setValue", conf.get(Config.HEATMAP_GLASS_BORDER, 0))
             if hasattr(self, "show_cont_cb"): set_val(self.show_cont_cb, "setChecked", conf.get(Config.HEATMAP_SHOW_CONTINUOUS_MODE, True))
             if hasattr(self, "show_365_cb"): set_val(self.show_365_cb, "setChecked", conf.get(Config.HEATMAP_SHOW_365_MODE, True))
             if hasattr(self, "show_year_cb"): set_val(self.show_year_cb, "setChecked", conf.get(Config.HEATMAP_SHOW_YEAR_MODE, True))
+            if hasattr(self, "show_years_cb"): set_val(self.show_years_cb, "setChecked", conf.get(Config.HEATMAP_SHOW_YEARS_MODE, True))
+            if hasattr(self, "years_fold_slider"): set_val(self.years_fold_slider, "setValue", conf.get(Config.HEATMAP_YEARS_FOLD, 3))
             if getattr(self, "hm_tooltip_checks", None):
                 from ....widgets.chart_utils.tooltip_fields import set_checks
                 set_checks(self.hm_tooltip_checks, conf.get(Config.HEATMAP_TOOLTIP_HIDDEN, []))
             if hasattr(self, "click_browser_cb"): set_val(self.click_browser_cb, "setChecked", conf.get(Config.HEATMAP_CLICK_BROWSER, True))
         else:
             if hasattr(self, "glass_cb"): set_val(self.glass_cb, "setChecked", conf.get(Config.PINNED_GLASS, True))
-            if hasattr(self, "int_slider"): set_val(self.int_slider, "setValue", conf.get(Config.PINNED_GLASS_INTENSITY, 20))
+            if hasattr(self, "int_slider"): set_val(self.int_slider, "setValue", conf.get(Config.PINNED_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.PINNED_GLASS_INTENSITY]))
             if hasattr(self, "border_slider"): set_val(self.border_slider, "setValue", conf.get(Config.PINNED_GLASS_BORDER, 50))
             if hasattr(self, "hover_border_cb"): set_val(self.hover_border_cb, "setChecked", conf.get(Config.PINNED_HOVER_BORDER, True))
             # Activity per-widget toggles always come from widget_def
@@ -543,7 +567,7 @@ class WidgetSettingsDialog(QDialog):
                 _hdr = target.findChild(_HdrLabel, "pinned_header")
                 if _hdr is not None:
                     _txt = (self.label_edit.text() or "").strip()
-                    _hdr.setText(_txt.upper())
+                    _hdr.setText(upper(_txt))
                     _hdr.setVisible(bool(_txt))
 
             # Merge styling config with the widget's own instance definition
@@ -624,6 +648,8 @@ class WidgetSettingsDialog(QDialog):
                     dd_hm = target.findChild(_HW)
                     if dd_hm:
                         dd_hm.set_monday_first(merged_def.get(Config.HEATMAP_MONDAY_FIRST, False))
+                        if Config.HEATMAP_YEARS_FOLD in merged_def:
+                            dd_hm.set_years_fold(merged_def.get(Config.HEATMAP_YEARS_FOLD, 3))
                 if needs_rebuild:
                     if MainMenuWidgetManager.instance_exists():
                         MainMenuWidgetManager.instance().refresh()
@@ -645,6 +671,12 @@ class WidgetSettingsDialog(QDialog):
                     if s: s.setVisible(m365_v and year_v)
                     s = target.findChild(_QLabel, "heatmap_sep_cont_year")
                     if s: s.setVisible(cont_v and not m365_v and year_v)
+                    from ....widgets.charts.heatmap.years_ops import years_mode_available
+                    years_v = (self.show_years_cb.isChecked() if hasattr(self, "show_years_cb") else True) and years_mode_available()
+                    btn = target.findChild(QPushButton, "heatmap_mode_years")
+                    if btn: btn.setVisible(years_v)
+                    s = target.findChild(_QLabel, "heatmap_sep_year_years")
+                    if s: s.setVisible(years_v and (cont_v or m365_v or year_v))
             elif self.type == "activity":
                 from ....widgets.pinned.widget_factory.builders.activity import _update_activity
                 stack = target.findChild(QWidget, "activity_stack")
@@ -725,11 +757,20 @@ class WidgetSettingsDialog(QDialog):
                      break
                  p = p.parentWidget()
 
+    def _label_to_save(self):
+        """The label to save: unchanged shown text keeps the saved value (an English default
+        name stays English, so it follows the language), otherwise the typed text."""
+        text = self.label_edit.text()
+        saved = self.widget_def.get("label", "")
+        if isinstance(saved, str) and text == tr_name(saved):
+            return saved
+        return text
+
     def save_and_close(self):
         self.local_config["use_custom_style"] = self.is_unlinked
 
         if hasattr(self, "label_edit"):
-            self.local_config["label"] = self.label_edit.text()
+            self.local_config["label"] = self._label_to_save()
         if self.type == "stat_card" and hasattr(self, "stat_key_combo"):
              self.local_config["stat_key"] = self.stat_key_combo.currentData()
         if self.type == "stat_card" and hasattr(self, "time_unit_combo"):
@@ -753,15 +794,24 @@ class WidgetSettingsDialog(QDialog):
     def _setup_text_label_settings(self):
         from aqt.qt import QGroupBox, QVBoxLayout
         from ..widgets.text_label_editor import TextLabelEditor
+        from ....widgets.pinned.widget_factory.builders.text_label import shown_template
+        from .....const.config import TEXT_WIDGET_DEFAULT_TEMPLATE
 
-        group = QGroupBox("Text Widget")
+        group = QGroupBox(tr("Text Widget"))
         outer = QVBoxLayout(group)
         outer.setContentsMargins(8, 8, 8, 8)
 
         self._tl_editor = TextLabelEditor(group, theme_config=self.theme_config or self.addon_config)
-        self._tl_editor.set_template(self.widget_def.get("template", ""))
+        stored = self.widget_def.get("template", "")
+        self._tl_editor.set_template(shown_template(stored))
+        # The default text is saved in English and shown translated: while it is left
+        # as it is, it stays saved in English, so it follows a change of language.
+        default_as_shown = self._tl_editor.get_template() if stored == TEXT_WIDGET_DEFAULT_TEMPLATE else None
+
         def _sync_template():
             template = self._tl_editor.get_template()
+            if default_as_shown is not None and template == default_as_shown:
+                template = TEXT_WIDGET_DEFAULT_TEMPLATE
             self.widget_def["template"] = template
             self.local_config["template"] = template
             self._trigger_live_update()

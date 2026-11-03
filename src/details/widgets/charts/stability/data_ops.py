@@ -17,6 +17,7 @@ from ..common.discrete import (
     set_cumulative_mode_impl,
 )
 from ..fsrs_base import FSRSBaseChart
+from .....i18n import tr_n
 
 
 def init_state_impl(widget):
@@ -164,11 +165,14 @@ def set_view_filter_impl(widget, filter_mode, transition_mode=None):
 
 
 def get_stats_text_impl(widget):
-    return [f"Total: {fmt_num(widget.total_cards)} cards", f"Median stability: {widget.median} days"]
+    return [
+        tr_n("Total: {count} card", "Total: {count} cards", widget.total_cards, count=fmt_num(widget.total_cards)),
+        tr_n("Median stability: {n} day", "Median stability: {n} days", widget.median),
+    ]
 
 
 def get_tooltip_text_impl(widget, k, v):
     bs = get_bin_size(widget.max_days) if widget.binning_active else 1
     if bs <= 1:
-        return f"Stability {k} days: {v} cards"
-    return f"Stability {k}-{k + bs - 1} days: {v} cards"
+        return tr_n("Stability {days} days: {n} card", "Stability {days} days: {n} cards", v, days=k)
+    return tr_n("Stability {days} days: {n} card", "Stability {days} days: {n} cards", v, days=f"{k}-{k + bs - 1}")

@@ -25,7 +25,9 @@ from .. import WidgetRegistry
 from ....ui import Config
 from ...chart_utils.theme import ThemeContext, apply_theme_context, resolve_widget_theme_context
 from .....qss import set_qss
+from ....animations.effect_guard import effect_nested
 from ....logic.logger import log_swallowed
+from .....i18n import tr, upper
 
 # Pinned charts collapsed by the user (session only, like the Deep Dive cards).
 _COLLAPSED_PINNED = set()
@@ -215,7 +217,10 @@ class ResizableWrapper(QFrame):
             content_h = max(20, int(inner.sizeHint().height()))
 
         target_outer_h = content_h + extra_h
-        return QSize(max(160, target_outer_w), max(44, target_outer_h))
+        # The smallest card follows the zoom like its text, so a zoomed-out text card
+        # does not keep a 100 % height around small text.
+        z = min(3.0, max(0.5, float(getattr(self, "_zoom_scale", 1.0) or 1.0)))
+        return QSize(max(int(round(160 * z)), target_outer_w), max(int(round(44 * z)), target_outer_h))
 
     def _text_label_actual_target_size(self, saved_w=None, saved_h=None):
         zoom_scale = float(getattr(self, "_zoom_scale", 1.0) or 1.0)
@@ -224,9 +229,9 @@ class ResizableWrapper(QFrame):
         elif zoom_scale > 3.0:
             zoom_scale = 3.0
 
-        # The text is drawn at its real font size whatever the page zoom, so measure
-        # the box from the real text. Scaling it made the box narrower than the text
-        # when zoomed out, and the second line was cut off.
+        # The box is measured from the text as drawn, which follows the zoom (see
+        # AutoSizeRichLabel.set_zoom): scaling a size measured at 100 % made it narrower
+        # than the text when zoomed out, and the second line was cut off.
         if saved_w is None:
             size = self._text_label_target_size(None)
         else:
@@ -276,7 +281,7 @@ class ResizableWrapper(QFrame):
         inner = getattr(self, "inner_widget", None)
         if inner:
             if w_type == "text_label":
-                self._content_min_h = max(44, self._text_label_target_size(w).height())
+                self._content_min_h = max(int(round(44 * zoom_scale)), self._text_label_target_size(w).height())
             elif isinstance(inner, StatCardWidget):
                 self._content_min_h = 100
             elif isinstance(inner, HeatmapWidget) or inner.findChild(HeatmapWidget):
@@ -290,6 +295,8 @@ class ResizableWrapper(QFrame):
                 self._content_min_h = _base
 
         if w_type == "text_label":
+            if inner is not None and hasattr(inner, "set_zoom"):
+                inner.set_zoom(zoom_scale)  # the text follows the zoom like the other widgets
             target_size = self._text_label_actual_target_size(w, h)
             self.setMinimumWidth(target_size.width())
             self.setMaximumWidth(target_size.width())
@@ -597,7 +604,7 @@ class ResizableWrapper(QFrame):
 
     def setOpacity(self, opacity):
         """Standardized ghosting effect using QGraphicsOpacityEffect."""
-        if opacity >= 1.0:
+        if opacity >= 1.0 or effect_nested(self):  # see effect_guard
             self.setGraphicsEffect(None)
         else:
             eff = QGraphicsOpacityEffect(self)
@@ -752,7 +759,7 @@ def _wrap(inner_widget, label, header_widget=None, base_color=None, wtype=None, 
         collapse_btn.setFlat(True)
         collapse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         collapse_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        collapse_btn.setToolTip("Collapse / expand")
+        collapse_btn.setToolTip(tr("Collapse / expand"))
         set_qss(collapse_btn, "QPushButton { background: transparent; border: none; padding: 0; }")
         collapse_btn.clicked.connect(card.toggle_collapsed)
         collapse_btn.setVisible(collapsible_on)
@@ -767,7 +774,7 @@ def _wrap(inner_widget, label, header_widget=None, base_color=None, wtype=None, 
             card._collapse_btn = None
         layout.addWidget(header_widget)
     elif label:
-        header = QLabel(label.upper())
+        header = QLabel(upper(label))
         header.setObjectName("pinned_header")
         header.setCursor(Qt.CursorShape.ArrowCursor)
         if collapse_btn is not None:

@@ -30,17 +30,22 @@ def collect_pinned_defs(manager, deck_id):
 
 
 def handle_empty_pinned_defs(manager, pinned_defs):
+    from ..ui.empty_hint import leave_empty_hint, show_empty_hint
+
     if pinned_defs:
+        leave_empty_hint(manager)
         return False
     log_debug(
         f"rebuild empty pinned set: hiding overlay and clearing active_widgets={len(manager._active_widgets)}",
         tag="PINNED",
     )
-    manager._overlay.hide()
     for wid in list(manager._active_widgets.keys()):
         manager._active_widgets[wid].deleteLater()
         del manager._active_widgets[wid]
         manager._widget_update_signatures.pop(wid, None)
+    if show_empty_hint(manager):
+        return True  # nothing pinned at all: the "Add a widget" card instead
+    manager._overlay.hide()
     manager._update_placeholder_height(0)
     return True
 

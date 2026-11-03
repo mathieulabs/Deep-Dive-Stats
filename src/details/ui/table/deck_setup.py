@@ -4,6 +4,8 @@ from aqt.qt import QAbstractItemView, QHeaderView, QTableWidget, Qt, QFont
 
 from ...widgets import HTMLDelegate
 from .zebra import apply_zebra
+from .headers import set_header_labels
+from ....i18n import N_
 
 
 def setup_table_for_deck_view(
@@ -24,32 +26,32 @@ def setup_table_for_deck_view(
     show_header_menu_fn=None,
 ):
     """Setup table for deck view (time ranges as rows)."""
-    cols = ["Period"]
+    cols = [N_("Period")]
     if show_time:
-        cols.append("Time")
+        cols.append(N_("Time"))
     if show_reviews:
-        cols.append("Reviews")
+        cols.append(N_("Reviews"))
     if show_retention:
-        cols.append("Retention")
+        cols.append(N_("Retention"))
     if show_retention_young:
-        cols.append("Ret. Young")
+        cols.append(N_("Ret. Young"))
     if show_retention_mature:
-        cols.append("Ret. Mature")
+        cols.append(N_("Ret. Mature"))
     if show_buttons_dist:
-        cols.append("Buttons")
+        cols.append(N_("Buttons"))
     if show_avg_time:
-        cols.append("Avg Time")
+        cols.append(N_("Avg Time"))
     if show_longest_streak:
-        cols.append("Longest Streak")
+        cols.append(N_("Longest Streak"))
     if show_streak:
-        cols.append("Streak")
+        cols.append(N_("Streak"))
     if show_active_days:
-        cols.append("Active Days")
+        cols.append(N_("Active Days"))
     if show_forecast:
-        cols.append("Forecast")
+        cols.append(N_("Forecast"))
 
     table.setColumnCount(len(cols))
-    table.setHorizontalHeaderLabels(cols)
+    set_header_labels(table, cols)
 
     header = table.horizontalHeader()
     header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)

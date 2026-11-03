@@ -4,6 +4,8 @@ from aqt.qt import QAbstractItemView, QHeaderView, QTableWidget, Qt, QFont
 
 from ...widgets import HTMLDelegate
 from .zebra import apply_zebra
+from .headers import set_header_labels
+from ....i18n import N_
 
 
 def _watch_multi_selection(dialog, table):
@@ -69,32 +71,32 @@ def setup_table(
     show_forecast=True,
     show_header_menu_fn=None,
 ):
-    headers = ["Deck"]
+    headers = [N_("Deck")]
     if show_time:
-        headers.append("Time")
+        headers.append(N_("Time"))
     if show_reviews:
-        headers.append("Reviews")
+        headers.append(N_("Reviews"))
     if show_retention:
-        headers.append("Retention")
+        headers.append(N_("Retention"))
     if show_retention_young:
-        headers.append("Ret. Young")
+        headers.append(N_("Ret. Young"))
     if show_retention_mature:
-        headers.append("Ret. Mature")
+        headers.append(N_("Ret. Mature"))
     if show_buttons_dist:
-        headers.append("Buttons")
+        headers.append(N_("Buttons"))
     if show_avg_time:
-        headers.append("Avg Time")
+        headers.append(N_("Avg Time"))
     if show_longest_streak:
-        headers.append("Longest Streak")
+        headers.append(N_("Longest Streak"))
     if show_streak:
-        headers.append("Streak")
+        headers.append(N_("Streak"))
     if show_active_days:
-        headers.append("Active Days")
+        headers.append(N_("Active Days"))
     if show_forecast:
-        headers.append("Forecast")
+        headers.append(N_("Forecast"))
 
     table.setColumnCount(len(headers))
-    table.setHorizontalHeaderLabels(headers)
+    set_header_labels(table, headers)
 
     header = table.horizontalHeader()
     header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)

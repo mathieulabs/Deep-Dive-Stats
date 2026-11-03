@@ -125,6 +125,17 @@ def build_current_cell_visuals_impl(widget, data_source=None):
     offset_h = rollover_hour()
     logical_today = (datetime.now() - timedelta(hours=offset_h)).date()
 
+    if getattr(widget, "view_mode", "") == "years":
+        from .years_ops import iter_cells
+
+        for curr_date, rect in iter_cells(widget):
+            date_str = curr_date.isoformat()[:10]
+            entry = data_source.get(date_str, 0)
+            count, future = entry_counts(widget, entry)
+            color = widget._resolve_cell_color(count, future, curr_date.date(), logical_today, max_past_count, max_future_count)
+            visuals[date_str] = (rect, QColor(color))
+        return visuals
+
     if widget.view_mode == "continuous":
         cell_size, spacing, step, gap_width, label_space, margin_top, start_x, months_list = widget._get_continuous_layout()
         current_x = start_x

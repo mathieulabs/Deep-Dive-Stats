@@ -19,6 +19,7 @@ from ... import Config
 from .....qss import set_qss
 from ....logic.logger import log_error
 from ....logic.logger import log_swallowed
+from .....i18n import N_, tr_name
 
 
 def _no_section(res):
@@ -199,18 +200,18 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
             return self._create_retention_chart_view(cur_data)
 
         widget_builders = [
-            (_build_activity_widget, "activity", "Activity"),
-            (_build_retention_widget, "retention", "Retention"),
-            (lambda: self._build_heatmap_section(self._get_widget_history("heatmap", self.last_history_data), self.last_row_data, self.last_history_range, self.last_history_range, manual_add=True), "heatmap", "Heatmap"),
-            (lambda: self._build_future_due_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "future_due", "Future Due"),
-            (lambda: self._build_distribution_section(self.last_deck_identifier, self._get_dd_widget_setting("distribution", "time_span", self.last_history_range), self.last_row_data, manual_add=True), "distribution", "Answer Buttons"),
-            (lambda: self._build_hourly_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "hourly", "Hourly Breakdown"),
-            (lambda: self._build_card_counts_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "card_counts", "Card Counts"),
-            (lambda: self._build_review_intervals_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "review_intervals", "Review Intervals"),
-            (lambda: self._build_stability_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "stability", "Stability"),
-            (lambda: self._build_difficulty_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "difficulty", "Difficulty"),
-            (lambda: self._build_retrievability_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "retrievability", "Retrievability"),
-            (lambda: self._build_added_section(self.last_deck_identifier, self._get_dd_widget_setting("added", "time_span", self.last_history_range), self.last_row_data, manual_add=True), "added", "Added")
+            (_build_activity_widget, "activity", N_("Activity")),
+            (_build_retention_widget, "retention", N_("Retention")),
+            (lambda: self._build_heatmap_section(self._get_widget_history("heatmap", self.last_history_data), self.last_row_data, self.last_history_range, self.last_history_range, manual_add=True), "heatmap", N_("Heatmap")),
+            (lambda: self._build_future_due_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "future_due", N_("Future Due")),
+            (lambda: self._build_distribution_section(self.last_deck_identifier, self._get_dd_widget_setting("distribution", "time_span", self.last_history_range), self.last_row_data, manual_add=True), "distribution", N_("Answer Buttons")),
+            (lambda: self._build_hourly_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "hourly", N_("Hourly Breakdown")),
+            (lambda: self._build_card_counts_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "card_counts", N_("Card Counts")),
+            (lambda: self._build_review_intervals_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "review_intervals", N_("Review Intervals")),
+            (lambda: self._build_stability_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "stability", N_("Stability")),
+            (lambda: self._build_difficulty_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "difficulty", N_("Difficulty")),
+            (lambda: self._build_retrievability_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "retrievability", N_("Retrievability")),
+            (lambda: self._build_added_section(self.last_deck_identifier, self._get_dd_widget_setting("added", "time_span", self.last_history_range), self.last_row_data, manual_add=True), "added", N_("Added"))
         ]
 
         if chart_order:
@@ -356,7 +357,7 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
                     w = res
 
                 if w:
-                    sect = self._add_section_card(label, w, manual_add=True, header_layout=h, state_key=k)
+                    sect = self._add_section_card(tr_name(label), w, manual_add=True, header_layout=h, state_key=k)
                     if sect:
                         try:
                             masonry_layout.addWidget(sect)

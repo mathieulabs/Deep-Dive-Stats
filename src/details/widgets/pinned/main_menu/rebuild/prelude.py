@@ -34,7 +34,9 @@ def strip_main_layout_spacers(manager):
                 if it is None:
                     continue
                 try:
-                    if it.spacerItem() is not None:
+                    sp = it.spacerItem()
+                    if sp is not None and type(sp).__name__ != "GapSpacer":
+                        # (the spaces under the boxes stay: see block_order)
                         manager._main_layout.takeAt(i)
                         removed_any = True
                         break
@@ -168,7 +170,7 @@ def build_current_state(manager, deck_id, max_ids, pinned_conf):
     config_tuple = (
         pinned_conf.get(Config.PINNED_WIDGETS, []),
         pinned_conf.get(Config.PINNED_GLASS, True),
-        pinned_conf.get(Config.PINNED_GLASS_INTENSITY, 20),
+        pinned_conf.get(Config.PINNED_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.PINNED_GLASS_INTENSITY]),
         pinned_conf.get(Config.PINNED_GLASS_BLUR, 0),
         pinned_conf.get(Config.PINNED_GLASS_BORDER, 50),
         pinned_conf.get(Config.HEATMAP_SCALE, 100),
@@ -187,7 +189,7 @@ def build_current_state(manager, deck_id, max_ids, pinned_conf):
         pinned_conf.get(Config.HEATMAP_HIDE_LABELS, False),
         pinned_conf.get(Config.HEATMAP_SHOW_LEGEND, True),
         pinned_conf.get(Config.HEATMAP_SHOW_GLASS, False),
-        pinned_conf.get(Config.HEATMAP_GLASS_INTENSITY, 43),
+        pinned_conf.get(Config.HEATMAP_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.HEATMAP_GLASS_INTENSITY]),
         pinned_conf.get(Config.HEATMAP_GLASS_BLUR, 0),
         pinned_conf.get(Config.HEATMAP_GLASS_BORDER, 0),
         pinned_conf.get(Config.PINNED_BLOCK_ORDER, ["stats", "charts"]),

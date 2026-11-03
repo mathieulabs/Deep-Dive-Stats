@@ -18,6 +18,7 @@ from ....common import (
     refresh_parent_chart_header_stats,
 )
 from ....chart_utils.zoom_camera import with_camera
+from ......i18n import N_
 
 
 def _build_added(widget_def, deck_id, cache=None, parent=None, cfg=None):
@@ -63,7 +64,7 @@ def _build_added(widget_def, deck_id, cache=None, parent=None, cfg=None):
         Config.DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS,
         Config.DEEP_DIVE_PINNED_SHOW_STATS,
         parent=parent,
-        title=pinned_title(widget_def, "ADDED"),
+        title=pinned_title(widget_def, N_("Added")),
         title_object_name="pinned_header",
     )
     prepare_pinned_header(header_widget, header_lay)
@@ -88,11 +89,15 @@ def _build_added(widget_def, deck_id, cache=None, parent=None, cfg=None):
             enabled=stats_state["show_header_stats"],
         )
 
-    return _wrap(chart, None, header_widget=header_widget,
-                 widget_id=widget_def["id"],
-                 saved_w=widget_def.get("width"),
-                 saved_h=widget_def.get("height"),
-                 parent=parent)
+    wrapped = _wrap(chart, None, header_widget=header_widget,
+                    widget_id=widget_def["id"],
+                    saved_w=widget_def.get("width"),
+                    saved_h=widget_def.get("height"),
+                    parent=parent)
+    if source.get("history_is_none") and wrapped is not None:
+        # Not in the cache yet: the rebuild loads it in the background (else it stayed empty).
+        wrapped._is_loading = True
+    return wrapped
 
 def _update_added(chart, widget_def, deck_id, cache=None, fail_if_not_cached=False, cfg=None):
     span = widget_def.get("time_span", Period.TOTAL)

@@ -16,6 +16,7 @@ from .tab_mutations import (
     set_tab_field,
     set_tab_title,
 )
+from .....i18n import tr, tr_name
 
 if TYPE_CHECKING:
     from ..dialogs.tabs_config_dialog import DetailedStatsConfigDialog
@@ -110,14 +111,14 @@ def remove_tab(dialog: "DetailedStatsConfigDialog") -> None:
     if row < 0:
         return
     if len(dialog.tabs_data) <= 1:
-        QMessageBox.warning(dialog, "Warning", "You must have at least one tab.")
+        QMessageBox.warning(dialog, tr("Warning"), tr("You must have at least one tab."))
         return
     removed_title = str(dialog.tabs_data[row].get("title", ""))
     if (
         QMessageBox.question(
             dialog,
-            "Remove Tab",
-            f"Are you sure you want to remove the tab '{removed_title}'?",
+            tr("Remove Tab"),
+            tr("Are you sure you want to remove the tab '{name}'?", name=tr_name(removed_title)),
         )
         != QMessageBox.StandardButton.Yes
     ):
@@ -131,11 +132,11 @@ def remove_tab(dialog: "DetailedStatsConfigDialog") -> None:
 
 
 def reset_defaults(dialog: "DetailedStatsConfigDialog") -> None:
-    msg = (
+    msg = tr(
         "Are you sure you want to reset all tabs to their default configuration? "
         "This will restore the Today and Yesterday tabs."
     )
-    if QMessageBox.question(dialog, "Reset Defaults", msg) != QMessageBox.StandardButton.Yes:
+    if QMessageBox.question(dialog, tr("Reset Defaults"), msg) != QMessageBox.StandardButton.Yes:
         return
 
     dialog.tabs_data = copy.deepcopy(DEFAULT_DETAILS_TABS)

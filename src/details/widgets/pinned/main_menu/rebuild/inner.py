@@ -36,7 +36,10 @@ def rebuild_overlay_inner(manager, deck_id):
         return
     run_incremental_cache_refresh(manager, deck_id, max_ids)
 
-    manager._config_manager = manager._get_config_manager()
+    # Every box is one line: a box of several lines from before is split (once).
+    from ..one_line_boxes import split_lines_into_boxes
+
+    manager._config_manager = manager._get_config_manager(force_refresh=split_lines_into_boxes())
     pinned_conf = manager._config_manager.config
     try:
         from ..imports import sync_theme_manager_and_notify

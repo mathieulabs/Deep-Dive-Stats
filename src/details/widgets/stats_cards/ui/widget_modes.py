@@ -4,6 +4,7 @@ from aqt.qt import Qt
 
 from ....ui import Config
 from .....qss import set_qss
+from .....i18n import caption_scale
 
 
 def inline_stats_enabled(widget):
@@ -20,7 +21,8 @@ def title_size_multiplier(widget):
         raw = float(cfg.get(key, 100))
     except Exception:
         raw = 100.0
-    return max(0.5, min(2.0, raw / 100.0))
+    # Titles are small capitals; scripts without capitals need them larger (i18n).
+    return max(0.5, min(2.0, raw / 100.0)) * caption_scale()
 
 
 def apply_inline_layout_mode(widget):

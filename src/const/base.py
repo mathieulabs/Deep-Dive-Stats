@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 import os
+from ..i18n import N_
 
 # Revlog type for a manual reschedule (Anki's own value when available).
 try:
@@ -25,15 +26,15 @@ class Period:
     THREE_MONTHS = 8
     DAYS_IN = {WEEK: 7, TWO_WEEKS: 14, MONTH: 30, THREE_MONTHS: 90, YEAR: 365, CUSTOM: 1}
     LABEL = {
-        WEEK: 'Past Week',
-        TWO_WEEKS: 'Past 2 Weeks',
-        MONTH: 'Past Month',
-        THREE_MONTHS: 'Past 3 Months',
-        YEAR: 'Past Year',
-        LAST_YEAR: 'Last Year',
-        TOTAL: 'Total',
-        TODAY: 'Today',
-        YESTERDAY: 'Yesterday'
+        WEEK: N_('Past Week'),
+        TWO_WEEKS: N_('Past 2 Weeks'),
+        MONTH: N_('Past Month'),
+        THREE_MONTHS: N_('Past 3 Months'),
+        YEAR: N_('Past Year'),
+        LAST_YEAR: N_('Last Year'),
+        TOTAL: N_('Total'),
+        TODAY: N_('Today'),
+        YESTERDAY: N_('Yesterday')
     }
 
 LAST_YEAR = Period.LAST_YEAR

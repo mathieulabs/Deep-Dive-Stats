@@ -3,6 +3,7 @@
 """Click a chart bar or slice to show its cards in the Anki browser (like native Anki stats)."""
 from aqt.qt import QEvent, QObject, Qt
 from ...logic.logger import log_swallowed
+from ....i18n import tr
 
 _CLICK_SLOP = 5
 
@@ -56,7 +57,7 @@ def _target(chart):
     if "PieChartWidget" in kinds:
         key = getattr(chart, "_hover_key", None)
         if key == "deleted":
-            return lambda: bs._tip("Deleted cards cannot be shown in the browser")
+            return lambda: bs._tip(tr("Deleted cards cannot be shown in the browser"))
         q = _PIE_QUERIES.get(key)
         return (lambda: bs.open_query(q, deck)) if q else None
 
@@ -70,7 +71,7 @@ def _target(chart):
             return None
         label = data[idx].get("pretty_date", "")
         kind = "added" if "AddedChartWidget" in kinds else "reviewed"
-        return lambda: bs.open_cards_for_label(kind, label, deck) or bs._tip("No date for this bar")
+        return lambda: bs.open_cards_for_label(kind, label, deck) or bs._tip(tr("No date for this bar"))
 
     if "HourlyBreakdownChart" in kinds:
         span = getattr(chart, "_bc_span", None)
@@ -86,14 +87,14 @@ def _target(chart):
                 if idx < len(series) and isinstance(series[idx], (list, tuple)):
                     label = str(series[idx][0])
                 break
-        return lambda: bs.open_cards_for_label("reviewed", label, deck) or bs._tip("No date for this bar")
+        return lambda: bs.open_cards_for_label("reviewed", label, deck) or bs._tip(tr("No date for this bar"))
 
     if "ActivityChart" in kinds:
         labels = chart._get_labels()
         if idx >= len(labels):
             return None
         label = labels[idx]
-        return lambda: bs.open_cards_for_label("reviewed", label, deck) or bs._tip("No date for this bar")
+        return lambda: bs.open_cards_for_label("reviewed", label, deck) or bs._tip(tr("No date for this bar"))
 
     if "FutureDueChart" in kinds:
         a, b = chart._get_bin_day_range(idx, chart._get_points_count())

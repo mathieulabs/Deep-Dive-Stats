@@ -6,6 +6,7 @@ from aqt import mw
 from .. import Config
 from ...widgets import SegmentedBarWidget
 from ....config import ConfigManager
+from ....i18n import num, tr
 
 _KEYS = {
     "all": Config.RETENTION_VISUAL_ALL,
@@ -28,12 +29,12 @@ def retention_bar(passed, rev, parent=None, background=None):
     from ...widgets.chart_utils.formatting import stats_precision
 
     pct = (passed / rev * 100) if rev > 0 else 0
-    text = "0%" if pct == 0 else f"{pct:.{stats_precision()}f}%"
+    text = num("0%" if pct == 0 else f"{pct:.{stats_precision()}f}%")
     bar = SegmentedBarWidget(
         [max(rev - passed, 0), passed],
         parent=parent,
         animate=False,
-        labels=["Wrong", "Correct"],
+        labels=[tr("Wrong"), tr("Correct")],
         color_slots=(0, 2),
         center_text=text,
     )

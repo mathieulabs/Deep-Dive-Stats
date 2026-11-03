@@ -10,7 +10,7 @@ editor settings or dev tools.
 
 FAIL stops the build (personal terms, absolute user paths, e-mails, secrets,
 user data in the package, French comments, em or en dashes in comments, files
-that do not compile). WARN is for review only (print calls, TODOs, symbols,
+that do not compile, broken translations: see dev_tools/check_translations.py). WARN is for review only (print calls, TODOs, symbols,
 wording).
 
 Extra words to reject (your name, handles) go one per line in
@@ -257,10 +257,26 @@ def verify_package(path):
     return names, problems
 
 
+def translation_audit():
+    """Failures and warnings of dev_tools/check_translations.py (see its docstring)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import check_translations
+
+    texts, plurals, fails, warns = check_translations.scan_sources()
+    for code in check_translations.languages():
+        f, w = check_translations.check_catalog(code, texts, plurals)
+        fails += f
+        warns += w
+    return [f"translations: {f}" for f in fails], [f"translations: {w}" for w in warns]
+
+
 def main():
     check_only = "--check" in sys.argv
     files = collect_files()
     fails, warns = audit(files)
+    t_fails, t_warns = translation_audit()
+    fails += t_fails
+    warns += t_warns
 
     print(f"{len(files)} files checked.")
     for w in warns[:200]:

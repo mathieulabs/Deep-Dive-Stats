@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from aqt.qt import QComboBox, QHBoxLayout, QSpinBox, Qt, QWidget
+from .....i18n import tr, tr_name
 
 _CUSTOM = "__custom__"
 
@@ -30,8 +31,8 @@ class RangeButtonRow(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         self.combo = QComboBox(self)
         for data, label in choices:
-            self.combo.addItem(label, data)
-        self.combo.addItem("Custom...", _CUSTOM)
+            self.combo.addItem(tr_name(label), data)
+        self.combo.addItem(tr("Custom..."), _CUSTOM)
         lay.addWidget(self.combo, 1)
         # The row only holds a pending choice: the settings dialog reads it on Save, so its
         # controls must not trigger the live refresh (which rebuilds the Deep Dive charts).
@@ -40,7 +41,7 @@ class RangeButtonRow(QWidget):
         lay.addWidget(self.spin)
         self.unit = QComboBox(self)
         if kind == "fsrs":
-            self.unit.addItem("days", "d")
+            self.unit.addItem(tr("days"), "d")
             self.unit.addItem("%", "p")
             lay.addWidget(self.unit)
         self.combo.currentIndexChanged.connect(self._sync)
@@ -53,7 +54,7 @@ class RangeButtonRow(QWidget):
             self.spin.setSuffix(" %")
         else:
             self.spin.setRange(1, 8999 if self._kind == "days" else 9999)
-            self.spin.setSuffix(" day(s)")
+            self.spin.setSuffix(' ' + tr('day(s)'))
 
     def _sync(self, *_a):
         custom = self.combo.currentData() == _CUSTOM

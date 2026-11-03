@@ -272,7 +272,14 @@ class StatCardsContainer(QFrame):
         super().showEvent(event)
         self.update_layout(self.width())
         for delay_ms in SHOW_EVENT_SYNC_DELAYS_MS:
-            QTimer.singleShot(delay_ms, lambda: self.update_layout(self.width()))
+            QTimer.singleShot(delay_ms, self._delayed_layout_sync)
+
+    def _delayed_layout_sync(self):
+        # The container can be gone by then (profile switch, page rebuilt).
+        try:
+            self.update_layout(self.width())
+        except RuntimeError:
+            pass
 
     def contextMenuEvent(self, event):
         from .menu import show_stat_cards_container_menu
@@ -296,6 +303,8 @@ class StatCardsContainer(QFrame):
 
         hide_marker(self)
         self._drag_cross = None
+        from ...pinned.main_menu.ui.drag_layout import drag_left
+        drag_left()
         super().dragLeaveEvent(event)
 
     def dropEvent(self, event):

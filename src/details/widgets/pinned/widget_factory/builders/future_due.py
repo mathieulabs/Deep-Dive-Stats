@@ -14,6 +14,7 @@ from ....common import (
     refresh_parent_chart_header_stats,
     resolve_future_due_choice,
 )
+from ......i18n import tr, N_
 
 
 
@@ -48,7 +49,7 @@ def _build_future_due(widget_def, deck_id, cache=None, parent=None, cfg=None):
         Config.DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS,
         Config.DEEP_DIVE_PINNED_SHOW_STATS,
         parent=parent,
-        title=pinned_title(widget_def, "FUTURE DUE"),
+        title=pinned_title(widget_def, N_("Future Due")),
         title_object_name="pinned_header",
     )
 
@@ -59,7 +60,7 @@ def _build_future_due(widget_def, deck_id, cache=None, parent=None, cfg=None):
     state = {"range_idx": default_idx, "deck_id": deck_id}
     chart._pinned_state = state
 
-    backlog_cb = _make_checkbox("Backlog", checked=show_backlog, parent=header_widget)
+    backlog_cb = _make_checkbox(tr("Backlog"), checked=show_backlog, parent=header_widget)
     header_lay.addWidget(backlog_cb)
 
     def _refresh(new_data, cur_backlog, transition_mode=None):

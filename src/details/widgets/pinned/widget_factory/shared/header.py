@@ -4,6 +4,7 @@ from aqt.qt import QPushButton, QSizePolicy, Qt
 
 from ..builders import get_svg_icon
 from ......qss import set_qss
+from ......i18n import tr
 
 
 def prepare_pinned_header(header_widget, header_layout, *, spacing=8):
@@ -23,7 +24,7 @@ def add_pinned_zoom_reset_button(
     btn_reset.setIcon(get_svg_icon("rotate-ccw", size=14))
     btn_reset.setFixedSize(20, 20)
     btn_reset.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn_reset.setToolTip("Reset Zoom")
+    btn_reset.setToolTip(tr("Reset Zoom"))
     btn_reset.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     btn_reset.setVisible(False)
     set_qss(btn_reset,

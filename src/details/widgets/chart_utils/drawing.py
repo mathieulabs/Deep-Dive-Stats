@@ -6,6 +6,7 @@ from .theme import get_theme_colors, is_night_mode
 from .geometry import ChartGeometry
 from .formatting import fmt_num
 from ...logic.logger import log_swallowed
+from ....i18n import localize_dates, percent_text
 
 
 # [last read time, line opacity %, bar gradient %, show grid]
@@ -201,7 +202,7 @@ def draw_right_axis_labels(
         if callable(value_formatter):
             label_text = str(value_formatter(val_cum))
         else:
-            label_text = f"{fmt_num(int(val_cum))}{suffix}"
+            label_text = percent_text(fmt_num(int(val_cum))) if suffix == "%" else f"{fmt_num(int(val_cum))}{suffix}"
         label_rect_right = QRect(int(width - margin_right), int(y_pos) - 10, int(margin_right - 4), 20)
         painter.setPen(text_col)
         painter.drawText(label_rect_right, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, label_text)
@@ -219,6 +220,8 @@ def _draw_x_axis_labels_core(
 ):
     if not labels:
         return
+    # The labels are the data's English dates: drawn in the interface language.
+    labels = [localize_dates(str(label)) for label in labels]
 
     t_colors = get_theme_colors(widget)
     text_col = axis_text_color(t_colors, fade=float(alpha) / 255.0, widget=widget)

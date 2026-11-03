@@ -63,6 +63,19 @@ def compose_heatmap_mode_data(target_year, mode, fetch_year_data, now=None):
     if mode == "year":
         return current_data, current_end
 
+    if mode == "years":
+        # Every year back to Anki's first one (years without reviews add nothing; the
+        # widget shows from the first year with reviews).
+        from ....charts.heatmap.years_ops import FIRST_YEAR
+
+        merged = dict(current_data)
+        for yr in range(int(target_year) - 1, FIRST_YEAR - 1, -1):
+            older, _ = fetch_year_data(yr)
+            if older:
+                merged.update(older)
+        current_now = now or datetime.now()
+        return merged, get_heatmap_365_end_date(int(current_now.year), now=current_now)
+
     previous_data, _ = fetch_year_data(target_year - 1)
     merged = merge_heatmap_year_data(previous_data or {}, current_data)
     current_now = now or datetime.now()

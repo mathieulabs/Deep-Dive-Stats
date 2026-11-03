@@ -97,15 +97,6 @@ def open_widget_settings(manager, widget, widget_def):
         manager.refresh()
 
 
-def update_span(manager, wid, span):
-    WidgetRegistry.update_settings_bulk(wid, {
-        "time_span": int(span) if span is not None else None,
-        "_timespan_token": int(time.time() * 1000),
-    })
-    manager._last_state = None
-    manager.refresh()
-
-
 def update_span_bulk(manager, wid, updates):
     merged = dict(updates or {})
     merged["_timespan_token"] = int(time.time() * 1000)
@@ -196,8 +187,21 @@ def toggle_global_show_stats(manager, enabled):
 
 
 def unpin(manager, wid):
+    snapshot = WidgetRegistry.removal_snapshot(wid)
     WidgetRegistry.remove(wid)
     manager.refresh()
+    if snapshot is not None:
+        from .undo_toast import show_undo_toast
+        from ......i18n import tr
+
+        show_undo_toast(tr("Widget removed"), lambda: _undo_unpin(manager, snapshot))
+
+
+def _undo_unpin(manager, snapshot):
+    if WidgetRegistry.restore(snapshot):
+        manager._last_state = None
+        manager._last_widget_set = None
+        manager.refresh()
 
 
 def reset_widget_size(manager, wid):

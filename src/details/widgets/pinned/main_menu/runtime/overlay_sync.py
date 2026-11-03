@@ -3,7 +3,6 @@
 
 from ..imports import mw, QTimer
 from ..constants import (
-    CHART_MIN_COLUMN_WIDTH,
     CHART_SPACING,
     IMMEDIATE_TIMER_MS,
     OVERLAY_GEOM_EPSILON,
@@ -122,12 +121,24 @@ def resize_overlay(manager, force_refresh_blur=False):
     if w <= 0:
         w = mw.width()
 
-    for _, _ml_row in getattr(manager, "_chart_masonry_rows", []):
+    from ..ui.chart_row_ops import chart_column_width, iter_all_row_layouts
+
+    col_w = chart_column_width(manager)  # follows the zoom (see chart_column_width)
+    for _, _ml_row in list(iter_all_row_layouts(manager)):
         try:
-            _ml_row.min_column_width = CHART_MIN_COLUMN_WIDTH
+            if _ml_row.min_column_width != col_w:
+                _ml_row.min_column_width = col_w
+                _ml_row.invalidate()
             _ml_row.setSpacing(CHART_SPACING)
         except Exception:
             log_swallowed()
+
+    try:
+        from .overlay_margins import apply_line_gaps
+
+        apply_line_gaps(manager)
+    except Exception:
+        log_swallowed()
 
     sig = manager._current_resize_signature(w)
 
@@ -155,7 +166,13 @@ def resize_overlay(manager, force_refresh_blur=False):
                 hh = int(ww.sizeHint().height())
             vis_widgets.append(max(0, hh))
         if vis_widgets:
-            content_h = int(m.top() + m.bottom() + sum(vis_widgets) + spacing * (len(vis_widgets) - 1))
+            gaps = 0
+            for spacer, _key in getattr(manager, "_section_spacers", None) or []:
+                try:
+                    gaps += int(spacer.sizeHint().height())
+                except RuntimeError:
+                    pass
+            content_h = int(m.top() + m.bottom() + sum(vis_widgets) + spacing * (len(vis_widgets) - 1) + gaps)
             h = max(int(h), int(content_h))
     except Exception:
         log_swallowed()
@@ -224,6 +241,7 @@ def do_sync_overlay(manager):
     manager._resize_overlay()
     if not manager._overlay:
         return
+    manager._overlay.keep_above_page()
     manager._overlay.update_mask()
 
 

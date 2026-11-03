@@ -26,6 +26,7 @@ from .layout_ops import (
 )
 from .hover_ops import leave_impl, mouse_move_impl
 from .render_ops import paint_event_impl
+from .....i18n import tr_name
 
 
 class PieChartWidget(ChartAnimationMixin, QWidget):
@@ -60,7 +61,7 @@ class PieChartWidget(ChartAnimationMixin, QWidget):
         )
 
         self.colors = get_pie_chart_colors(self)
-        self.labels = dict(PIE_CHART_LABELS)
+        self.labels = {key: tr_name(name) for key, name in PIE_CHART_LABELS.items()}
         self.order = list(PIE_CHART_ORDER)
         self.chart_opacity_pct = 100
         self._slice_base_color_cache_key = None

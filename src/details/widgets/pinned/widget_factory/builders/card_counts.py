@@ -12,6 +12,7 @@ from ....charts.pie_chart import PieChartWidget
 from ....common import apply_chart_display_config, create_chart_header
 from ...store.registry import WidgetRegistry
 from .....logic.logger import log_swallowed
+from ......i18n import tr, N_
 
 
 def _build_card_counts(widget_def, deck_id, cache=None, parent=None, cfg=None):
@@ -55,14 +56,14 @@ def _build_card_counts(widget_def, deck_id, cache=None, parent=None, cfg=None):
 
     header_widget, header_lay, _ = create_chart_header(
         parent=parent,
-        title=pinned_title(widget_def, "CARD COUNTS"),
+        title=pinned_title(widget_def, N_("Card Counts")),
         title_object_name="pinned_header",
     )
     prepare_pinned_header(header_widget, header_lay)
 
     wid = widget_def["id"]
 
-    cb_sep = _make_checkbox("Sep. Susp.", checked=sep_susp, parent=header_widget)
+    cb_sep = _make_checkbox(tr("Sep. Susp."), checked=sep_susp, parent=header_widget)
 
     def on_sep_toggle(state, w=wid):
         val = bool(state)
@@ -75,7 +76,7 @@ def _build_card_counts(widget_def, deck_id, cache=None, parent=None, cfg=None):
 
     return _wrap(
         chart,
-        pinned_title(widget_def, "CARD COUNTS").upper(),
+        pinned_title(widget_def, N_("Card Counts")).upper(),
         header_widget=header_widget,
         widget_id=widget_def["id"],
         saved_w=widget_def.get("width"),

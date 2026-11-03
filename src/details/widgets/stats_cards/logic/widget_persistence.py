@@ -3,6 +3,7 @@
 from ....ui import Config
 from ....logic.logger import log_swallowed
 from .own_color import card_color_key, own_card_color, valid_color, with_dashboard_card_color
+from .....i18n import tr
 
 
 def _own_holders(widget):
@@ -21,9 +22,10 @@ def _own_holders(widget):
 
 
 def set_card_color(widget, color, *, conf=None, write_updates_fn=None, refresh_fn=None):
-    """The color the card menu picked. With own colors on it is the card's own color, else
-    the shared color of its stat (Settings > Colors), which changes everywhere it is used.
-    color None turns the card's own colors off (back to the shared color)."""
+    """The color the card menu picked: this card's own color. The shared color of the stat
+    is not touched: it is also the color of other cards and of charts (the Young retention
+    card has the Young color of every chart), it is set in Settings > Colors.
+    color None turns the card's own color off (back to the shared one)."""
     from ...chart_utils.own_colors import apply_own_colors
 
     key = card_color_key(widget)
@@ -31,10 +33,6 @@ def set_card_color(widget, color, *, conf=None, write_updates_fn=None, refresh_f
         return
     color = valid_color(color)
     holders = _own_holders(widget)
-    if color is not None and not holders:
-        _set_shared_color(widget, key, color)
-        return
-
     own = None if color is None else {key: color}
     if getattr(widget, "is_pinned", False):
         if widget.widget_id:
@@ -55,14 +53,6 @@ def set_card_color(widget, color, *, conf=None, write_updates_fn=None, refresh_f
         refresh_fn()
 
 
-def _set_shared_color(widget, key, color):
-    from ....ui.config.widgets.widget_colors import shared_updates, write_shared_color
-
-    pinned = bool(getattr(widget, "is_pinned", False))
-    extra = (widget.addon_config,) if isinstance(getattr(widget, "addon_config", None), dict) else ()
-    write_shared_color(lambda conf: shared_updates(conf, key, color, pinned), extra_confs=extra)
-
-
 def card_has_own_color(widget):
     return own_card_color(widget) is not None
 
@@ -70,7 +60,22 @@ def card_has_own_color(widget):
 def pick_card_color(widget, *, read_config_fn=None, write_updates_fn=None, refresh_fn=None):
     from aqt.qt import QColor, QColorDialog
 
-    chosen = QColorDialog.getColor(QColor(widget.base_color), widget, "Pick Stat Color")
+    picker = QColorDialog(QColor(widget.base_color), widget)
+    picker.setWindowTitle(tr("Pick Color"))
+    try:
+        # In the theme of the window the card is in, like the pickers of the settings
+        # (those take it from their dialog; a card's window does not style a dialog).
+        from ...chart_utils.theme import settings_dialog_qss_for
+        from .....qss import set_qss
+
+        set_qss(picker, settings_dialog_qss_for(widget))
+    except Exception:
+        log_swallowed()
+    if not picker.exec():
+        picker.deleteLater()
+        return
+    chosen = picker.selectedColor()
+    picker.deleteLater()
     if not chosen.isValid():
         return
     conf = None

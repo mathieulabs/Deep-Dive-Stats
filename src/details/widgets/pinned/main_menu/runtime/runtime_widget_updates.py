@@ -182,7 +182,7 @@ def apply_zoom_scale_to_widgets(manager, zoom):
                             f"font-weight: 800; font-size: {fs}px; color: {txt_sec_hex}; letter-spacing: 1px; "
                             f"margin-left: {max(2, int(round(2 * z)))}px; margin-right: {max(2, int(round(2 * z)))}px;"
                         )
-                    for name in ("heatmap_mode_cont", "heatmap_mode_year", "heatmap_btn_prev", "heatmap_btn_next"):
+                    for name in ("heatmap_mode_cont", "heatmap_mode_year", "heatmap_btn_prev", "heatmap_btn_next", "heatmap_years_gap_btn"):
                         b = nav.findChild(QPushButton, name)
                         if b:
                             b.setFixedSize(btn_sz, btn_sz)
@@ -204,27 +204,29 @@ def apply_zoom_scale_to_widgets(manager, zoom):
                                     f"QPushButton:hover {{ background: {hover_bg}; color: {txt_pri_hex}; }} "
                                     f"QPushButton:pressed {{ background: {active_bg}; color: {txt_pri_hex}; }}"
                                 )
-                    b365 = nav.findChild(QPushButton, "heatmap_mode_365")
-                    if b365:
-                        b365.setFixedSize(btn_365_w, btn_sz)
-                        is_active_365 = bool(b365.property("heatmap_mode_active"))
-                        if is_active_365:
-                            set_qss(b365,
-                                "QPushButton { "
-                                f"background: {active_bg}; border: none; "
-                                f"font-weight: 800; font-size: {fs}px; color: {txt_pri_hex}; "
-                                "padding: 0px; margin: 0px; border-radius: 3px; } "
-                                f"QPushButton:hover {{ background: {active_bg}; color: {txt_pri_hex}; }} "
-                                f"QPushButton:pressed {{ background: {active_bg}; color: {txt_pri_hex}; }}"
-                            )
-                        else:
-                            set_qss(b365,
-                                "QPushButton { background: transparent; border: none; "
-                                f"font-weight: 800; font-size: {fs}px; color: {txt_sec_hex}; "
-                                "padding: 0px; margin: 0px; border-radius: 3px; } "
-                                f"QPushButton:hover {{ background: {hover_bg}; color: {txt_pri_hex}; }} "
-                                f"QPushButton:pressed {{ background: {active_bg}; color: {txt_pri_hex}; }}"
-                            )
+                    # The wider text buttons (365, YRS) keep their own width.
+                    for b365 in (nav.findChild(QPushButton, "heatmap_mode_365"),
+                                 nav.findChild(QPushButton, "heatmap_mode_years")):
+                        if b365:
+                            b365.setFixedSize(btn_365_w, btn_sz)
+                            is_active_365 = bool(b365.property("heatmap_mode_active"))
+                            if is_active_365:
+                                set_qss(b365,
+                                    "QPushButton { "
+                                    f"background: {active_bg}; border: none; "
+                                    f"font-weight: 800; font-size: {fs}px; color: {txt_pri_hex}; "
+                                    "padding: 0px; margin: 0px; border-radius: 3px; } "
+                                    f"QPushButton:hover {{ background: {active_bg}; color: {txt_pri_hex}; }} "
+                                    f"QPushButton:pressed {{ background: {active_bg}; color: {txt_pri_hex}; }}"
+                                )
+                            else:
+                                set_qss(b365,
+                                    "QPushButton { background: transparent; border: none; "
+                                    f"font-weight: 800; font-size: {fs}px; color: {txt_sec_hex}; "
+                                    "padding: 0px; margin: 0px; border-radius: 3px; } "
+                                    f"QPushButton:hover {{ background: {hover_bg}; color: {txt_pri_hex}; }} "
+                                    f"QPushButton:pressed {{ background: {active_bg}; color: {txt_pri_hex}; }}"
+                                )
                     header_lbl = widget.findChild(QLabel, "pinned_header")
                     if header_lbl:
                         hf = header_lbl.font()
@@ -281,6 +283,14 @@ def trigger_async_widget_update(manager, widget, widget_def, deck_id):
             from aqt.qt import sip
 
             if widget is not None and sip.isdeleted(widget):
+                # Rebuilt while its data was loading: the new widget's own request was
+                # skipped as a duplicate of this one, so load it now (else it stays empty).
+                live = manager._active_widgets.get(widget_id)
+                if live is not None and not sip.isdeleted(live):
+                    latest = next((d for d in WidgetRegistry.get_all() if d.get("id") == widget_id), None)
+                    if latest is not None:
+                        QTimer.singleShot(0, lambda w=live, d=manager._normalized_widget_def(latest):
+                                          manager._trigger_async_widget_update(w, d, manager._current_deck_id))
                 return
         except Exception:
             log_swallowed()
@@ -292,6 +302,21 @@ def trigger_async_widget_update(manager, widget, widget_def, deck_id):
         if manager._current_deck_id != deck_id:
             current_did = manager._current_deck_id
             QTimer.singleShot(0, lambda d=current_did: manager._schedule_rebuild(d))
+            return
+
+        # The widget's settings changed while its data was loading (a quick run of layout
+        # or settings changes): never draw it with the old ones, load for the new ones.
+        try:
+            latest = next((d for d in WidgetRegistry.get_all() if d.get("id") == widget_id), None)
+            current = manager._normalized_widget_def(latest) if latest is not None else None
+            stale = current is not None and current != manager._normalized_widget_def(widget_def)
+        except Exception:
+            current, stale = None, False
+            log_swallowed()
+        if stale:
+            QTimer.singleShot(
+                0, lambda w=widget, d=current: manager._trigger_async_widget_update(w, d, manager._current_deck_id)
+            )
             return
 
         from ...widget_factory.factory import WidgetFactory

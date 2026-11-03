@@ -18,13 +18,15 @@ from aqt.qt import (
     Qt,
 )
 from .....qss import set_qss
+from .check_list import CheckListMixin
 from ....logic.logger import log_swallowed
+from .....i18n import tr
 
 
 DELETED_TOKEN = "deleted"
 
 
-class DeckMultiSelectDialog(QDialog):
+class DeckMultiSelectDialog(CheckListMixin, QDialog):
     """Pick the decks a pinned widget reads from.
 
     - has a 'Deleted cards' row (DELETED_TOKEN = "deleted")
@@ -35,7 +37,7 @@ class DeckMultiSelectDialog(QDialog):
 
     def __init__(self, current_deck_ids: list[Any] | None, parent=None):
         super().__init__(parent or mw)
-        self.setWindowTitle("Select Decks")
+        self.setWindowTitle(tr("Select Decks"))
         self.resize(420, 540)
 
         try:
@@ -65,10 +67,10 @@ class DeckMultiSelectDialog(QDialog):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        layout.addWidget(QLabel("Choose which decks provide data for this graph."))
+        layout.addWidget(QLabel(tr("Choose which decks provide data for this graph.")))
 
         self.filter_edit = QLineEdit(self)
-        self.filter_edit.setPlaceholderText("Filter decks...")
+        self.filter_edit.setPlaceholderText(tr("Filter decks..."))
         self.filter_edit.textChanged.connect(self._filter_rows)
         layout.addWidget(self.filter_edit)
 
@@ -97,16 +99,16 @@ class DeckMultiSelectDialog(QDialog):
         btns = QHBoxLayout(btn_row)
         btns.setContentsMargins(0, 6, 0, 0)
 
-        self.bulk_btn = QPushButton("Select all", self)
+        self.bulk_btn = QPushButton(tr("Select all"), self)
         self.bulk_btn.setObjectName("pinned_deck_bulk_btn")
         self._bulk_next_action = "select_all"
         self.bulk_btn.clicked.connect(self._on_bulk_clicked)
         btns.addWidget(self.bulk_btn)
 
         btns.addStretch()
-        cancel = QPushButton("Cancel", self)
+        cancel = QPushButton(tr("Cancel"), self)
         cancel.clicked.connect(self.reject)
-        self.save_btn = QPushButton("Save", self)
+        self.save_btn = QPushButton(tr("Save"), self)
         self.save_btn.clicked.connect(self._on_save)
         btns.addWidget(cancel)
         btns.addWidget(self.save_btn)
@@ -148,7 +150,7 @@ class DeckMultiSelectDialog(QDialog):
                 "is_special": is_special,
             })
 
-        _add_row("Deleted / removed cards", DELETED_TOKEN, is_special=True)
+        _add_row(tr("Deleted / removed cards"), DELETED_TOKEN, is_special=True)
 
         sep = QWidget(self.scroll_content)
         sep.setFixedHeight(1)
@@ -166,50 +168,8 @@ class DeckMultiSelectDialog(QDialog):
 
         self._update_bulk_button_state()
 
-    def _filter_rows(self, text: str):
-        t = (text or "").strip().lower()
-        for r in self._rows:
-            visible = (t in r["label"]) if t else True
-            r["widget"].setVisible(bool(visible))
-        self._update_bulk_button_state()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        self._update_bulk_button_state()
-
-    def _on_bulk_clicked(self):
-        visible_rows = [r for r in self._rows if not r["widget"].isHidden()]
-        if not visible_rows:
-            return
-        if self._bulk_next_action == "select_all":
-            for r in visible_rows:
-                r["check"].setChecked(True)
-            self._bulk_next_action = "deselect_all"
-            self.bulk_btn.setText("Deselect all")
-        else:
-            for r in visible_rows:
-                r["check"].setChecked(False)
-            self._bulk_next_action = "select_all"
-            self.bulk_btn.setText("Select all")
-
-    def _update_bulk_button_state(self, *_args):
-        visible_rows = [r for r in self._rows if not r["widget"].isHidden()]
-        if not visible_rows:
-            self._bulk_next_action = "select_all"
-            self.bulk_btn.setText("Select all")
-            self.bulk_btn.setEnabled(False)
-            self.save_btn.setEnabled(False)
-            return
-        self.bulk_btn.setEnabled(True)
-        all_checked = all(r["check"].isChecked() for r in visible_rows)
-        any_checked = any(r["check"].isChecked() for r in self._rows)
-        self.save_btn.setEnabled(any_checked)
-        if all_checked:
-            self._bulk_next_action = "deselect_all"
-            self.bulk_btn.setText("Deselect all")
-        else:
-            self._bulk_next_action = "select_all"
-            self.bulk_btn.setText("Select all")
+    def _rows_changed(self):
+        self.save_btn.setEnabled(any(r["check"].isChecked() for r in self._rows))
 
     def _on_save(self):
         checked: list[Any] = [r["value"] for r in self._rows if r["check"].isChecked()]

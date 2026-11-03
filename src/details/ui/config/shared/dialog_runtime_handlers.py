@@ -8,6 +8,7 @@ from aqt import mw
 from ... import Config
 from ... import ADAPTIVE_CHART_BINNING, CHART_BINNING_SCALE
 from ....logic.logger import log_swallowed
+from .....i18n import N_, tr_name
 
 
 def on_adaptive_binning_changed(dialog, state) -> None:
@@ -26,7 +27,7 @@ def on_adaptive_binning_changed(dialog, state) -> None:
 
 
 BINNING_SCALES = (50, 75, 100, 150, 200)
-BINNING_LABELS = ("Much finer", "Finer", "Normal", "Coarser", "Much coarser")
+BINNING_LABELS = (N_("Much finer"), N_("Finer"), N_("Normal"), N_("Coarser"), N_("Much coarser"))
 
 
 def binning_index_from_scale(scale) -> int:
@@ -39,7 +40,7 @@ def binning_index_from_scale(scale) -> int:
 
 def update_binning_scale_label(dialog, index: int) -> None:
     idx = max(0, min(len(BINNING_LABELS) - 1, int(index)))
-    dialog.binning_scale_value_lbl.setText(BINNING_LABELS[idx])
+    dialog.binning_scale_value_lbl.setText(tr_name(BINNING_LABELS[idx]))
     if hasattr(dialog, "binning_scale_reset_btn"):
         dialog.binning_scale_reset_btn.setVisible(idx != 2)
 

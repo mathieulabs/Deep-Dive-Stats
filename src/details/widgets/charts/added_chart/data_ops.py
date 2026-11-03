@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ...chart_utils.formatting import fmt_num_compact
+from .....i18n import tr
 
 
 def normalize_rows_impl(rows):
@@ -23,4 +24,4 @@ def stats_text_impl(widget):
         avg = (sum(non_zeros) / len(non_zeros)) if non_zeros else 0.0
     else:
         avg = (sum(daily_counts) / len(daily_counts)) if daily_counts else 0.0
-    return [f"Total: {fmt_num_compact(total)} added", f"Average: {fmt_num_compact(avg)}/day"]
+    return [tr("Total: {count} added", count=fmt_num_compact(total)), tr("Average: {count}/day", count=fmt_num_compact(avg))]

@@ -8,7 +8,10 @@ import re
 
 from aqt.theme import theme_manager
 from aqt.qt import (
+    QAbstractItemView,
+    QApplication,
     QBrush,
+    QEvent,
     QColor,
     QColorDialog,
     QComboBox,
@@ -45,6 +48,7 @@ from ....widgets.pinned.widget_factory.builders.text_label import (
 )
 from .....qss import set_qss
 from ....logic.logger import log_swallowed
+from .....i18n import tr, N_, tr_name
 
 
 def extract_html_body(editor: QTextEdit) -> str:
@@ -182,35 +186,35 @@ class _PlaceholderHighlighter(QSyntaxHighlighter):
 class TemplateTextEdit(QTextEdit):
     SEARCH_FIELD_THRESHOLD = 9
     VARIABLE_DESCRIPTIONS = {
-        "total_time": "Formatted total study time",
-        "reviews": "Number of reviews",
-        "ret_all": "Overall retention",
-        "ret_young": "Young-card retention",
-        "ret_mat": "Mature-card retention",
-        "streak": "Current streak",
-        "active_days": "Active days count",
-        "days_learned": "Share of days studied",
-        "longest_streak": "Longest streak",
-        "reviews_per_day": "Average reviews per day",
-        "time_per_day": "Average study time per day",
-        "ret_true": "True retention (young and mature)",
-        "rev_young": "Young reviews",
-        "rev_mature": "Mature reviews",
-        "again": "Again count",
-        "best_day": "Most reviews in one day",
-        "cards_total": "Total cards",
-        "cards_new": "New cards",
-        "cards_learning": "Learning and relearning cards",
-        "cards_young": "Young cards",
-        "cards_mature": "Mature cards",
-        "cards_suspended": "Suspended cards",
-        "cards_buried": "Buried cards",
-        "cards_deleted": "Deleted cards",
-        "due_today": "Cards due today",
-        "backlog": "Overdue cards",
-        "avg_retrievability": "Average retrievability (FSRS)",
-        "avg_stability": "Average stability (FSRS)",
-        "lapses": "Failed review answers (young and mature)",
+        "total_time": N_("Formatted total study time"),
+        "reviews": N_("Number of reviews"),
+        "ret_all": N_("Overall retention"),
+        "ret_young": N_("Young-card retention"),
+        "ret_mat": N_("Mature-card retention"),
+        "streak": N_("Current streak"),
+        "active_days": N_("Active days count"),
+        "days_learned": N_("Share of days studied"),
+        "longest_streak": N_("Longest streak"),
+        "reviews_per_day": N_("Average reviews per day"),
+        "time_per_day": N_("Average study time per day"),
+        "ret_true": N_("True retention (young and mature)"),
+        "rev_young": N_("Young reviews"),
+        "rev_mature": N_("Mature reviews"),
+        "again": N_("Again count"),
+        "best_day": N_("Most reviews in one day"),
+        "cards_total": N_("Total cards"),
+        "cards_new": N_("New cards"),
+        "cards_learning": N_("Learning and relearning cards"),
+        "cards_young": N_("Young cards"),
+        "cards_mature": N_("Mature cards"),
+        "cards_suspended": N_("Suspended cards"),
+        "cards_buried": N_("Buried cards"),
+        "cards_deleted": N_("Deleted cards"),
+        "due_today": N_("Cards due today"),
+        "backlog": N_("Overdue cards"),
+        "avg_retrievability": N_("Average retrievability (FSRS)"),
+        "avg_stability": N_("Average stability (FSRS)"),
+        "lapses": N_("Failed review answers (young and mature)"),
     }
     DECK_OVERRIDE_ORDER = ("current", "all", "deleted")
 
@@ -241,7 +245,7 @@ class TemplateTextEdit(QTextEdit):
 
         self._completion_search = QLineEdit(self._completion_surface)
         self._completion_search.setObjectName("textLabelSuggestionSearch")
-        self._completion_search.setPlaceholderText("Filter suggestions...")
+        self._completion_search.setPlaceholderText(tr("Filter suggestions..."))
         self._completion_search.setClearButtonEnabled(True)
         self._completion_search.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self._completion_search.textChanged.connect(self._refresh_completion_list)
@@ -262,7 +266,7 @@ class TemplateTextEdit(QTextEdit):
         self.setAcceptRichText(True)
         self.setMinimumHeight(110)
         self.setMaximumHeight(190)
-        self.setPlaceholderText("{reviews} cards in {total_time}")
+        self.setPlaceholderText(tr("{reviews} cards in {total_time}"))
         self.setObjectName("textLabelTextEdit")
 
         self._placeholder_highlighter = _PlaceholderHighlighter(self.document(), theme_config)
@@ -370,10 +374,10 @@ class TemplateTextEdit(QTextEdit):
             if hit is not None:
                 is_static = bool(hit.group("static"))
                 menu.addSeparator()
-                action = menu.addAction(f"Animate changes of {{{hit.group('var')}}}")
+                action = menu.addAction(tr("Animate changes of {name}", name="{" + hit.group("var") + "}"))
                 action.setCheckable(True)
                 action.setChecked(not is_static)
-                action.setToolTip("When off, the text does not fade when this value changes.")
+                action.setToolTip(tr("When off, the text does not fade when this value changes."))
 
                 def toggle(_checked, m=hit, static=is_static):
                     raw = m.group(0)
@@ -527,7 +531,7 @@ class TemplateTextEdit(QTextEdit):
         if mode == "span":
             return get_available_span_tokens(self._theme_config)
         if mode == "unit":
-            return [("s", "Seconds"), ("min", "Minutes"), ("h", "Hours"), ("d", "Days")]
+            return [("s", tr("Seconds")), ("min", tr("Minutes")), ("h", tr("Hours")), ("d", tr("Days"))]
         if mode == "deck":
             entries = get_available_deck_override_tokens()
             ordered = []
@@ -538,7 +542,7 @@ class TemplateTextEdit(QTextEdit):
                 else:
                     rest.append((token, description))
             return ordered + rest
-        return [(token, self.VARIABLE_DESCRIPTIONS.get(token, token)) for token in AVAILABLE_VARS]
+        return [(token, tr_name(self.VARIABLE_DESCRIPTIONS.get(token, token))) for token in AVAILABLE_VARS]
 
     def _filter_completion_entries(self, mode: str, prefix: str) -> list[tuple[str, str]]:
         entries = self._completion_entries(mode)
@@ -606,11 +610,12 @@ class TemplateTextEdit(QTextEdit):
         self._completion_editor_prefix = prefix
         show_search = len(entries) >= self.SEARCH_FIELD_THRESHOLD
         self._completion_search.setVisible(show_search)
-        self._completion_search.setPlaceholderText("Filter suggestions..." if mode != "deck" else "Filter decks...")
+        self._completion_search.setPlaceholderText(tr("Filter suggestions...") if mode != "deck" else tr("Filter decks..."))
         self._refresh_completion_list()
         self._apply_popup_style()
         self._completion_popup.show()
         self._completion_popup.raise_()
+        self._watch_while_open(True)
         self._reposition_completion_popup()
         QTimer.singleShot(0, self._finalize_completion_popup_position)
 
@@ -622,6 +627,44 @@ class TemplateTextEdit(QTextEdit):
         self._completion_search.blockSignals(False)
         self._completion_search.hide()
         self._completion_popup.hide()
+        self._watch_while_open(False)
+
+    def _watch_while_open(self, on: bool) -> None:
+        """While the list is open: the mouse wheel over it scrolls it even though it never
+        takes the focus (the editor keeps it), and it follows the window when that moves."""
+        if on == getattr(self, "_watching", False):
+            return
+        app = QApplication.instance()
+        if app is None:
+            return
+        self._watching = on
+        if on:
+            app.installEventFilter(self)
+        else:
+            app.removeEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if getattr(self, "_watching", False) and isinstance(obj, QWidget):
+            try:
+                kind = event.type()
+                popup = self._completion_popup
+                if kind == QEvent.Type.Wheel and popup.isVisible():
+                    if obj is not popup and not popup.isAncestorOf(obj):
+                        if popup.frameGeometry().contains(event.globalPosition().toPoint()):
+                            self._scroll_completion(event.angleDelta().y())
+                            return True
+                elif kind in (QEvent.Type.Move, QEvent.Type.Resize) and obj is self.window():
+                    QTimer.singleShot(0, self._reposition_completion_popup)
+            except RuntimeError:
+                pass
+        return super().eventFilter(obj, event)
+
+    def _scroll_completion(self, delta_y: int) -> None:
+        bar = self._completion_list.verticalScrollBar()
+        lines = QApplication.wheelScrollLines() * delta_y / 120.0
+        if self._completion_list.verticalScrollMode() == QAbstractItemView.ScrollMode.ScrollPerPixel:
+            lines *= max(1, self._completion_list.sizeHintForRow(0))
+        bar.setValue(bar.value() - int(round(lines)))
 
     def _finalize_completion_popup_position(self) -> None:
         if not self._completion_popup.isVisible():
@@ -828,26 +871,26 @@ class TextLabelEditor(QWidget):
             button.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
             return button
 
-        self._bold_btn = make_button("B", tooltip="Bold (Ctrl+B)")
+        self._bold_btn = make_button("B", tooltip=tr("Bold (Ctrl+B)"))
         bold_font = self._bold_btn.font()
         bold_font.setBold(True)
         self._bold_btn.setFont(bold_font)
 
-        self._italic_btn = make_button("I", tooltip="Italic (Ctrl+I)")
+        self._italic_btn = make_button("I", tooltip=tr("Italic (Ctrl+I)"))
         italic_font = self._italic_btn.font()
         italic_font.setItalic(True)
         self._italic_btn.setFont(italic_font)
 
-        self._underline_btn = make_button("U", tooltip="Underline (Ctrl+U)")
+        self._underline_btn = make_button("U", tooltip=tr("Underline (Ctrl+U)"))
         underline_font = self._underline_btn.font()
         underline_font.setUnderline(True)
         self._underline_btn.setFont(underline_font)
 
-        self._strike_btn = make_button("S", tooltip="Strikethrough")
+        self._strike_btn = make_button("S", tooltip=tr("Strikethrough"))
         strike_font = self._strike_btn.font()
         strike_font.setStrikeOut(True)
         self._strike_btn.setFont(strike_font)
-        self._shadow_btn = make_button("Sh", tooltip="Shadow / outline")
+        self._shadow_btn = make_button("Sh", tooltip=tr("Shadow / outline"))
         self._shadow_btn.setFixedWidth(34)
         for button in (self._bold_btn, self._italic_btn, self._underline_btn, self._strike_btn, self._shadow_btn):
             row.addWidget(button)
@@ -858,7 +901,7 @@ class TextLabelEditor(QWidget):
         self._font_combo.setObjectName("textLabelFontCombo")
         self._font_combo.setFixedHeight(self.BUTTON_SIZE)
         self._font_combo.setMinimumWidth(160)
-        self._font_combo.setToolTip("Font family")
+        self._font_combo.setToolTip(tr("Font family"))
         row.addWidget(self._font_combo)
 
         self._size_combo = QComboBox(container)
@@ -866,7 +909,7 @@ class TextLabelEditor(QWidget):
         self._size_combo.setFixedHeight(self.BUTTON_SIZE)
         self._size_combo.setFixedWidth(72)
         self._size_combo.setEditable(True)
-        self._size_combo.setToolTip("Font size")
+        self._size_combo.setToolTip(tr("Font size"))
         for size in (8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72):
             self._size_combo.addItem(str(size), size)
         self._size_combo.setCurrentText("12")
@@ -874,12 +917,12 @@ class TextLabelEditor(QWidget):
 
         row.addWidget(self._build_toolbar_separator())
 
-        self._placeholder_btn = make_button("{}", checkable=False, tooltip="Insert a live-value placeholder")
+        self._placeholder_btn = make_button("{}", checkable=False, tooltip=tr("Insert a live-value placeholder"))
         self._placeholder_btn.setFixedWidth(36)
         row.addWidget(self._placeholder_btn)
 
-        self._color_btn = make_button(checkable=False, tooltip="Text color", object_name="textLabelIconButton")
-        self._reset_color_btn = make_button("Clear", checkable=False, tooltip="Clear text color", object_name="textLabelToolButton")
+        self._color_btn = make_button(checkable=False, tooltip=tr("Text color"), object_name="textLabelIconButton")
+        self._reset_color_btn = make_button(tr("Clear"), checkable=False, tooltip=tr("Clear text color"), object_name="textLabelToolButton")
         self._reset_color_btn.setFixedWidth(52)
         row.addWidget(self._color_btn)
         row.addWidget(self._reset_color_btn)
@@ -919,20 +962,29 @@ class TextLabelEditor(QWidget):
     def _build_hint(self) -> QLabel:
         vars_text = "  ".join(f"{{{token}}}" for token in AVAILABLE_VARS)
         spans_text = "  ".join(token for token, _desc in get_available_span_tokens(self._theme_config))
+        def code(text):
+            return f"<code>{text}</code>"
+
+        dot = " &middot; "
         label = QLabel(
-            "Type <code>{</code> to insert a variable, then use <code>:</code> inside the placeholder "
-            "for a time span override and <code>@</code> for a deck override.<br>"
-            f"<b>Variables</b>: {vars_text}<br>"
-            f"<b>Time spans</b>: {spans_text} &nbsp;&nbsp;<i>Examples</i>: "
-            "<code>{reviews:year}</code> &middot; <code>{reviews@current}</code> &middot; "
-            "<code>{reviews:month@My Deck}</code><br>"
-            "Use <code>|</code> to pick the unit of a duration "
-            "(<code>s</code>, <code>min</code>, <code>h</code>, <code>d</code>): "
-            "<code>{total_time|min}</code> &middot; <code>{avg_time|s}</code> &middot; "
-            "<code>{time_per_day:month|min}</code><br>"
-            "Add <code>~</code> before the closing brace so the text does not fade when that value "
-            "changes: <code>{reviews~}</code> &middot; <code>{reviews:week|min~}</code>. "
-            "Right click a variable to switch it."
+            tr("Type {open} to insert a variable, then use {colon} inside the placeholder for a time "
+               "span override and {at} for a deck override.",
+               open=code("{"), colon=code(":"), at=code("@"))
+            + "<br>"
+            + tr("<b>Variables</b>: {list}", list=vars_text)
+            + "<br>"
+            + tr("<b>Time spans</b>: {list}", list=spans_text)
+            + " &nbsp;&nbsp;"
+            + tr("<i>Examples</i>: {list}", list=dot.join(
+                code(t) for t in ("{reviews:year}", "{reviews@current}", "{reviews:month@My Deck}")))
+            + "<br>"
+            + tr("Use {bar} to pick the unit of a duration ({units}): {examples}",
+                 bar=code("|"), units=", ".join(code(u) for u in ("s", "min", "h", "d")),
+                 examples=dot.join(code(t) for t in ("{total_time|min}", "{avg_time|s}", "{time_per_day:month|min}")))
+            + "<br>"
+            + tr("Add {tilde} before the closing brace so the text does not fade when that value "
+                 "changes: {examples}. Right click a variable to switch it.",
+                 tilde=code("~"), examples=dot.join(code(t) for t in ("{reviews~}", "{reviews:week|min~}")))
         )
         label.setObjectName("textLabelHintLabel")
         label.setWordWrap(True)
@@ -1009,7 +1061,7 @@ class TextLabelEditor(QWidget):
         self._merge(fmt)
 
     def _pick_color(self) -> None:
-        color = QColorDialog.getColor(QColor(self._current_color), self, "Text color")
+        color = QColorDialog.getColor(QColor(self._current_color), self, tr("Text color"))
         if not color.isValid():
             return
         self._apply_color_indicator(color.name())

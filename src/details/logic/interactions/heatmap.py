@@ -6,6 +6,7 @@ from aqt import mw
 from .. import ConfigManager, rollover_hour
 from ..logger import log_error
 from ..logger import log_swallowed
+from ....i18n import tr
 
 class HeatmapInteractions:
     @staticmethod
@@ -110,7 +111,7 @@ class HeatmapInteractions:
             search_parts.append(f"cid:{cid_str}")
         else:
             from aqt.utils import tooltip
-            tooltip(f"No cards found for {date_str}")
+            tooltip(tr("No cards found for {date}", date=date_str))
             return
 
         if deck_name:

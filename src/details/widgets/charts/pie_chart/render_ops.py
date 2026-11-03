@@ -8,6 +8,7 @@ from ...chart_utils.formatting import fmt_num
 from .hover_ops import GROW, DIM, PIE_SIZE, SLICE_GAP, hover_amount, hover_display_key, hover_max
 from ....logic.logger import log_swallowed
 from .layout_ops import refresh_legend_state_impl
+from .....i18n import num, tr, uses_case
 
 
 def _get_cached_slice_base_colors(widget):
@@ -60,7 +61,7 @@ def _draw_legend(
         painter.setFont(count_font)
         painter.drawText(
             QRectF(count_col_left, legend_y, max(1, count_col_right - count_col_left), row_height),
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextDontClip,
             fmt_num(int(round(legend_counts.get(key, 0.0)))),
         )
         legend_y += row_height
@@ -73,12 +74,12 @@ def _draw_legend(
     painter.drawText(
         QRectF(label_x, legend_y, max(1, label_col_right - label_x), row_height),
         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-        "Total",
+        tr("Total"),
     )
     painter.setFont(count_font)
     painter.drawText(
         QRectF(count_col_left, legend_y, max(1, count_col_right - count_col_left), row_height),
-        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextDontClip,
         fmt_num(int(round(total_value))),
     )
 
@@ -115,7 +116,7 @@ def _draw_legend_overlay(widget, painter, keys, counts, total, text_col):
     font.setPixelSize(px)
     painter.setFont(font)
     fm = QFontMetrics(font)
-    max_label_w = max([fm.horizontalAdvance(widget.labels[k]) for k in shown] + [fm.horizontalAdvance("Total")])
+    max_label_w = max([fm.horizontalAdvance(widget.labels[k]) for k in shown] + [fm.horizontalAdvance(tr("Total"))])
     max_count_w = max(
         [fm.horizontalAdvance(fmt_num(int(round(counts.get(k, 0.0))))) for k in shown]
         + [fm.horizontalAdvance(fmt_num(int(round(total))))]
@@ -322,7 +323,7 @@ def paint_event_impl(widget, event):
     hover_sub = ""
     if hover_key:
         pct = (legend_interp_counts.get(hover_key, 0.0) / legend_total * 100.0) if legend_total > 0 else 0.0
-        hover_sub = f"{widget.labels[hover_key]} {pct:.0f}%"
+        hover_sub = f"{widget.labels[hover_key]} {num(f'{pct:.0f}%')}"
     try:
         centre_font = QFont(painter.font())
         centre_font.setPixelSize(20)
@@ -340,10 +341,19 @@ def paint_event_impl(widget, event):
         painter.setFont(sub_font)
         sub_col = QColor(get_theme_colors(widget).get("text_secondary", QColor("#a1a1aa")))
         painter.setPen(sub_col)
+        sub_text = hover_sub if hover_key else tr("cards")
+        sub_top = pie_y + (pie_size / 2.0) + (6 if uses_case() else 9)
+        # Keep a gap under the number: letters taller than Latin ones (Korean, Chinese...)
+        # would touch it at the usual place.
+        big_fm, sub_fm = QFontMetrics(centre_font), QFontMetrics(sub_font)
+        number_baseline = pie_y + (pie_size / 2.0) - 15 + (22 - big_fm.height()) / 2.0 + big_fm.ascent()
+        ink_top = sub_top + (14 - sub_fm.height()) / 2.0 + sub_fm.ascent() + sub_fm.tightBoundingRect(sub_text).top()
+        if ink_top < number_baseline + 3:
+            sub_top += (number_baseline + 3) - ink_top
         painter.drawText(
-            QRectF(pie_x, pie_y + (pie_size / 2.0) + 6, pie_size, 14),
+            QRectF(pie_x, sub_top, pie_size, 14),
             Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
-            hover_sub if hover_key else "cards",
+            sub_text,
         )
     except Exception:
         log_swallowed()
@@ -406,7 +416,7 @@ def paint_event_impl(widget, event):
             font.setPixelSize(font_px)
             painter.setFont(font)
             fm = QFontMetrics(font)
-    max_label_w = max([fm.horizontalAdvance(widget.labels[k]) for k in legend_keys] + [fm.horizontalAdvance("Total")]) if legend_keys else fm.horizontalAdvance("Total")
+    max_label_w = max([fm.horizontalAdvance(widget.labels[k]) for k in legend_keys] + [fm.horizontalAdvance(tr("Total"))]) if legend_keys else fm.horizontalAdvance(tr("Total"))
     max_count_w = max([fm.horizontalAdvance(fmt_num(widget.counts.get(k, 0))) for k in legend_keys] + [fm.horizontalAdvance(fmt_num(int(target_total_for_legend)))]) if legend_keys else fm.horizontalAdvance("0")
 
     if is_horizontal:
@@ -420,7 +430,7 @@ def paint_event_impl(widget, event):
             font.setPixelSize(font_px)
             painter.setFont(font)
             fm = QFontMetrics(font)
-            max_label_w = max([fm.horizontalAdvance(widget.labels[k]) for k in legend_keys] + [fm.horizontalAdvance("Total")]) if legend_keys else fm.horizontalAdvance("Total")
+            max_label_w = max([fm.horizontalAdvance(widget.labels[k]) for k in legend_keys] + [fm.horizontalAdvance(tr("Total"))]) if legend_keys else fm.horizontalAdvance(tr("Total"))
             max_count_w = max([fm.horizontalAdvance(fmt_num(widget.counts.get(k, 0))) for k in legend_keys] + [fm.horizontalAdvance(fmt_num(int(target_total_for_legend)))]) if legend_keys else fm.horizontalAdvance("0")
         legend_need = label_gap + max_label_w + 8 + max_count_w + 2
         if legend_x_start + legend_need > w - 3:
@@ -428,7 +438,13 @@ def paint_event_impl(widget, event):
         legend_right = min(max(legend_right, legend_x_start + legend_need), w - 3)
     label_x = legend_x_start + max(9.0, 12.0 * legend_scale)
     count_col_right = legend_right
-    count_col_left = max(label_x + max_label_w + 10, count_col_right - max_count_w - 2)
+    # The numbers count from the old values to the new ones: the column fits the widest of
+    # the two, else a number wider than the target lost its first digit until it shrank.
+    shown_count_w = max(
+        [fm.horizontalAdvance(fmt_num(int(round(legend_interp_counts.get(k, 0.0))))) for k in legend_keys]
+        + [fm.horizontalAdvance(fmt_num(int(round(legend_total))))]
+    )
+    count_col_left = max(label_x + max_label_w + 10, count_col_right - max(max_count_w, shown_count_w) - 2)
     label_col_right = max(label_x, count_col_left - 6)
     _draw_legend(
         widget,

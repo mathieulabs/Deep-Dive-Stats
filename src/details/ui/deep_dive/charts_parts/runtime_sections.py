@@ -16,6 +16,7 @@ from ....animations.chart_policy import local_chart_animation_batch
 from ... import Config
 from ... import ADAPTIVE_CHART_BINNING, Period
 from .. import FutureDueChart, FutureDueDataProvider, HourlyBreakdownChart, HourlyDataProvider, ReviewIntervalsChart, ReviewIntervalsDataProvider
+from .....i18n import tr
 
 
 def build_hourly_section(manager, deck_identifier, period_range, row_data, target_layout=None, manual_add=False):
@@ -155,7 +156,7 @@ def build_future_due_section(manager, deck_identifier, period_range, row_data, t
     )
 
     state = {"range_idx": default_idx}
-    backlog_cb = manager._make_styled_checkbox("Backlog", checked=show_backlog, parent=header_widget)
+    backlog_cb = manager._make_styled_checkbox(tr("Backlog"), checked=show_backlog, parent=header_widget)
     header_lay.addWidget(backlog_cb)
 
     def _refresh_chart(new_data, cur_backlog, transition_mode=None):

@@ -47,6 +47,19 @@ def ensure_overlay_and_rebuild_mode(manager, web, pinned_conf, deck_id):
         manager._overlay.setProperty("deepdivestats_ignore_forced_dark_theme", True)
         manager._overlay.setProperty("needs_init_geom", True)
         manager._main_layout = QVBoxLayout(manager._overlay)
+        try:
+            from ..ui.drag_layout import install_overlay_drops
+            from ..ui.section_handle import install_section_handle
+            install_overlay_drops(manager, manager._overlay)
+            install_section_handle(manager, manager._overlay)
+            from ..ui.gap_handle import install_gap_handle
+            install_gap_handle(manager, manager._overlay)
+            from ..ui.add_here import install_add_here
+            install_add_here(manager, manager._overlay)
+            from ..ui.no_focus import install_no_focus
+            install_no_focus()
+        except Exception:
+            log_swallowed()
 
         manager._stats_container = None
         manager._stats_containers = {}
@@ -63,8 +76,9 @@ def ensure_overlay_and_rebuild_mode(manager, web, pinned_conf, deck_id):
         manager._text_masonry_rows = []
         manager._texts_vbox = None
 
+        # Margins and the space between boxes (a setting, 10 px by default: the same gap
+        # as between two lines of graphs).
         apply_overlay_margins(manager)
-        manager._main_layout.setSpacing(4)
 
         manager._active_widgets = preserved_widgets
         manager._widget_update_signatures = {}

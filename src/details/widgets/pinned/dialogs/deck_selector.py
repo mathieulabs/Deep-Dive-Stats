@@ -4,11 +4,12 @@ from aqt.qt import QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem
 from aqt import mw
 from ...chart_utils.theme import ThemeContext, apply_theme_context, resolve_widget_theme_context
 from .....qss import set_qss
+from .....i18n import tr
 
 class DeckSelectorDialog(QDialog):
     def __init__(self, current_deck_id, parent=None, show_adaptive=True, is_deep_dive=False):
         super().__init__(parent)
-        self.setWindowTitle("Select Deck" if is_deep_dive else "Select Widget Deck Binding")
+        self.setWindowTitle(tr("Select Deck") if is_deep_dive else tr("Select Widget Deck Binding"))
         self.resize(350, 450)
         self.selected_deck_id = current_deck_id
 
@@ -36,15 +37,15 @@ class DeckSelectorDialog(QDialog):
         top_btn_layout.setSpacing(10)
 
         if show_adaptive:
-            self.adaptive_btn = QPushButton("Adaptive")
-            self.adaptive_btn.setToolTip("Follows the currently active deck in Anki.")
+            self.adaptive_btn = QPushButton(tr("Adaptive"))
+            self.adaptive_btn.setToolTip(tr("Follows the currently active deck in Anki."))
             self.adaptive_btn.clicked.connect(self._select_adaptive)
             if current_deck_id is None:
                 self.adaptive_btn.setDefault(True)
             top_btn_layout.addWidget(self.adaptive_btn)
 
-        self.collection_btn = QPushButton("Collection")
-        self.collection_btn.setToolTip("Global statistics for your entire Anki collection.")
+        self.collection_btn = QPushButton(tr("Collection"))
+        self.collection_btn.setToolTip(tr("Global statistics for your entire Anki collection."))
         self.collection_btn.clicked.connect(self._select_collection)
         if current_deck_id == 0 or current_deck_id == "0":
             self.collection_btn.setDefault(True)
@@ -54,7 +55,7 @@ class DeckSelectorDialog(QDialog):
 
         self.search_bar = QLineEdit()
         self.search_bar.setObjectName("search_bar")
-        self.search_bar.setPlaceholderText("Search decks...")
+        self.search_bar.setPlaceholderText(tr("Search decks..."))
         self.search_bar.textChanged.connect(self._filter_decks)
         main_layout.addWidget(self.search_bar)
 
@@ -62,7 +63,7 @@ class DeckSelectorDialog(QDialog):
         self.list_widget.itemDoubleClicked.connect(lambda item: self.accept())
         main_layout.addWidget(self.list_widget)
 
-        self.select_btn = QPushButton("Select" if is_deep_dive else "Bind to Selected Deck")
+        self.select_btn = QPushButton(tr("Select") if is_deep_dive else tr("Bind to Selected Deck"))
         self.select_btn.clicked.connect(self.accept)
         main_layout.addWidget(self.select_btn)
 

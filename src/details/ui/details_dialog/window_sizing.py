@@ -7,6 +7,7 @@ from aqt.qt import QFontMetrics, QHeaderView, QLabel
 from .. import Config
 from ...widgets import SparklineWidget
 from ...logic.logger import log_swallowed
+from ....i18n import upper
 
 
 def auto_resize_window(dialog, table, resize_window=True):
@@ -72,7 +73,7 @@ def _auto_resize_impl(dialog, table, resize_window=True):
     # visibly flips back and forth while the others are resized.
     for c in range(table.columnCount()):
         raw_header = table.horizontalHeaderItem(c).text() if table.horizontalHeaderItem(c) else ""
-        header_text = raw_header.upper() # CSS text-transform: uppercase
+        header_text = upper(raw_header) # CSS text-transform: uppercase
         max_width = header_fm.horizontalAdvance(header_text) + CELL_PADDING
 
         for r in sample_rows:

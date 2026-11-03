@@ -16,6 +16,7 @@ from ..common.metric import (
     resolve_hover_index,
     update_avg_hover_state,
 )
+from .....i18n import tr, tr_name
 
 
 def mouse_move_event_impl(widget, event):
@@ -91,7 +92,7 @@ def mouse_move_event_impl(widget, event):
                 lines.append(
                     {
                         "id": config["key"],
-                        "text": config["label"],
+                        "text": tr_name(config["label"]),
                         "value": widget._format_metric_value(
                             val,
                             with_unit=widget._is_time_mode(),
@@ -102,7 +103,7 @@ def mouse_move_event_impl(widget, event):
                 )
         cum_data = widget._get_cumulative()
         running_total = cum_data[widget.hover_index]
-        lines.append({"id": "total", "text": f"Total: {widget._format_metric_value(running_total, compact=False)}", "bold": True})
+        lines.append({"id": "total", "text": tr("Total: {value}", value=widget._format_metric_value(running_total, compact=False)), "bold": True})
 
     show_tooltip_near(
         widget,

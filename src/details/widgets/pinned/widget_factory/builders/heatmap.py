@@ -24,6 +24,7 @@ from ....common import create_hbox_container
 from ......qss import set_qss
 from .....logic.logger import log_swallowed
 from ......const.theme.color_resolver import own_color_for
+from ......i18n import N_
 
 class _PinnedHeatmapNavControls(QWidget):
     """Theme-refreshable nav controls container (same live-refresh contract as charts)."""
@@ -42,6 +43,22 @@ class _PinnedHeatmapNavControls(QWidget):
         except Exception:
             mode = None
         _apply_pinned_heatmap_nav_theme(self, current_mode=mode)
+
+def _nav_zoom(nav_controls):
+    w = nav_controls
+    while w is not None:
+        z = getattr(w, "_zoom_scale", None)
+        if z:
+            try:
+                return float(z)
+            except (TypeError, ValueError):
+                return 1.0
+        try:
+            w = w.parentWidget()
+        except Exception:
+            return 1.0
+    return 1.0
+
 
 def _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=None):
     """Re-apply theme-aware style to pinned heatmap nav controls (live, no restart)."""
@@ -62,6 +79,9 @@ def _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=None):
             hover_bg = "rgba(255,255,255,0.1)" if is_dark else "rgba(0,0,0,0.05)"
         active_bg = f"rgba({accent_col.red()},{accent_col.green()},{accent_col.blue()},40)" if accent_col is not None else "rgba(59,130,246,40)"
 
+        # The screen zoom (runtime_widget_updates sizes these buttons with it): a click
+        # restyled them at the normal size, and they shrank on a zoomed screen.
+        fs = max(7, int(round(10 * _nav_zoom(nav_controls))))
         set_qss(nav_controls, "background: transparent;")
         btn_prev = nav_controls.findChild(QPushButton, "heatmap_btn_prev")
         btn_next = nav_controls.findChild(QPushButton, "heatmap_btn_next")
@@ -69,6 +89,9 @@ def _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=None):
         mode_cont_btn = nav_controls.findChild(QPushButton, "heatmap_mode_cont")
         mode_365_btn = nav_controls.findChild(QPushButton, "heatmap_mode_365")
         mode_year_btn = nav_controls.findChild(QPushButton, "heatmap_mode_year")
+        mode_years_btn = nav_controls.findChild(QPushButton, "heatmap_mode_years")
+        years_gap_btn = nav_controls.findChild(QPushButton, "heatmap_years_gap_btn")
+        sep_year_years = nav_controls.findChild(QLabel, "heatmap_sep_year_years")
         sep_cont_365 = nav_controls.findChild(QLabel, "heatmap_sep_cont_365")
         sep_365_year = nav_controls.findChild(QLabel, "heatmap_sep_365_year")
         sep_cont_year = nav_controls.findChild(QLabel, "heatmap_sep_cont_year")
@@ -78,7 +101,7 @@ def _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=None):
                 background: transparent;
                 border: none;
                 font-weight: 800;
-                font-size: 10px;
+                font-size: {fs}px;
                 color: {text_secondary_hex};
                 letter-spacing: 1px;
                 padding: 0px;
@@ -93,7 +116,7 @@ def _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=None):
                 background: transparent;
                 border: none;
                 font-weight: 800;
-                font-size: 10px;
+                font-size: {fs}px;
                 color: {text_secondary_hex};
                 padding: 0px;
                 margin: 0px;
@@ -107,7 +130,7 @@ def _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=None):
                 background: {active_bg};
                 border: none;
                 font-weight: 800;
-                font-size: 10px;
+                font-size: {fs}px;
                 color: {text_primary_hex};
                 padding: 0px;
                 margin: 0px;
@@ -116,8 +139,8 @@ def _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=None):
             QPushButton:hover {{ background: {active_bg}; color: {text_primary_hex}; }}
             QPushButton:pressed {{ background: {active_bg}; color: {text_primary_hex}; }}
         """
-        sep_style = f"color: {text_secondary_hex}; font-size: 10px; background: transparent; margin: 0px 1px;"
-        nav_style = f"font-weight: 800; font-size: 10px; color: {text_secondary_hex}; letter-spacing: 1px;"
+        sep_style = f"color: {text_secondary_hex}; font-size: {fs}px; background: transparent; margin: 0px 1px;"
+        nav_style = f"font-weight: 800; font-size: {fs}px; color: {text_secondary_hex}; letter-spacing: 1px;"
 
         if btn_prev:
             btn_prev.setIcon(get_svg_icon("chevron-left", size=14, color=text_secondary_hex))
@@ -127,14 +150,20 @@ def _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=None):
             set_qss(btn_next, btn_style)
         if year_lbl:
             set_qss(year_lbl, nav_style + " margin-left: 2px; margin-right: 2px;")
-        for sep in (sep_cont_365, sep_365_year, sep_cont_year):
+        for sep in (sep_cont_365, sep_365_year, sep_cont_year, sep_year_years):
             if sep:
                 set_qss(sep, sep_style)
+        if years_gap_btn is not None:
+            set_qss(years_gap_btn, mode_btn_style)
+            refresh_gap = getattr(years_gap_btn, "refresh_years_gap", None)
+            if callable(refresh_gap):
+                refresh_gap(text_secondary_hex)
 
         mode_map = (
             (mode_cont_btn, "continuous"),
             (mode_365_btn, "365"),
             (mode_year_btn, "year"),
+            (mode_years_btn, "years"),
         )
         for btn, mode in mode_map:
             if not btn:
@@ -220,7 +249,12 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
     multi_hue_intensity = cfg.config.get(Config.HEATMAP_MULTI_HUE_INTENSITY, False)
 
     current_mode = [widget_def.get("heatmap_mode", "year")]
-    if isinstance(current_mode[0], bool) or current_mode[0] not in ["year", "365", "continuous"]:
+    if current_mode[0] == "years":
+        # Not offered for this collection (see years_mode_available): the year view instead.
+        from ....charts.heatmap.years_ops import years_mode_available as _yma
+        if not _yma():
+            current_mode[0] = "year"
+    if isinstance(current_mode[0], bool) or current_mode[0] not in ["year", "365", "continuous", "years"]:
         current_mode[0] = "year"
     year, initial_end_365, _ = normalize_heatmap_mode_state(
         current_mode[0],
@@ -246,11 +280,15 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
     show_365 = cfg.config.get(Config.HEATMAP_SHOW_365_MODE, True)
     show_cont = cfg.config.get(Config.HEATMAP_SHOW_CONTINUOUS_MODE, True)
     show_year = cfg.config.get(Config.HEATMAP_SHOW_YEAR_MODE, True)
+    from ....charts.heatmap.years_ops import years_mode_available
+    show_years = bool(cfg.config.get(Config.HEATMAP_SHOW_YEARS_MODE, True)) and years_mode_available()
 
     chart = HeatmapWidget(heatmap_data, color_scheme=heatmap_color, end_date=initial_end,
                           empty_opacity=empty_opacity, empty_white=empty_white, filled_opacity=filled_opacity, hide_labels=hide_labels, scale=scale, tinted_future=tinted_future, rounding=rounding, intensity_curve=intensity_curve, monday_first=monday_first,
                           color_levels=color_levels, parent=parent, vibrance=vibrance, view_mode=current_mode[0], multi_hue_intensity=multi_hue_intensity)
     chart_ref[0] = chart
+    chart.years_fold = int(cfg.config.get(Config.HEATMAP_YEARS_FOLD, 3) or 0)
+    chart.years_no_gap = bool(cfg.config.get(Config.HEATMAP_YEARS_NO_GAP, False))
     chart.set_metric(cfg.config.get(Config.HEATMAP_METRIC, "reviews"))
     chart.set_show_legend(bool(widget_def.get(Config.HEATMAP_SHOW_LEGEND, cfg.config.get(Config.HEATMAP_SHOW_LEGEND, True))))
     chart.set_invert_intensity(cfg.config.get(Config.HEATMAP_INVERT_INTENSITY, False))
@@ -392,6 +430,28 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
     set_qss(mode_year_btn, mode_btn_style)
     mode_year_btn.setFixedSize(20, 20)
 
+    # Every year at once, one row per year (see charts.heatmap.years_ops).
+    sep_year_years = QLabel("|", parent=nav_controls)
+    sep_year_years.setObjectName("heatmap_sep_year_years")
+    set_qss(sep_year_years, sep_style)
+    mode_years_btn = QPushButton("YRS", parent=nav_controls)
+    mode_years_btn.setObjectName("heatmap_mode_years")
+    mode_years_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    mode_years_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    mode_years_btn.setFlat(True)
+    set_qss(mode_years_btn, mode_btn_style)
+    mode_years_btn.setFixedSize(28, 20)
+
+    def _toggle_years_gap(no_gap):
+        try:
+            cfg.set_value(Config.HEATMAP_YEARS_NO_GAP, bool(no_gap))
+        except Exception:
+            log_swallowed()
+        chart.set_years_no_gap(bool(no_gap))
+
+    from ....charts.heatmap.years_gap_button import make_years_gap_button
+    years_gap_btn = make_years_gap_button(nav_controls, chart, mode_btn_style, text_secondary_hex, _toggle_years_gap)
+
     # Keep hidden sep labels so context_menu findChild still works
     sep1 = QLabel(parent=nav_controls)
     sep1.setObjectName("heatmap_sep_365")
@@ -416,12 +476,15 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
 
     def refresh_mode_styles():
         year_lbl.setVisible(current_mode[0] == "year")
-        btn_prev.setVisible(True)
-        btn_next.setVisible(True)
+        # Every year is shown at once in the years view: nothing to browse.
+        btn_prev.setVisible(current_mode[0] != "years")
+        btn_next.setVisible(current_mode[0] != "years")
+        years_gap_btn.setVisible(current_mode[0] == "years")
         mode_map = (
             (mode_cont_btn, "continuous"),
             (mode_365_btn, "365"),
             (mode_year_btn, "year"),
+            (mode_years_btn, "years"),
         )
         for btn, mode in mode_map:
             is_active = (current_mode[0] == mode)
@@ -446,6 +509,22 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
         with local_chart_animation_batch(chart):
             current_mode[0] = new_mode
             WidgetRegistry.update_setting(widget_def["id"], "heatmap_mode", new_mode)
+            if new_mode == "years":
+                # Every year's data first (the year shown now stays the same), then the
+                # switch: its transition then lays out all the years, not only the one
+                # or two loaded so far.
+                year, end_date_365[0], _ = switch_heatmap_mode_state(
+                    previous_mode, new_mode, year, end_date_365=end_date_365[0], now=datetime.now(),
+                )
+                _SESSION_YEARS[widget_def.get("id")] = int(year)
+                new_data, new_end = get_data_for_mode(year, new_mode)
+                if new_data is not None:
+                    chart._suppress_next_transition = True
+                    chart.update_data(new_data)
+                    chart.set_end_date(new_end)
+                chart.set_view_mode(new_mode)
+                refresh_mode_styles()
+                return
             chart.set_view_mode(new_mode)
             year, end_date_365[0], _ = switch_heatmap_mode_state(
                 previous_mode,
@@ -533,10 +612,13 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
     mode_year_btn.clicked.connect(lambda: switch_mode("year"))
     mode_365_btn.clicked.connect(lambda: switch_mode("365"))
     mode_cont_btn.clicked.connect(lambda: switch_mode("continuous"))
+    mode_years_btn.clicked.connect(lambda: switch_mode("years"))
 
     mode_365_btn.setVisible(show_365)
     mode_cont_btn.setVisible(show_cont)
     mode_year_btn.setVisible(show_year)
+    mode_years_btn.setVisible(show_years)
+    sep_year_years.setVisible(show_years and (show_cont or show_365 or show_year))
     _refresh_seps(show_cont, show_365, show_year)
     refresh_mode_styles()
     _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=current_mode[0])
@@ -545,7 +627,7 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
         switch_mode(current_mode[0])
 
     if is_left:
-        # Left nav: ‹ 2026 ›  [spacing]  Y | 365 | ∞
+        # Left nav: ‹ 2026 ›  [spacing]  Y | 365 | ∞ | YRS
         nav_lay.addWidget(btn_prev)
         nav_lay.addWidget(year_lbl)
         nav_lay.addWidget(btn_next)
@@ -556,8 +638,14 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
         nav_lay.addWidget(mode_365_btn)
         nav_lay.addWidget(sep_cont_365)
         nav_lay.addWidget(mode_cont_btn)
+        nav_lay.addWidget(sep_year_years)
+        nav_lay.addWidget(mode_years_btn)
+        nav_lay.addWidget(years_gap_btn)
     else:
-        # Right nav: ∞ | 365 | Y  [spacing]  ‹ 2026 ›
+        # Right nav: YRS | ∞ | 365 | Y  [spacing]  ‹ 2026 ›
+        nav_lay.addWidget(mode_years_btn)
+        nav_lay.addWidget(years_gap_btn)
+        nav_lay.addWidget(sep_year_years)
         nav_lay.addWidget(mode_cont_btn)
         nav_lay.addWidget(sep_cont_365)
         nav_lay.addWidget(mode_365_btn)
@@ -579,7 +667,7 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
             transparent=True,
         )
 
-        title_text = pinned_title(widget_def, "ACTIVITY")
+        title_text = pinned_title(widget_def, N_("Activity"))
         title = QLabel(title_text.upper(), parent=header_widget)
         title.setObjectName("pinned_header")
         title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
@@ -624,7 +712,7 @@ def _build_heatmap(widget_def, deck_id, cache=None, parent=None, cfg=None):
         container_lay.addWidget(chart)
         container_lay.addWidget(footer_widget)
 
-        label = None if hide_title else (pinned_title(widget_def, "ACTIVITY") or None)
+        label = None if hide_title else (pinned_title(widget_def, N_("Activity")) or None)
         return _wrap(container, label, wtype="heatmap",
                      widget_id=widget_def["id"],
                      saved_w=widget_def.get("width"),
@@ -724,6 +812,10 @@ def _ensure_runtime_heatmap_caches(chart, deck_id, max_ids):
 
 
 def _apply_heatmap_runtime_visuals(chart, widget_def):
+    if Config.HEATMAP_YEARS_FOLD in widget_def and hasattr(chart, "set_years_fold"):
+        chart.set_years_fold(widget_def.get(Config.HEATMAP_YEARS_FOLD, 3))
+    if Config.HEATMAP_YEARS_NO_GAP in widget_def and hasattr(chart, "set_years_no_gap"):
+        chart.set_years_no_gap(bool(widget_def.get(Config.HEATMAP_YEARS_NO_GAP, False)))
     current_scale_pct = float(getattr(chart, "scale", 1.0)) * 100.0
     if Config.HEATMAP_SCALE in widget_def:
         next_scale_pct = float(widget_def.get(Config.HEATMAP_SCALE, 100))

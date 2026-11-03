@@ -15,6 +15,7 @@ from .visibility import (
 from aqt.qt import QPushButton
 from ....qss import set_qss
 from ...logic.logger import log_swallowed
+from ....i18n import tr
 
 DELETED_TAB_DID = "__deleted_cards__"
 
@@ -27,7 +28,7 @@ def show_loading_placeholder(tab_widget):
         return
     if tab_widget.findChild(QLabel, "deck_tab_loading") is not None:
         return
-    label = QLabel("Loading\u2026", tab_widget)
+    label = QLabel(tr("Loading\u2026"), tab_widget)
     label.setObjectName("deck_tab_loading")
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     label.setEnabled(False)  # greyed with the theme's own disabled colour

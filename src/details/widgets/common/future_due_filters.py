@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ...logic import Period
+from ....i18n import tr, tr_n, N_, tr_name
 
 
 FUTURE_DUE_RANGES = (Period.MONTH, Period.THREE_MONTHS, Period.YEAR, Period.TOTAL)
-FUTURE_DUE_LABELS_SHORT = ("1m", "3m", "1y", "all")
-FUTURE_DUE_LABELS_LONG = ("1 month", "3 months", "1 year", "all")
+FUTURE_DUE_LABELS_SHORT = (N_("1m"), N_("3m"), N_("1y"), N_("all"))
+FUTURE_DUE_LABELS_LONG = (N_("1 month"), N_("3 months"), N_("1 year"), N_("all"))
 
 # The four radio buttons can be changed per chart. Each button is a number of days
 # (-1 means "all"). Spans for the usual values stay the existing Period constants;
@@ -14,16 +15,16 @@ FUTURE_DUE_LABELS_LONG = ("1 month", "3 months", "1 year", "all")
 FD_DAYS_BASE = 1000
 FUTURE_DUE_DEFAULT_DAYS = (31, 90, 365, -1)
 FUTURE_DUE_DAY_CHOICES = (
-    (7, "1 week", "1w"),
-    (14, "2 weeks", "2w"),
-    (31, "1 month", "1m"),
-    (60, "2 months", "2m"),
-    (90, "3 months", "3m"),
-    (180, "6 months", "6m"),
-    (365, "1 year", "1y"),
-    (730, "2 years", "2y"),
-    (1825, "5 years", "5y"),
-    (-1, "all", "all"),
+    (7, N_("1 week"), N_("1w")),
+    (14, N_("2 weeks"), N_("2w")),
+    (31, N_("1 month"), N_("1m")),
+    (60, N_("2 months"), N_("2m")),
+    (90, N_("3 months"), N_("3m")),
+    (180, N_("6 months"), N_("6m")),
+    (365, N_("1 year"), N_("1y")),
+    (730, N_("2 years"), N_("2y")),
+    (1825, N_("5 years"), N_("5y")),
+    (-1, N_("all"), N_("all")),
 )
 _DAYS_TO_SPAN = {31: Period.MONTH, 90: Period.THREE_MONTHS, 365: Period.YEAR, -1: Period.TOTAL}
 _PRESET_DAYS = {d for d, _l, _s in FUTURE_DUE_DAY_CHOICES}
@@ -63,8 +64,8 @@ def resolve_future_due_ranges(days_list=None):
     long_ = {d: l for d, l, _s in FUTURE_DUE_DAY_CHOICES}
     return (
         tuple(future_due_days_to_span(d) for d in days),
-        tuple(short.get(d, f"{d}d") for d in days),
-        tuple(long_.get(d, f"{d} days") for d in days),
+        tuple(tr_name(short[d]) if d in short else tr("{n}d", n=d) for d in days),
+        tuple(tr_name(long_[d]) if d in long_ else tr_n("{n} day", "{n} days", d) for d in days),
     )
 
 
