@@ -245,8 +245,9 @@ def merge_delta(cache, delta_map, is_undo=False):
         if new_ivl and new_ivl.get("total", 0) > 0:
             total_ctx["review_intervals"] = new_ivl
 
-        if "fsrs" in total_ctx:
-            del total_ctx["fsrs"]
+        # The FSRS charts keep their data here: removing it left them empty after a review
+        # (the review path skips the FSRS scan). They are read again from the cards a moment
+        # later (RefreshMixin._refresh_fsrs_after_reviews).
 
         # Invalidate OTHER ranges (YEAR, MONTH) to force re-slice next time
         keys_to_clear = [k for k in existing_cache if k != Period.TOTAL]

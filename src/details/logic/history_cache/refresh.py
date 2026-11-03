@@ -49,6 +49,10 @@ class RefreshMixin:
 
         future.add_done_callback(_done)
 
+    def _refresh_fsrs_after_reviews(self):
+        if self.is_initialized and not self._is_refreshing and not getattr(self, "_is_initializing", False):
+            self.refresh_card_states()
+
     def refresh_card_states(self, callback=None):
         """Light refresh after an operation that only changed card states (suspend, bury,
         reschedule, forget...): the review history is the same, so only the card counts,
@@ -398,6 +402,11 @@ class RefreshMixin:
                             self._apply_fsrs_cache(_fsrs_fut)
                         except Exception as _fe:
                             self._log(f"FSRS apply failed: {_fe}")
+                    elif effective_skip_warmup and not was_full and not was_undo and delta_map:
+                        # Reviews merged without the FSRS scan: read the memory states again
+                        # once the screen is back (difficulty, stability, retrievability).
+                        queue_ui_callback(self._refresh_fsrs_after_reviews, delay_ms=1500,
+                                          reason="history_cache.fsrs_after_reviews")
                     elif (was_full or was_undo) and not skip_merge:
                         # _apply_fsrs_cache is what saves to disk. Without FSRS data (FSRS off) a
                         # repaired cache was never written, and the old file came back at every launch.
