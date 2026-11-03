@@ -109,13 +109,14 @@ class _UndoToast(QFrame):
             pass
 
 
-def show_undo_toast(text, on_undo):
-    """Show the note with its Undo button (on_undo runs on click)."""
+def show_undo_toast(text, on_undo, window=None):
+    """Show the note with its Undo button (on_undo runs on click), in window (the main
+    window by default; the Deep Dive window for its own cards)."""
     old = _current[0]
     if old is not None:
         old.close_toast()
     try:
-        _current[0] = _UndoToast(mw, text, on_undo)
+        _current[0] = _UndoToast(window or mw, text, on_undo)
     except Exception:
         _current[0] = None
         from .....logic.logger import log_swallowed

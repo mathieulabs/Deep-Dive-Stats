@@ -24,6 +24,11 @@ def handle_drag_move(container, event, *, throttle_s, on_shifted):
 
     if stat_drag_over(container, drop_pos, container._drag_source_id):
         return
+    # Deep Dive: over another line of cards (the group of lines places it on drop).
+    group = container.parentWidget()
+    over_line = getattr(group, "drag_over_line", None)
+    if over_line is not None and over_line(container, drop_pos, container._drag_source_id):
+        return
 
     now = time.time()
     if now - container._last_drag_move_time < float(throttle_s):
@@ -53,6 +58,17 @@ def handle_drop(container, event):
 
     hide_marker(container)
     cross = getattr(container, "_drag_cross", None)
+    if cross and cross.get("deep_dive") and cross.get("id") == container._drag_source_id:
+        container._drag_cross = None
+        container._drag_source_id = None
+        event.acceptProposedAction()
+        group = container.parentWidget()
+        if hasattr(group, "drop_on_line"):
+            from aqt.qt import QTimer
+
+            # Once the drag has ended: the card dragged is moved to another line.
+            QTimer.singleShot(0, lambda: group.drop_on_line(cross))
+        return
     if cross and cross.get("id") == container._drag_source_id:
         # Another line or box: applied once the drag has ended.
         queue_move(cross)

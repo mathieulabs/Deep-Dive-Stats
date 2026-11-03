@@ -389,6 +389,11 @@ def add_toolbar_action():
     menu.aboutToShow.connect(_retranslate_menu)
     mw._deep_dive_retranslate_menu = _retranslate_menu
 
+    # On macOS, Qt moves menu bar entries it takes for "Settings", "About"... into the app
+    # menu: "Settings" then replaced Anki's own Preferences.
+    for entry in [action] + menu.actions():
+        entry.setMenuRole(QAction.MenuRole.NoRole)
+
     action.setMenu(menu)
     mw._deep_dive_menu = menu
 

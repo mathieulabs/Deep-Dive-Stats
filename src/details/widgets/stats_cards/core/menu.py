@@ -147,6 +147,10 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
         pin_action = menu.addAction(tr("Pin {name}", name=shown_name))
         pin_action.setIcon(get_svg_icon("push-pin", size=16))
         pin_action.triggered.connect(lambda _, c=clicked_card: _pin_card(c))
+        if not clicked_card.is_pinned:
+            remove_action = menu.addAction(tr("Remove"))
+            remove_action.setIcon(get_svg_icon("trash-2", size=16))
+            remove_action.triggered.connect(lambda _, c=clicked_card: remove_card(c))
         menu.addSeparator()
 
         if clicked_card.is_pinned:
@@ -208,6 +212,14 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
         if MainMenuWidgetManager.instance_exists():
             MainMenuWidgetManager.instance().refresh()
 
+    def remove_card(c):
+        """Off the dashboard, with the same Undo note as for a pinned widget."""
+        from ...pinned.main_menu.ui.undo_toast import show_undo_toast
+
+        window = container.window()  # the Deep Dive window, not Anki's behind it
+        toggle_vis(False, c)
+        show_undo_toast(tr("Widget removed"), lambda: toggle_vis(True, c), window=window)
+
     def make_vis_action(parent, c, text):
         act = QAction(text, parent)
         act.setCheckable(True)
@@ -218,7 +230,9 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
     from ...pinned.main_menu.ui.add_widget_menu import stat_groups_by_key
     from .menu_search import MenuSearch
 
-    cards = [c for c in container.cards if isinstance(c, stat_card_cls) and c.config_key]
+    # Every card of the dashboard, not only this line's (the cards wrap to several lines).
+    all_cards = getattr(container.parentWidget(), "cards", None) or container.cards
+    cards = [c for c in all_cards if isinstance(c, stat_card_cls) and c.config_key]
     group_names, group_of = stat_groups_by_key()
     buckets = {name: [] for name in group_names}
     buckets["Other"] = []

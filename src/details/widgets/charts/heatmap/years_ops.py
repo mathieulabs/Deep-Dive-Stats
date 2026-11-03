@@ -301,6 +301,9 @@ def year_grid_start(widget, year):
     return start - timedelta(days=dow)
 
 
+_BAR_ROOM = 10.0  # right edge kept for the scroll bar (6 px from the edge, 4 px wide)
+
+
 def layout(widget):
     """dict: cell, spacing, step, start_x, start_y, label_space, bottom, blocks, toggle,
     viewport_bottom (cells under it are hidden), scroll, max_scroll.
@@ -320,14 +323,22 @@ def layout(widget):
     from .settings import layout_height
 
     H = float(layout_height(widget))
-    cell, spacing, label_space, margin_top, total_w = _fit(widget, widget.width(), n, H if fits_height(widget) else None)
+    toggle_h = _toggle_height(widget)
+    viewport_bottom = H - _bottom_reserve(widget) if fits_height(widget) else H
+    room = 0.0
+    for _attempt in range(2):
+        cell, spacing, label_space, margin_top, total_w = _fit(
+            widget, widget.width() - room, n, H if fits_height(widget) else None)
+        content_h = margin_top + _grid_height(widget, n, cell) + toggle_h
+        max_scroll = max(0.0, content_h - viewport_bottom) if fits_height(widget) else 0.0
+        if max_scroll <= 0 or room:
+            break
+        # The years scroll: keep the right edge free for the bar (draw_scrollbar), so it
+        # does not go over the last weeks.
+        room = _BAR_ROOM
     step = cell + spacing
     gap = _gap_factor(widget) * cell
-    toggle_h = _toggle_height(widget)
-    start_x = max(0.0, (widget.width() - total_w) / 2.0) + label_space
-    content_h = margin_top + _grid_height(widget, n, cell) + toggle_h
-    viewport_bottom = H - _bottom_reserve(widget) if fits_height(widget) else H
-    max_scroll = max(0.0, content_h - viewport_bottom) if fits_height(widget) else 0.0
+    start_x = max(0.0, (widget.width() - room - total_w) / 2.0) + label_space
     scroll = min(max_scroll, max(0.0, float(getattr(widget, "_years_scroll", 0.0))))
     widget._years_scroll = scroll
     start_y = margin_top - scroll
