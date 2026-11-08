@@ -61,7 +61,11 @@ def get_design_overrides(is_dark, palette=None):
         surface = "rgba(255, 255, 255, 0.035)"
         hairline = "rgba(255, 255, 255, 0.07)"
     else:
-        surface = "rgba(255, 255, 255, 0.92)"
+        # The theme's card color, as the chart cards (white with Anki's own colors).
+        from ...widgets.chart_utils.theme import theme_card_surface
+
+        card = theme_card_surface(palette)
+        surface = hex_to_rgba(card, 0.92) if card else "rgba(255, 255, 255, 0.92)"
         hairline = "rgba(0, 0, 0, 0.08)"
     return f"""
         /* ---- Soft pill UI ---- */

@@ -55,6 +55,19 @@ from .....config import ConfigManager, set_live_config_override
 from .....i18n import tr, tr_name, upper
 
 class WidgetSettingsDialog(QDialog):
+    # Set just before opening one (the folded range buttons' "Edit Buttons..."): the part of
+    # the dialog to show first ("range_btn": the Range Buttons box). Used once.
+    focus_next = None
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        focus, WidgetSettingsDialog.focus_next = WidgetSettingsDialog.focus_next, None
+        target = getattr(self, f"{focus}_group", None) if focus else None
+        if target is not None:
+            from aqt.qt import QTimer
+
+            QTimer.singleShot(0, lambda t=target: self.scroll.ensureWidgetVisible(t, 0, 24))
+
     """A focused dialog for configuring a specific pinned or deep dive widget."""
 
     def __init__(self, widget_def, parent=None, global_config=None, local_config=None, theme_config=None):

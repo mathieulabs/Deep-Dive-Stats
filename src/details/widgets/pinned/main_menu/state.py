@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
 
-@dataclass(slots=True)
+@dataclass
 class RuntimeState:
     refresh_clear_cache: bool = False
     pending_updates: set[tuple[Any, ...]] = field(default_factory=set)
@@ -38,7 +39,7 @@ class RuntimeState:
     is_deck_browser: bool = True
 
 
-@dataclass(slots=True)
+@dataclass
 class OverlayState:
     last_geom: tuple[int, int, int, int, float] | None = None
     last_resize_signature: Any = None

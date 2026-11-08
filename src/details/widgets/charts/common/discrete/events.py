@@ -5,6 +5,7 @@ from aqt.qt import QWidget
 from ....chart_utils.tooltip import (
     hide_tooltip_targets,
     hide_tooltips_on_window_deactivate,
+    show_tooltip_near,
     show_tooltip_text_near,
 )
 
@@ -46,6 +47,11 @@ def mouse_move_discrete_chart(widget, event, *, has_data, points_count, margins,
         widget.update()
 
     text = tooltip_text_getter(found_idx, points_count)
+    if isinstance(text, list):
+        # Structured lines (header, coloured series lines), as the stacked charts.
+        show_tooltip_near(widget, widget.tooltip_window, pos, lines=text, x_offset=15, y_offset=15,
+                          show_only_if_hidden=True)
+        return
     show_tooltip_text_near(
         widget,
         widget.tooltip_window,

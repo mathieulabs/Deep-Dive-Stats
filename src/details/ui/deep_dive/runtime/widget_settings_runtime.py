@@ -52,6 +52,10 @@ def open_dd_widget_settings(manager, section_key, widget):
         "retrievability": N_("Retrievability"),
         "added": N_("Added"),
     }
+    from ..extra_charts import BY_TYPE as _EXTRA
+
+    for _t, _m in _EXTRA.items():  # the charts added on demand
+        label_map[_t] = _m.label
 
     suffix = "_g"
     mode_id = f"{section_key}{suffix}"
@@ -126,6 +130,14 @@ def get_dd_charts_for_section(manager, section_key):
         chart = getattr(manager, attr, None)
         if chart is not None:
             charts.append(chart)
+    # The charts added on demand (extra_charts.build_section keeps them by type).
+    extra = (getattr(manager, "_extra_charts", None) or {}).get(section_key)
+    if extra is not None:
+        try:
+            extra[0].isVisible()  # still there
+            charts.append(extra[0])
+        except RuntimeError:
+            pass
     return charts
 
 
@@ -139,7 +151,9 @@ def apply_dd_widget_setting_live(manager, section_key, key, value):
     key = str(key or "").strip()
 
     if key in ("show_average", "avg_on_active_days"):
-        if section_key not in ("activity", "retention", "added"):
+        from ....widgets.charts.more_charts import AVERAGE_TYPES
+
+        if section_key not in ("activity", "retention", "added", *AVERAGE_TYPES):
             return False
         show_avg = bool(manager._get_dd_widget_setting(section_key, "show_average", True))
         avg_on_active = bool(manager._get_dd_widget_setting(section_key, "avg_on_active_days", True))
@@ -179,6 +193,18 @@ def apply_dd_widget_setting_live(manager, section_key, key, value):
             setattr(chart, attr, None if value is None else int(value))
             chart.update()
             applied = True
+
+    elif key == "hidden_series" and section_key != "future_due":  # (Future Due: read again)
+        for chart in charts:
+            if hasattr(chart, "set_hidden_series"):
+                chart.set_hidden_series(value)
+                applied = True
+
+    elif key == "show_percent":
+        for chart in charts:
+            if hasattr(chart, "set_percent_mode"):
+                chart.set_percent_mode(bool(value))
+                applied = True
 
     elif key == "tooltip_hidden":
         for chart in charts:
@@ -277,81 +303,30 @@ def update_dd_widget_setting(
 
 
 def reset_dd_widget_size(manager, section_key):
-    """Reset height and column span for a specific widget."""
-    # Grid mode: a vertical reset (height) applies to every widget in the row, a
-    # horizontal reset (col_span) only to the clicked widget.
-    if getattr(manager, "grid_mode", False):
+    """Reset Size: the cards' height back to automatic (one height for every row, see
+    layout.py: all of them; rows resized one by one: the row of the card clicked) and the
+    column span of the card clicked."""
+    if getattr(manager, "grid_mode", False) and hasattr(manager, "_clear_grid_heights"):
         try:
-            layout = getattr(manager, "current_grid_layout", None)
-            wrappers = getattr(manager, "section_wrappers", {}) or {}
-            target_wrapper = wrappers.get(section_key)
-
-            if layout and target_wrapper:
-                num_cols = int(
-                    getattr(layout, "current_cols", 0) or getattr(layout, "preferred_columns", 1) or 1
-                )
-                num_cols = max(1, num_cols)
-
-                # Simulate target col_span=1 so the target row matches post-reset layout.
-                rows = []
-                current_row = []
-                slots_occupied = 0
-
-                for idx in range(layout.count()):
-                    item = layout.itemAt(idx)
-                    if not item:
-                        continue
-                    widget = item.widget()
-                    if not widget or widget.isHidden():
-                        continue
-                    if widget is target_wrapper:
-                        span = 1
-                    else:
-                        span = int(getattr(widget, "col_span", 1) or 1)
-                    span = max(1, min(num_cols, span))
-
-                    if slots_occupied + span > num_cols and current_row:
-                        rows.append(current_row)
-                        current_row = []
-                        slots_occupied = 0
-
-                    current_row.append(widget)
-                    slots_occupied += span
-
-                if current_row:
-                    rows.append(current_row)
-
-                target_row = None
-                for row in rows:
-                    if target_wrapper in row:
-                        target_row = row
-                        break
-
-                if target_row:
-                    for row_widget in target_row:
-                        state_key = getattr(row_widget, "state_key", None)
-                        if state_key:
-                            manager._update_dd_widget_setting(
-                                state_key,
-                                "height",
-                                None,
-                                refresh=False,
-                                write=False,
-                            )
-
-                    manager._update_dd_widget_setting(
-                        section_key,
-                        "col_span",
-                        1,
-                        refresh=False,
-                        write=False,
-                    )
-
-                    manager.addon_config.write_config()
-                    manager._populate_dashboard()
-                    return
+            if not manager._shared_row_height():
+                # Rows resized one by one: the row of the card clicked.
+                target = (getattr(manager, "section_wrappers", {}) or {}).get(section_key)
+                row = manager._row_of(target) if target is not None else []
+                manager._clear_grid_heights([k for k in [getattr(w, "state_key", None) for w in row] if k]
+                                            or [section_key])
+            else:
+                row = list((getattr(manager, "section_wrappers", {}) or {}).values())
+                manager._clear_grid_heights()
+            # The cards shown now go back to their automatic height at once (they are kept
+            # through the refresh, with their height set by hand otherwise).
+            for w in row:
+                if w is not None:
+                    manager._apply_grid_scale(w, None)
+            manager._update_dd_widget_setting(section_key, "col_span", 1, refresh=False, write=False)
+            manager.addon_config.write_config()
+            manager._populate_dashboard()
+            return
         except Exception:
-            # Row resolution failed: reset this widget on its own below.
             log_swallowed()
 
     updates = {"height": None, "col_span": 1}

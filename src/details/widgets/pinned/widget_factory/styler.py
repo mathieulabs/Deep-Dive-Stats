@@ -127,7 +127,13 @@ def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
                 edge_rgb = "255, 255, 255"
                 edge = _edge(0.07, 0.08)
             else:
-                surface = f"rgba(255, 255, 255, {min(1.0, 0.8 + k):.3f})"
+                # The theme's card color (Solarized, Parchment...: tinted, as in the theme's
+                # preview), white with Anki's own colors.
+                card_col = QColor(tv.get("surface_hex") or "#ffffff")
+                if not card_col.isValid():
+                    card_col = QColor("#ffffff")
+                surface = (f"rgba({card_col.red()}, {card_col.green()}, {card_col.blue()}, "
+                           f"{min(1.0, 0.8 + k):.3f})")
                 edge_rgb = "0, 0, 0"
                 edge = _edge(0.08, 0.08)
             bg_style = surface

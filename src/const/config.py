@@ -78,6 +78,8 @@ class Config:
     DEEP_DIVE_PINNED_SHOW_STATS = "Deep_Dive_Pinned_Show_Stats"
     DEEP_DIVE_GRID_COLUMNS = 'Deep_Dive_Grid_Columns'
     DEEP_DIVE_CHART_ORDER = 'Deep_Dive_Chart_Order'
+    DEEP_DIVE_EXTRA_CHARTS = 'Deep_Dive_Extra_Charts'  # charts added with "Add Chart"
+    DEEP_DIVE_HIDDEN_CHARTS = 'Deep_Dive_Hidden_Charts'  # usual charts removed ("Remove")
     DETAILS_LAYOUT_STATE = 'Details_Layout_State'
     DETAILS_TABLE_DRAWER_AUTO_CLOSE = 'Details_Table_Drawer_Auto_Close'
     DETAILS_TABLE_DRAWER_SHORTCUT = 'Details_Table_Drawer_Shortcut'
@@ -92,6 +94,7 @@ class Config:
     DETAILS_EXPANDED_DECKS_SET = 'Details_Expanded_Decks_Set'
     DEEP_DIVE_CHARTS_COLLAPSIBLE = 'Deep_Dive_Charts_Collapsible'
     DEEP_DIVE_FILL_HEIGHT = 'Deep_Dive_Fill_Height'
+    DEEP_DIVE_SHARED_ROW_HEIGHT = 'Deep_Dive_Shared_Row_Height'
     SHOW_TOP_TOOLBAR_BUTTON = 'Show_Top_Toolbar_Button'
     TOOLBAR_BUTTON_STYLE = 'Toolbar_Button_Style'
     TOOLBAR_STYLE_LOGO = 'logo'
@@ -115,6 +118,8 @@ class Config:
     PINNED_GLASS_DEFAULT_RAISED = 'Pinned_Glass_Default_Raised'
     # Set once the box intensities were moved to the even slider scale (see surface.py).
     GLASS_SCALE_EVEN = 'Glass_Scale_Even'
+    # Done once: the old default heights of the last Deep Dive row (see config._normalize_config).
+    DEEP_DIVE_DEFAULT_HEIGHTS_DROPPED = 'Deep_Dive_Default_Heights_Dropped'
     PINNED_HOVER_BORDER = 'Pinned_Hover_Border'
     TEXT_WIDGET_SHOW_GLASS = 'Text_Widget_Show_Glass'
     TEXT_WIDGET_GLASS_INTENSITY = 'Text_Widget_Glass_Intensity'
@@ -239,8 +244,13 @@ class Config:
     CHART_SHOW_GRID = 'Chart_Show_Grid'
     CHART_BAR_GRADIENT = 'Chart_Bar_Gradient'
     USE_THOUSANDS_SEPARATOR = 'Use_Thousands_Separator'
+    SHOW_CHART_HELP = 'Show_Chart_Help'  # the "?" next to chart titles (widgets.common.chart_help)
     ANIMATION_SCOPE = 'Animation_Scope'
     CHART_ANIMATION_VISIBLE_THRESHOLD = 'Chart_Animation_Visible_Threshold'
+    DEEP_DIVE_TRANSITION_STYLE = 'Deep_Dive_Transition_Style'  # 'morph' (each chart animates) or 'fade'
+    PINNED_TRANSITION_STYLE = 'Pinned_Transition_Style'  # the same for the pinned widgets
+    CHART_APPEAR_ANIMATION = 'Chart_Appear_Animation'  # charts grow in when they first show
+    ZOOM_ANIMATION = 'Zoom_Animation'  # the zoom glides to the new range
 
     # Theme Management
     THEME_PRESET = 'Theme_Preset'
@@ -458,12 +468,14 @@ class Config:
         HEATMAP_NAV_POS: "top_right",
         DEEP_DIVE_GRID_MODE: True,
         DEEP_DIVE_GRID_SETTINGS: {},
-        DEEP_DIVE_GRID_COLUMNS: 4,
+        DEEP_DIVE_GRID_COLUMNS: 3,
         DEEP_DIVE_CHART_ORDER: [
             "activity", "retention", "heatmap", "future_due", "distribution",
             "hourly", "card_counts", "review_intervals", "stability",
             "difficulty", "retrievability", "added"
         ],
+        DEEP_DIVE_EXTRA_CHARTS: [],
+        DEEP_DIVE_HIDDEN_CHARTS: [],
         DEEP_DIVE_WIDGET_SETTINGS: {
             "heatmap_g": {"heatmap_mode": "365", "col_span": 1},
             "future_due_g": {"time_span_idx": 2, "show_backlog": True},
@@ -472,9 +484,7 @@ class Config:
                            "chart_opacity": 100, "show_average": True, "show_cumulative": True},
             "retention_g": {"fit_to_data": True, "binning_override": True, "col_span": 1},
             "review_intervals_g": {"time_span_idx": 3},
-            "difficulty_g": {"height": 200},
-            "retrievability_g": {"height": 200},
-            "added_g": {"height": 200, "col_span": 1},
+            "added_g": {"col_span": 1},
         },
         DEEP_DIVE_GRID_STYLE: {"Pinned_Glass": True, "Pinned_Glass_Intensity": 4, "Pinned_Glass_Border": 50},
         DETAILS_VIEW_MODE: "deck",
@@ -491,8 +501,13 @@ class Config:
         CHART_SHOW_GRID: True,
         CHART_BAR_GRADIENT: 43,
         USE_THOUSANDS_SEPARATOR: True,
+        SHOW_CHART_HELP: True,
         ANIMATION_SCOPE: 'all',
         CHART_ANIMATION_VISIBLE_THRESHOLD: 6,
+        DEEP_DIVE_TRANSITION_STYLE: 'morph',
+        PINNED_TRANSITION_STYLE: 'morph',
+        CHART_APPEAR_ANIMATION: True,
+        ZOOM_ANIMATION: True,
         DETAILS_LAYOUT_STATE: 1,
         DETAILS_TABLE_DRAWER_AUTO_CLOSE: True,
         DETAILS_TABLE_DRAWER_SHORTCUT: 'T',
@@ -507,6 +522,7 @@ class Config:
         DETAILS_EXPANDED_DECKS_SET: False,
         DEEP_DIVE_CHARTS_COLLAPSIBLE: True,
         DEEP_DIVE_FILL_HEIGHT: True,
+        DEEP_DIVE_SHARED_ROW_HEIGHT: True,
         SHOW_TOP_TOOLBAR_BUTTON: True,
         TOOLBAR_BUTTON_STYLE: 'logo',
         TOOLBAR_BUTTON_TEXT: 'Deep Dive',

@@ -4,12 +4,22 @@ import time
 
 from aqt.qt import QLayout, QRect, QSize, Qt
 
-from ...animations.layout_animation import animate_widget_geometry
+from ...animations.layout_animation import animate_widget_position
 
 _MAX_STRETCH = 1.6  # a card never grows past 1.6x its natural height
 _REF_COLS = 3  # the layout the card heights were designed for
 _WIDTH_SCALE_EXP = 0.7  # how much a wider card gets taller (1.0 would keep the aspect ratio)
 _WIDTH_SCALE_MAX = 3.0
+# A card is at least 1/_ASPECT as tall as it is wide (the shape of a card at 4 per row), so
+# with 3, 2 or 1 per row the wider cards are not flat strips; never taller than
+# _MAX_VIEW_FRAC of the window's chart area (one card per row: a whole screen of one chart).
+_ASPECT = 2.1
+_MAX_VIEW_FRAC = 0.7
+_MAX_H_NO_VIEW = 560
+# A height set by hand is kept as a scale of the automatic height (_grid_height_factor on the
+# card), so it follows the card's width when the number of charts per row changes; never
+# below GRID_MIN_HEIGHT (unreadable charts, a cut heatmap).
+GRID_MIN_HEIGHT = 170
 
 
 class ResponsiveGridLayout(QLayout):
@@ -25,8 +35,15 @@ class ResponsiveGridLayout(QLayout):
         self.itemList = []
         self.preferred_columns = 3
         self.animate_moves = False
+        self._hold = False
+        self._held = {}  # widget: (where it was, where it goes) while the moves are held
+        self._appearing = []  # cards shown while held (placed at once, see take_held)
+        self._shown_last = set()  # the cards shown at the last layout pass
         self.current_cols = 0
         self.on_cols_changed = None
+        # The free slots at the end of the last row, as (x, y, slot width, height, slots)
+        # (the "Add Chart" spot shows there on hover), or None when the row is full.
+        self.free_slot = None
         self._anim_until = 0.0
         self._anims = {}
         self._placed = set()
@@ -139,15 +156,69 @@ class ResponsiveGridLayout(QLayout):
         if key is not None:
             self._placed.add(key)
         running = self._anims.get(widget) if widget else None
-        if running is not None and running.endValue() == target:
+        if running is not None and getattr(running, "target_rect", None) == target:
             return  # already sliding there: do not restart it on every layout pass
         animating = self.animate_moves or time.monotonic() < self._anim_until
+        if self._hold and widget is not None and widget.isVisible() and id(widget) not in self._shown_last:
+            # Shown by the refresh: at its place at once.
+            if widget not in self._appearing:
+                self._appearing.append(widget)
+            self._held.pop(widget, None)
+            item.setGeometry(target)
+            return
         if widget and animating and was_placed and widget.isVisible():
             old = widget.geometry()
+            if self._hold:
+                # Held (see hold_moves): stays where it is, slides once released.
+                start = self._held.get(widget, (old, None))[0]
+                self._held[widget] = (start, target)
+                return
             if old.isValid() and old.width() > 0 and old != target:
-                animate_widget_geometry(widget, old, target, self._anims, duration=260)
+                # Only the position slides (the size is set at once): resizing every card on
+                # every frame re-laid and repainted all the charts, and Deep Dive lagged
+                # whenever a deck or period change showed or hid a chart.
+                animate_widget_position(widget, old, target, self._anims, duration=260)
                 return
         item.setGeometry(target)
+
+    def hold_moves(self):
+        """The cards stay where they are until take_held() or release_moves(): a refresh of
+        Deep Dive moves them once, with its charts' new data."""
+        self._hold = True
+
+    def take_held(self):
+        """End the hold: ([(card, from, to)], [cards shown]); the caller puts the cards at
+        their places (they are not moved yet)."""
+        self._hold = False
+        held, self._held = self._held, {}
+        appearing, self._appearing = self._appearing, []
+        moves = []
+        for widget, (start, target) in held.items():
+            if target is None:
+                continue
+            try:
+                if widget.isVisible() and start.isValid() and start.width() > 0 and start != target:
+                    moves.append((widget, start, target))
+                else:
+                    widget.setGeometry(target)
+            except RuntimeError:
+                pass
+        return moves, [w for w in appearing if w not in [m[0] for m in moves]]
+
+    def release_moves(self):
+        self._hold = False
+        self._appearing = []
+        held, self._held = self._held, {}
+        for widget, (start, target) in held.items():
+            try:
+                if target is None:
+                    continue
+                if widget.isVisible() and start.isValid() and start.width() > 0 and start != target:
+                    animate_widget_position(widget, start, target, self._anims, duration=260)
+                else:
+                    widget.setGeometry(target)
+            except RuntimeError:
+                pass
 
     def target_width(self):
         if self.parentWidget():
@@ -170,27 +241,7 @@ class ResponsiveGridLayout(QLayout):
                 is_adaptive = False
                 if widget and hasattr(widget, "widget_id"):
                     is_adaptive = widget.widget_id in ["heatmap", "card_counts"]
-
-                # For spanning items, heightForWidth needs to know the actual pixel width
-                item_pixel_w = span * col_width + (span - 1) * spacing
-
-                saved = bool(widget and getattr(widget, "_has_saved_height", False))
-                if saved:
-                    h = widget.minimumHeight()
-                else:
-                    h = item.heightForWidth(item_pixel_w) if item.hasHeightForWidth() else item.sizeHint().height()
-                    if widget:
-                        h = max(h, widget.minimumHeight())
-                # Few cards per row (zoomed in) means wide cards: give them more height too,
-                # otherwise they come out flat. Cards whose height already follows their
-                # width (heatmap, card counts, anything with a height-for-width) are left as is.
-                if widget and scale > 1.03 and getattr(widget, "widget_id", "") != "heatmap":
-                    follows_width = False
-                    if not saved and item.hasHeightForWidth() and ref_col_w > 0:
-                        ref_w = span * ref_col_w + (span - 1) * spacing
-                        follows_width = abs(item.heightForWidth(ref_w) - h) > 4
-                    if not follows_width:
-                        h = int(h * scale)
+                h = self._card_height(item, widget, span, col_width, spacing, ref_col_w)
 
                 if is_adaptive:
                     adaptive_heights.append(h)
@@ -209,6 +260,54 @@ class ResponsiveGridLayout(QLayout):
                 row_h = max_required_min_h
 
         return row_h
+
+    def _auto_height(self, item, widget, span, col_width, spacing, ref_col_w):
+        """The card's height with nothing set by hand: its natural height, at least the
+        height of its width (_ASPECT) when its height does not follow its width already."""
+        item_pixel_w = span * col_width + (span - 1) * spacing
+        h = item.heightForWidth(item_pixel_w) if item.hasHeightForWidth() else item.sizeHint().height()
+        if widget:
+            h = max(h, int(getattr(widget, "_grid_base_min_h", None) or widget.minimumHeight()))
+        # Few cards per row (zoomed in) means wide cards: give them the height of their
+        # width, otherwise they come out flat. Cards whose height already follows their
+        # width (heatmap, card counts, anything with a height-for-width) are left as they are.
+        if widget and getattr(widget, "widget_id", "") != "heatmap":
+            follows_width = False
+            if item.hasHeightForWidth() and ref_col_w > 0:
+                ref_w = span * ref_col_w + (span - 1) * spacing
+                follows_width = abs(item.heightForWidth(ref_w) - h) > 4
+            if not follows_width:
+                cap = int(self.fill_height * _MAX_VIEW_FRAC) if self.fill_height > 0 else _MAX_H_NO_VIEW
+                h = max(h, min(int(item_pixel_w / _ASPECT), cap))
+        return h
+
+    def _card_height(self, item, widget, span, col_width, spacing, ref_col_w):
+        factor = getattr(widget, "_grid_height_factor", None) if widget else None
+        if factor:
+            return max(GRID_MIN_HEIGHT, int(self._auto_height(item, widget, span, col_width, spacing, ref_col_w) * factor))
+        if widget and getattr(widget, "_has_saved_height", False):
+            return widget.minimumHeight()  # a height in pixels (saved before the scale)
+        return self._auto_height(item, widget, span, col_width, spacing, ref_col_w)
+
+    def _geometry_now(self):
+        """(columns, column width, reference column width) of the current layout."""
+        spacing = self.spacing()
+        ml, _mt, mr, _mb = self.getContentsMargins()
+        eff_width = self.geometry().width() - ml - mr
+        num_cols = max(1, int(self.current_cols or self.preferred_columns or 1))
+        col_width = (eff_width - (num_cols - 1) * spacing) // num_cols
+        ref_cols = min(_REF_COLS, 1 if eff_width < 600 else 2 if eff_width < 1000 else 3)
+        ref_col_w = (eff_width - (ref_cols - 1) * spacing) // ref_cols
+        return num_cols, col_width, ref_col_w
+
+    def auto_height_of(self, widget):
+        """The automatic height of the card widget at the current layout (0 if not found)."""
+        for item in self.itemList:
+            if item.widget() is widget:
+                num_cols, col_width, ref_col_w = self._geometry_now()
+                span = max(1, min(num_cols, int(getattr(widget, "col_span", 1) or 1)))
+                return self._auto_height(item, widget, span, col_width, self.spacing(), ref_col_w)
+        return 0
 
     def _stretch_extra(self, rows, row_hs, spacing, margins):
         """Extra pixels per row so the cards fill fill_height when they would leave empty space."""
@@ -307,8 +406,14 @@ class ResponsiveGridLayout(QLayout):
         extra = self._stretch_extra(rows, row_hs, spacing, margin_t + margin_b)
 
         current_y = y
+        if not test_only:
+            self.free_slot = None
         for ri, row in enumerate(rows):
             row_h = row_hs[ri] + extra[ri]
+            if not test_only and ri == len(rows) - 1:
+                used = sum(span for _item, span in row)
+                if used < num_cols:
+                    self.free_slot = (x + used * (col_width + spacing), current_y, col_width, row_h, num_cols - used)
 
             if not test_only:
                 current_slot = 0
@@ -330,5 +435,13 @@ class ResponsiveGridLayout(QLayout):
                     current_slot += visual_span
 
             current_y += row_h + spacing
+
+        if not test_only:
+            shown = set()
+            for item in visible_items:
+                w = item.widget()
+                if w is not None:
+                    shown.add(id(w))
+            self._shown_last = shown
 
         return current_y - rect.y() - spacing + margin_b

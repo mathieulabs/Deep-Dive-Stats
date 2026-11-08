@@ -59,7 +59,7 @@ class AddedChartWidget(ActivityStackedChart):
     def get_stats_text(self):
         return stats_text_impl(self)
 
-    def _format_metric_value(self, value, with_unit=True, per_day=False, axis=False, compact=True):
+    def _format_metric_value(self, value, with_unit=True, per_day=False, axis=False, compact=True, raw=False):
         """Counts of added cards: 'cards', not the 'reviews' of the Activity chart it builds on."""
         from ...chart_utils.formatting import format_metric_value
 

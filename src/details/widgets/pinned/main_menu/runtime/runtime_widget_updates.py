@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from aqt import mw
-from aqt.qt import QLabel, QPushButton, QTimer, QWidget
+from aqt.qt import QLabel, QPushButton, QSize, QTimer, QWidget
 
 from .....animations.chart_policy import chart_animation_batch
 from ..imports import Config
@@ -43,7 +43,10 @@ def schedule_deferred_widget_update(
                 return
             from ...widget_factory.factory import WidgetFactory
 
+            from .....animations import view_fade
+
             history_cache = manager.__class__._global_history_cache
+            faded = view_fade.capture([widget])
             with chart_animation_batch(
                 manager._overlay,
                 [widget],
@@ -57,6 +60,7 @@ def schedule_deferred_widget_update(
                     fail_if_not_cached=not bool(allow_blocking),
                     cfg=manager._config_manager,
                 )
+            view_fade.play(faded if sync_ok else {})
             if sync_ok:
                 manager._widget_update_signatures[widget_id] = signature
                 if getattr(widget, "_is_loading", False):
@@ -227,6 +231,18 @@ def apply_zoom_scale_to_widgets(manager, zoom):
                                     f"QPushButton:hover {{ background: {hover_bg}; color: {txt_pri_hex}; }} "
                                     f"QPushButton:pressed {{ background: {active_bg}; color: {txt_pri_hex}; }}"
                                 )
+                    # The | between the modes and the icons of the arrows grow with the text.
+                    for sep_name in ("heatmap_sep_cont_365", "heatmap_sep_365_year",
+                                     "heatmap_sep_cont_year", "heatmap_sep_year_years"):
+                        sep = nav.findChild(QLabel, sep_name)
+                        if sep:
+                            set_qss(sep, f"color: {txt_sec_hex}; font-size: {fs}px; background: transparent; "
+                                         f"margin: 0px {max(1, int(round(1 * z)))}px;")
+                    icon_px = max(10, int(round(14 * z)))
+                    for name in ("heatmap_btn_prev", "heatmap_btn_next", "heatmap_years_gap_btn"):
+                        b = nav.findChild(QPushButton, name)
+                        if b:
+                            b.setIconSize(QSize(icon_px, icon_px))
                     header_lbl = widget.findChild(QLabel, "pinned_header")
                     if header_lbl:
                         hf = header_lbl.font()
@@ -323,6 +339,9 @@ def trigger_async_widget_update(manager, widget, widget_def, deck_id):
 
         history_cache = manager.__class__._global_history_cache
         must_allow_blocking = history_type == "heatmap"
+        from .....animations import view_fade
+
+        faded = view_fade.capture([widget])
         with chart_animation_batch(
             manager._overlay,
             [widget],
@@ -336,6 +355,7 @@ def trigger_async_widget_update(manager, widget, widget_def, deck_id):
                 fail_if_not_cached=not must_allow_blocking,
                 cfg=manager._config_manager,
             )
+        view_fade.play(faded if _async_ok else {})
         if _async_ok and getattr(widget, "_is_loading", False):
             widget._is_loading = False
             try:

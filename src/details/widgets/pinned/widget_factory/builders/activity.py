@@ -26,7 +26,7 @@ from ....charts.common.zoom import (
     get_timespan_transition_meta,
     resolve_adaptive_zoom_window,
     widen_zoom_window,
-    should_use_timespan_transition,
+    timespan_transition_mode,
     update_chart_for_transition,
 )
 from ...store.registry import WidgetRegistry
@@ -142,6 +142,7 @@ def _build_activity(widget_def, deck_id, cache=None, parent=None, cfg=None):
         breakdown_chart._relative_height_transition = True
         breakdown_chart.set_average_mode(show_avg, avg_on_active)
         breakdown_chart.set_cumulative_mode(show_total)
+        breakdown_chart.set_percent_mode(bool(widget_def.get("show_percent", False)))
         breakdown_chart.set_value_mode(metric_mode)
         apply_chart_display_config(
             breakdown_chart,
@@ -769,7 +770,7 @@ def _update_activity_charts(stack, widget_def, deck_id, cache=None, fail_if_not_
             new_series=activity_data,
             total_span_active=(int(span) == int(Period.TOTAL)),
         )
-        use_timespan_transition = should_use_timespan_transition(
+        use_timespan_transition = timespan_transition_mode(
             transition_meta,
             deck_policy="block",
         )
@@ -781,7 +782,7 @@ def _update_activity_charts(stack, widget_def, deck_id, cache=None, fail_if_not_
         normal_chart.update_data(
             activity_data,
             adaptive_binning=adaptive_binning,
-            transition_mode="timespan" if use_timespan_transition else None,
+            transition_mode=use_timespan_transition,
         )
         normal_chart._last_timespan_token = span_token
         normal_chart._last_deck_id = deck_id
@@ -818,12 +819,13 @@ def _update_activity_charts(stack, widget_def, deck_id, cache=None, fail_if_not_
             new_series=metric_breakdown_data,
             total_span_active=(int(span) == int(Period.TOTAL)),
         )
-        use_timespan_transition_b = should_use_timespan_transition(
+        use_timespan_transition_b = timespan_transition_mode(
             transition_meta_b,
             deck_policy="block",
         )
         breakdown_chart.set_average_mode(show_avg, avg_on_active)
         breakdown_chart.set_cumulative_mode(show_total)
+        breakdown_chart.set_percent_mode(bool(widget_def.get("show_percent", False)))
         breakdown_chart.set_value_mode(metric_mode)
 
         if cfg is None:
@@ -850,7 +852,7 @@ def _update_activity_charts(stack, widget_def, deck_id, cache=None, fail_if_not_
         breakdown_chart.update_data(
             metric_breakdown_data,
             adaptive_binning=adaptive_binning,
-            transition_mode="timespan" if use_timespan_transition_b else None,
+            transition_mode=use_timespan_transition_b,
         )
         breakdown_chart._last_timespan_token = span_token_b
         breakdown_chart._last_deck_id = deck_id

@@ -355,7 +355,9 @@ def paint_event_impl(widget, event):
             _wr = dense_bar_ratio(step_x, 0.9)
             bar_w = step_x * _wr
             bar_slots = None
-            if widget._data_transition_active and widget._transition_align_right:
+            # From / to an empty period the bars keep one layout (the data shown): the
+            # slots of an empty one would squeeze them to one side, then they jumped.
+            if widget._data_transition_active and widget._transition_align_right and getattr(widget, "_global_transition_mode", None) is None:
                 bar_slots = widget.interpolate_bar_slots(
                     len(widget._transition_old_data),
                     len(widget._transition_new_data),
@@ -436,7 +438,8 @@ def paint_event_impl(widget, event):
                 points = []
                 n_cum = len(cumulative_values)
                 x_positions = None
-                if widget._transition_align_right:
+                # (From / to an empty period: the layout of the data shown, as the bars.)
+                if widget._transition_align_right and widget._global_transition_mode is None:
                     x_positions = widget.interpolate_line_x_positions(
                         len(widget._transition_old_data),
                         len(widget._transition_new_data),
@@ -649,7 +652,7 @@ def paint_event_impl(widget, event):
             else:
                 x = margin_left
         else:
-            if widget._data_transition_active and widget._transition_align_right:
+            if widget._data_transition_active and widget._transition_align_right and getattr(widget, "_global_transition_mode", None) is None:
                 slots = widget.interpolate_bar_slots(
                     len(widget._transition_old_data),
                     len(widget._transition_new_data),

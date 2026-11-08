@@ -154,7 +154,6 @@ def recent_crashes(limit=MAX_CRASHES):
 
 
 def build_debug_info():
-    from aqt.errors import addon_debug_info
     from aqt.utils import supportText
 
     parts = [_section("Deep Dive Stats", "\n".join([_addon_line(), *_settings_lines()]))]
@@ -174,7 +173,12 @@ def build_debug_info():
     except Exception:
         log_swallowed()
     try:
+        # Anki 23.12+ only (absent from 23.10): the add-on list is left out there.
+        from aqt.errors import addon_debug_info
+
         parts.append(addon_debug_info().strip() + "\n")
+    except ImportError:
+        pass
     except Exception:
         log_swallowed()
     return "\n".join(parts)

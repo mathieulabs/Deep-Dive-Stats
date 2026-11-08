@@ -489,6 +489,7 @@ def draw_bars_impl(widget, painter, plot_w, plot_h, margin_left, margin_top, tot
 
     painter.setPen(Qt.PenStyle.NoPen)
     intro = 1.0 if widget._data_transition_active else max(0.0, min(1.0, float(widget.get_progress())))
+    _dark = is_night_mode(widget)  # once per paint, not per bar
     for h_idx in range(24):
         total = totals[h_idx] if h_idx < len(totals) else 0.0
         if total == 0:
@@ -500,7 +501,7 @@ def draw_bars_impl(widget, painter, plot_w, plot_h, margin_left, margin_top, tot
 
         ratio = min(1.0, ratio_for_height) if ratio_for_height > 0 else 0
         c = QColor(base_color)
-        dark = is_night_mode(widget)
+        dark = _dark
         light_mul = 1.4 if dark else 1.22
         dark_mul = 0.7 if dark else 0.68
         light_l = min(255, int(c.lightness() * light_mul))

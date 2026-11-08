@@ -140,6 +140,9 @@ class ReorderEngine:
                 "hourly", "card_counts", "review_intervals", "stability",
                 "difficulty", "retrievability", "added"
             ]
+            from ...charts.more_charts import TYPES as MORE_TYPES
+
+            VALID_CHARTS = VALID_CHARTS + list(MORE_TYPES)
             final_order = [wid for wid in new_layout_ids if wid in VALID_CHARTS]
             for vc in VALID_CHARTS:
                 if vc not in final_order:

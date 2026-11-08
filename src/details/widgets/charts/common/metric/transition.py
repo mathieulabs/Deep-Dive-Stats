@@ -83,6 +83,10 @@ def commit_chart_data_update(widget, new_data):
 def animate_transition_update(widget, transition_mode, *, old_attr, new_attr):
     old_display = getattr(widget, old_attr, []) or []
     new_display = getattr(widget, new_attr, []) or []
+    if transition_mode == "window":
+        # Another deck in Total: the bars change height on the same days, a little slower
+        # than a plain deck change (the axis often moves a lot).
+        return widget.animate_data_update(old_display, new_display, min_duration_ms=320, max_duration_ms=440)
     if transition_mode == "timespan":
         return widget.animate_data_update(
             old_display,

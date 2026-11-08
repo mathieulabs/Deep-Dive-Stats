@@ -73,6 +73,8 @@ def _theme_vars(widget_or_context=None):
         "bg_hex": bg_hex,
         "bg_card": bg_card,
         "border": border_hex,
+        # The theme's card color (None with Anki's own colors: the cards stay white).
+        "surface_hex": _hex_or_default(t_colors.get("surface"), None),
     }
 
 def _apply_checkbox_style(cb):

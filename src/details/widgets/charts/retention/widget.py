@@ -69,7 +69,14 @@ class RetentionChart(ZoomableMixin, ChartAnimationMixin, QWidget):
             from aqt import mw
             from ....ui import RETENTION_SERIES_COLOR_KEY, ConfigManager, get_color
 
-            cfg = ConfigManager(mw).config
+            # The shared read-only config (a new ConfigManager reloaded and copied the whole
+            # config on every paint, measured).
+            try:
+                from .....config import read_config_dict
+
+                cfg = read_config_dict()
+            except Exception:
+                cfg = ConfigManager(mw).config
             color_key = RETENTION_SERIES_COLOR_KEY.get(key)
             if color_key:
                 return get_color(cfg, color_key, widget_or_context)

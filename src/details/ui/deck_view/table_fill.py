@@ -366,14 +366,15 @@ def fill_deck_table(dialog, table, stats_list, deck_id, tab_index, do_resize=Tru
             for c in range(table.columnCount()):
                 h = table.horizontalHeaderItem(c)
                 if h and header_key(h) == "Buttons":
-                    prev_w = table.columnWidth(c)
+                    # Its own width, not the one widened to fill the table (see populate).
                     if not show_buttons_visual:
                         table.resizeColumnToContents(c)
                         size_hint_w = table.sizeHintForColumn(c)
                         applied_w = max(170, size_hint_w + 12)
-                        table.setColumnWidth(c, applied_w)
                     else:
-                        table.setColumnWidth(c, max(140, prev_w))
+                        applied_w = 140
+                    table._dd_buttons_width = applied_w
+                    table.setColumnWidth(c, applied_w)
                     break
 
         target_span = getattr(dialog, "target_time_span", None)

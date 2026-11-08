@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from aqt.qt import QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout
+from aqt.qt import QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout
 
 from ... import Config
 from .components import SettingsSlider
@@ -163,7 +163,9 @@ def setup_chart_settings(dialog, *, include_chart_appearance: bool = True) -> No
                 title=tr("Tooltip Lines"),
             )
 
-        if dialog.type in ("future_due", "stability", "review_intervals"):
+        # (Interval Load and the card history charts have the same buttons as Review Intervals.)
+        if dialog.type in ("future_due", "stability", "review_intervals", "interval_load",
+                           "lapse_distribution", "review_distribution", "learning_steps"):
             # Which four radio buttons the chart header shows.
             if dialog.type == "future_due":
                 from ....widgets.common.future_due_filters import FUTURE_DUE_DAY_CHOICES, normalize_future_due_days
@@ -176,14 +178,96 @@ def setup_chart_settings(dialog, *, include_chart_appearance: bool = True) -> No
                 choices = [(m, long_) for m, long_, _s in FSRS_FILTER_CHOICES]
                 current = normalize_fsrs_filter_modes(dialog.widget_def.get("filter_modes"))
             range_group = QGroupBox(tr("Range Buttons"))
-            range_layout = QFormLayout(range_group)
-            dialog.range_btn_combos = []
-            from .range_button_row import RangeButtonRow
-            _kind = "days" if dialog.type == "future_due" else "fsrs"
-            for _i in range(4):
-                _combo = RangeButtonRow(_kind, choices, current[_i])
-                _combo.setToolTip(tr("Pick four different values, or Custom. They are shown in order, 'all' last."))
-                range_layout.addRow(tr("Button {number}:", number=_i + 1), _combo)
-                dialog.range_btn_combos.append(_combo)
+            _build_range_buttons_editor(dialog, range_group, "days" if dialog.type == "future_due" else "fsrs",
+                                        choices, list(current))
+            dialog.range_btn_group = range_group  # (scrolled to by "Edit Buttons...")
             dialog.content_layout.addWidget(range_group)
 
+
+
+def _build_range_buttons_editor(dialog, group, kind, choices, values):
+    """2 to 8 range buttons (a narrow header folds them into one button with a menu): a row
+    per button, "-" to remove one, "+ Add Button" to add one. dialog.range_btn_combos is read
+    on Save; dialog.range_btn_set_values(values) puts other values (Reset)."""
+    from aqt.qt import QHBoxLayout, QPushButton, QVBoxLayout, QWidget
+    from .range_button_row import RangeButtonRow
+    from ....widgets.common.future_due_filters import MAX_BUTTONS, MIN_BUTTONS
+
+    outer = QVBoxLayout(group)
+    group.setProperty("noLiveUpdate", True)  # read on Save, as the rows themselves
+    rows_box = QWidget(group)
+    rows_lay = QVBoxLayout(rows_box)
+    rows_lay.setContentsMargins(0, 0, 0, 0)
+    outer.addWidget(rows_box)
+    add_btn = QPushButton(tr("+ Add Button"), group)
+    outer.addWidget(add_btn)
+    dialog.range_btn_combos = []
+    rows = []  # (row widget, combo)
+
+    def refresh():
+        for i, (row, _combo) in enumerate(rows):
+            row.findChild(QLabel, "range_btn_label").setText(tr("Button {number}:", number=i + 1))
+            row.findChild(QPushButton, "range_btn_remove").setEnabled(len(rows) > MIN_BUTTONS)
+        add_btn.setEnabled(len(rows) < MAX_BUTTONS)
+        dialog.range_btn_combos[:] = [c for _r, c in rows]
+
+    def add_row(value):
+        row = QWidget(rows_box)
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        label = QLabel("", row)
+        label.setObjectName("range_btn_label")
+        label.setMinimumWidth(80)
+        lay.addWidget(label)
+        combo = RangeButtonRow(kind, choices, value, parent=row)
+        combo.setToolTip(tr("Pick different values, or Custom. They are shown in order, 'all' last."))
+        lay.addWidget(combo, 1)
+        rm = QPushButton(row)
+        rm.setObjectName("range_btn_remove")
+        # An icon: a "-" as text was squeezed out by the button's padding (an empty box).
+        try:
+            from aqt.qt import QSize
+
+            from ...theme.icons import get_svg_icon
+
+            rm.setIcon(get_svg_icon("x", size=14, context_ref=rm))
+            rm.setIconSize(QSize(14, 14))
+        except Exception:
+            rm.setText("\u2715")
+        rm.setFixedWidth(30)
+        rm.setToolTip(tr("Remove this button"))
+        lay.addWidget(rm)
+        entry = (row, combo)
+        rows.append(entry)
+        rows_lay.addWidget(row)
+
+        def remove(_c=False, e=entry):
+            if len(rows) <= MIN_BUTTONS:
+                return
+            rows.remove(e)
+            e[0].setParent(None)
+            e[0].deleteLater()
+            refresh()
+
+        rm.clicked.connect(remove)
+        refresh()
+
+    def on_add(_c=False):
+        if len(rows) >= MAX_BUTTONS:
+            return
+        used = {c.currentData() for _r, c in rows}
+        free = next((d for d, _l in choices if d not in used), choices[0][0])
+        add_row(free)
+
+    def set_values(vals):
+        for row, _c in list(rows):
+            row.setParent(None)
+            row.deleteLater()
+        rows.clear()
+        for v in vals:
+            add_row(v)
+        refresh()
+
+    add_btn.clicked.connect(on_add)
+    dialog.range_btn_set_values = set_values
+    set_values(values)

@@ -94,6 +94,11 @@ def apply_partial_widget_refresh(manager, deck_ids, reason):
         updated_widgets = 0
         deferred_widgets = 0
         animation_candidates = _collect_partial_refresh_animation_candidates(manager, defs_by_id)
+        from .....animations import view_fade
+
+        faded = view_fade.capture(
+            [w for w in manager._active_widgets.values() if w is not None and not w.isHidden()]
+        )
         with chart_animation_batch(
             manager._overlay,
             animation_candidates,
@@ -132,6 +137,7 @@ def apply_partial_widget_refresh(manager, deck_ids, reason):
                     deferred_widgets += 1
                     manager._trigger_async_widget_update(widget, wdef, current_did)
 
+        view_fade.play(faded)
         if updated_widgets or deferred_widgets:
             manager.sync_overlay()
             manager._settle_sync_timer.start(120)

@@ -10,7 +10,10 @@ from ..logic.logger import log_swallowed
 
 
 DEFAULT_VISIBLE_ANIMATED_CHARTS = 6
-MIN_VISIBLE_CHART_FRACTION = 0.8
+# A chart counts as on screen (animated in its turn, redrawn while it moves) from a quarter
+# of it in view. At 80 %, a row half cut at the bottom of the window started at once, out of
+# the cascade, and was not redrawn while it moved: it seemed not to animate.
+MIN_VISIBLE_CHART_FRACTION = 0.25
 SUPPRESS_CHART_ANIMATIONS_PROPERTY = "deepdivestats_suppress_chart_animations"
 _ACTIVE_CHART_ANIMATION_BATCHES = {}
 _CHART_ANIMATION_BATCH_SEQ = 0
@@ -275,7 +278,9 @@ def chart_animation_batch(
     threshold=None,
     force_repaint_candidates=False,
     queue_mode=False,
-    split_large_rows=True,
+    # One wave per row of charts: the cascade goes down row by row. (Rows of 3 or 4 were
+    # split in waves of 2, left half then right half: it zigzagged and took twice as long.)
+    split_large_rows=False,
 ):
     root = _resolve_chart_root(anchor_widget)
     if root is None:
@@ -322,6 +327,7 @@ def chart_animation_batch(
         )
     else:
         wave_by_target_id, wave_target_counts = {}, {}
+
     batch = {
         "batch_key": batch_key,
         "root": root,
@@ -389,6 +395,15 @@ def chart_animation_queue_limit(widget):
 def chart_animation_queue_plan(widget):
     batch = _active_chart_animation_batch(widget)
     if batch is None or not bool(batch.get("queue_mode")):
+        # A chart whose data came after its refresh's batch (read in the background, see
+        # charts.daily_metrics): its place in that batch's waves, kept for its animation.
+        deferred = getattr(widget, "_deferred_queue_plan", None)
+        if deferred is not None:
+            try:
+                widget._deferred_queue_plan = None
+            except Exception:
+                pass
+            return deferred
         return None
     target = normalize_chart_animation_target(widget)
     if target is None:

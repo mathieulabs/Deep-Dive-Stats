@@ -38,7 +38,8 @@ def _widgets(manager):
 
 def _charts(widget):
     try:
-        return list(widget.findChildren(ZoomableMixin))
+        # Charts with no dates on their axis (_zoom_never) are not part of the link.
+        return [c for c in widget.findChildren(ZoomableMixin) if not getattr(c, "_zoom_never", False)]
     except RuntimeError:
         return []
 
@@ -104,6 +105,8 @@ def _on_zoom(manager, src, zoomed, start, end):
     global _busy
     if _busy or not is_chart_linked(src):
         return
+    if getattr(src, "_applying_data", False):
+        return  # its new data reset its zoom (read in the background): not the user's zoom
     try:
         adaptive_now = _adaptive_active(src)
         was_adaptive = bool(getattr(src, "_zoom_link_was_adaptive", False))

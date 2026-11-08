@@ -77,12 +77,12 @@ def populate_full_cache(cfg, range_type, min_rev_id=None, min_card_id=None, incl
                         target_r[k] = target_r.get(k, 0) + r_data.get(k, 0)
 
                     if "hourly" in r_data:
-                        tgt_h = target_r.setdefault("hourly", {h: {"total": 0, "correct": 0} for h in range(24)})
-                        src_h = r_data["hourly"]
-                        for h in range(24):
-                            if h in src_h:
-                                tgt_h[h]["total"] += src_h[h]["total"]
-                                tgt_h[h]["correct"] += src_h[h]["correct"]
+                        # A day keeps only its hours with reviews (an hour left out is 0).
+                        tgt_h = target_r.setdefault("hourly", {})
+                        for h, src in r_data["hourly"].items():
+                            slot = tgt_h.setdefault(h, {"total": 0, "correct": 0})
+                            slot["total"] += src["total"]
+                            slot["correct"] += src["correct"]
 
             for b_idx, cnt in leaf_data.get("added", {}).items():
                 agg["added_map"][b_idx] = agg["added_map"].get(b_idx, 0) + cnt

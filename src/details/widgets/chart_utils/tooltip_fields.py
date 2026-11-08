@@ -34,9 +34,37 @@ RETENTION_TOOLTIP_FIELDS = (
     ("true", N_("True retention")),
 )
 
+RATINGS_TOOLTIP_FIELDS = (
+    ("again", N_("Again")),
+    ("hard", N_("Hard")),
+    ("good", N_("Good")),
+    ("easy", N_("Easy")),
+)
+
+FORGOTTEN_TOOLTIP_FIELDS = (
+    ("total", N_("Running total")),
+    ("mature", N_("Mature")),
+    ("young", N_("Young")),
+)
+
+# Future Due: the part lines only show with a breakdown (by type or by result).
+FUTURE_DUE_TOOLTIP_FIELDS = (
+    ("total", N_("Running total")),
+    ("mature", N_("Mature")),
+    ("young", N_("Young")),
+    ("learn", N_("Learning")),
+    ("pass", N_("Predicted pass")),
+    ("fail", N_("Predicted fail")),
+    ("no_fsrs", N_("No FSRS data")),
+    ("retention", N_("Expected retention")),
+)
+
 CHART_TOOLTIP_FIELDS = {
     "activity": ACTIVITY_TOOLTIP_FIELDS,
+    "future_due": FUTURE_DUE_TOOLTIP_FIELDS,
     "retention": RETENTION_TOOLTIP_FIELDS,
+    "ratings": RATINGS_TOOLTIP_FIELDS,
+    "forgotten": FORGOTTEN_TOOLTIP_FIELDS,
 }
 
 

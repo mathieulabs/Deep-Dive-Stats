@@ -68,12 +68,12 @@ def merge_delta(cache, delta_map, is_undo=False):
                 target["ret_mat"] = (target["pass_mat"] / target["rev_mat"] * 100) if target["rev_mat"] > 0 else None
 
                 if "hourly" in new_item:
-                    tgt_h = target.setdefault("hourly", {h: {"total": 0, "correct": 0} for h in range(24)})
-                    src_h = new_item["hourly"]
-                    for h in range(24):
-                        if h in src_h:
-                            tgt_h[h]["total"] += src_h[h]["total"]
-                            tgt_h[h]["correct"] += src_h[h]["correct"]
+                    # A day keeps only its hours with reviews (an hour left out is 0).
+                    tgt_h = target.setdefault("hourly", {})
+                    for h, src in new_item["hourly"].items():
+                        slot = tgt_h.setdefault(h, {"total": 0, "correct": 0})
+                        slot["total"] += src["total"]
+                        slot["correct"] += src["correct"]
             else:
                 merge_map[ld] = new_item.copy()
                 if "hourly" in new_item:

@@ -40,6 +40,58 @@ from .render_ops import (
 
 
 class FutureDueChart(ChartAnimationMixin, QWidget):
+    # "Show as %" (with Breakdown by Result): every bar full height, split into predicted
+    # pass / fail, the line between them the expected retention of the day; no running
+    # total then. Not by type: the young cards are due within 21 days by definition, so
+    # the shares would only show that.
+    percent_mode = False
+
+    def percent_active(self):
+        bd = (getattr(self, "data_dict", None) or {}).get("breakdown") or {}
+        return bool(self.percent_mode and bd.get("kind") == "result")
+
+    @property
+    def cumulative_visible(self):
+        return bool(getattr(self, "_cumulative_visible", True)) and not self.percent_active()
+
+    @cumulative_visible.setter
+    def cumulative_visible(self, value):
+        self._cumulative_visible = bool(value)
+
+    @property
+    def show_cumulative_axis(self):
+        return bool(getattr(self, "_show_cumulative_axis", True)) and not self.percent_active()
+
+    @show_cumulative_axis.setter
+    def show_cumulative_axis(self, value):
+        self._show_cumulative_axis = bool(value)
+
+    def _axis_label_formatter(self):
+        """The left axis labels: in % when the bars are shares."""
+        if not self.percent_active():
+            return None
+        from .....i18n import percent_text
+        from ...chart_utils.formatting import fmt_num
+
+        return lambda v: percent_text(fmt_num(int(round(v))))
+
+    def set_percent_mode(self, enabled, animate=True):
+        enabled = bool(enabled)
+        if enabled == self.percent_mode:
+            return
+        if animate and self.isVisible():
+            self.percent_mode = enabled
+            # Same data, other heights: the bars glide from counts to shares (or back).
+            self.update_data(self.data_dict)
+            return
+        self.percent_mode = enabled
+        self._update_max_val()
+        self._points_count, self._display_values = self._build_display_values(
+            self.data_dict.get("distribution", {}), self.max_days, self.show_backlog)
+        self._scaffold_cache_key = None
+        self._chrome_cache_key = None
+        self.update()
+
     def __init__(self, data_dict, parent=None, adaptive_binning=True, show_backlog=False):
         super().__init__(parent)
         self.data_dict = data_dict
@@ -66,7 +118,8 @@ class FutureDueChart(ChartAnimationMixin, QWidget):
 
     def _get_margins(self):
         fm = self.fontMetrics()
-        ml = ChartGeometry.calculate_dynamic_left_margin(fm, self.max_val)
+        # "100%" is one character longer than "100".
+        ml = ChartGeometry.calculate_dynamic_left_margin(fm, self.max_val * (10 if self.percent_active() else 1))
         mr = ChartGeometry.calculate_dynamic_right_margin(fm, [self.data_dict.get("total", 0)], True)
         mb = ChartGeometry.MARGIN_BOTTOM
         mt = ChartGeometry.MARGIN_TOP

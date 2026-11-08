@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from datetime import datetime, timedelta
 from . import pinned_title
-from aqt.qt import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, Qt, QColor
+from aqt.qt import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QSize, Qt, QColor
 from . import Config, rollover_hour, get_color, get_svg_icon
 from .....animations.chart_policy import local_chart_animation_batch
 from .....logic.heatmap import (
@@ -142,11 +142,14 @@ def _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=None):
         sep_style = f"color: {text_secondary_hex}; font-size: {fs}px; background: transparent; margin: 0px 1px;"
         nav_style = f"font-weight: 800; font-size: {fs}px; color: {text_secondary_hex}; letter-spacing: 1px;"
 
+        icon_px = max(10, int(round(14 * _nav_zoom(nav_controls))))  # the arrows grow with the text
         if btn_prev:
             btn_prev.setIcon(get_svg_icon("chevron-left", size=14, color=text_secondary_hex))
+            btn_prev.setIconSize(QSize(icon_px, icon_px))
             set_qss(btn_prev, btn_style)
         if btn_next:
             btn_next.setIcon(get_svg_icon("chevron-right", size=14, color=text_secondary_hex))
+            btn_next.setIconSize(QSize(icon_px, icon_px))
             set_qss(btn_next, btn_style)
         if year_lbl:
             set_qss(year_lbl, nav_style + " margin-left: 2px; margin-right: 2px;")
@@ -154,6 +157,7 @@ def _apply_pinned_heatmap_nav_theme(nav_controls, current_mode=None):
             if sep:
                 set_qss(sep, sep_style)
         if years_gap_btn is not None:
+            years_gap_btn.setIconSize(QSize(icon_px, icon_px))
             set_qss(years_gap_btn, mode_btn_style)
             refresh_gap = getattr(years_gap_btn, "refresh_years_gap", None)
             if callable(refresh_gap):

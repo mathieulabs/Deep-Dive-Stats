@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from aqt import mw
-from aqt.qt import QAction, Qt
+from aqt.qt import QAction, Qt, QTimer
 
 from ....ui import StyledMenu, get_svg_icon
 from ..logic.model import get_dashboard_local_stat_style
@@ -19,6 +19,25 @@ def _find_clicked_card(container, event, stat_card_cls):
             return p
         p = p.parentWidget()
     return None
+
+
+def _deep_dive_of(container):
+    """The Deep Dive manager when these cards are shown in Deep Dive, else None."""
+    try:
+        dialog = container.window()
+        manager = getattr(dialog, "deep_dive_manager", None)
+        expanded = getattr(dialog, "expanded_container", None)
+        if manager is not None and expanded is not None and expanded.isVisible():
+            return manager
+    except RuntimeError:
+        pass
+    return None
+
+
+def _open_deep_dive_manager(manager):
+    from ....ui.deep_dive import extra_charts
+
+    extra_charts.open_gallery(manager, family="stat")
 
 
 def _open_dashboard_card_settings(container, card):
@@ -137,25 +156,25 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
     if clicked_card and clicked_card.stat_type:
         shown_name = str(clicked_card.display_name).replace("&", "&&")  # not a shortcut
         color_action = menu.addAction(tr("Change {name} Color...", name=shown_name))
-        color_action.setIcon(get_svg_icon("palette", size=16))
+        color_action.setIcon(get_svg_icon("palette", size=16, context_ref=container))
         color_action.triggered.connect(clicked_card._pick_color)
         if card_has_own_color(clicked_card):
             reset_action = menu.addAction(tr("Use Shared {name} Color", name=shown_name))
-            reset_action.setIcon(get_svg_icon("rotate-ccw", size=16))
+            reset_action.setIcon(get_svg_icon("rotate-ccw", size=16, context_ref=container))
             reset_action.triggered.connect(clicked_card._reset_color)
 
         pin_action = menu.addAction(tr("Pin {name}", name=shown_name))
-        pin_action.setIcon(get_svg_icon("push-pin", size=16))
+        pin_action.setIcon(get_svg_icon("push-pin", size=16, context_ref=container))
         pin_action.triggered.connect(lambda _, c=clicked_card: _pin_card(c))
         if not clicked_card.is_pinned:
             remove_action = menu.addAction(tr("Remove"))
-            remove_action.setIcon(get_svg_icon("trash-2", size=16))
+            remove_action.setIcon(get_svg_icon("trash-2", size=16, context_ref=container))
             remove_action.triggered.connect(lambda _, c=clicked_card: remove_card(c))
         menu.addSeparator()
 
         if clicked_card.is_pinned:
             deck_act = QAction(tr("Select Decks..."), menu)
-            deck_act.setIcon(get_svg_icon("layers", size=16))
+            deck_act.setIcon(get_svg_icon("layers", size=16, context_ref=container))
 
             def on_deck_select():
                 from ...pinned import DeckMultiSelectDialog, WidgetRegistry
@@ -195,7 +214,7 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
         else:
             settings_action = QAction(tr("Settings"), menu)
             settings_action.setMenuRole(QAction.MenuRole.NoRole)  # macOS would otherwise move it into the app menu as Preferences/Quit
-            settings_action.setIcon(get_svg_icon("settings", size=16))
+            settings_action.setIcon(get_svg_icon("settings", size=16, context_ref=container))
             settings_action.triggered.connect(lambda: _open_dashboard_card_settings(container, clicked_card))
             menu.addAction(settings_action)
             menu.addSeparator()
@@ -226,6 +245,17 @@ def show_stat_cards_container_menu(container, event, stat_card_cls):
         act.setChecked(c.isVisible())
         act.triggered.connect(lambda checked, c=c: toggle_vis(checked, c))
         return act
+
+    deep_dive = _deep_dive_of(container)
+    if deep_dive is not None:
+        # Deep Dive: its cards are added and removed as its charts are (one manager for both).
+        add_act = menu.addAction(tr("Add Stat Card..."))
+        add_act.setIcon(get_svg_icon("plus", size=16, context_ref=container))
+        add_act.triggered.connect(lambda: QTimer.singleShot(0, lambda: _open_deep_dive_manager(deep_dive)))
+        if clicked_card:
+            _add_row_move_actions(menu, container, clicked_card)
+        menu.exec(event.globalPos())
+        return
 
     from ...pinned.main_menu.ui.add_widget_menu import stat_groups_by_key
     from .menu_search import MenuSearch

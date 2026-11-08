@@ -353,7 +353,7 @@ class RefreshMixin:
                             and not was_undo
                             and total_delta_decks > 220
                         ):
-                            priority_targets = {None, "[[TOTAL]]"}
+                            priority_targets = {None}  # all decks ("[[TOTAL]]" is the same entry)
                             priority_targets.update(priority_seed_targets)
                             priority_targets.update(dirty_deck_ids or [])
                             immediate_delta_map = {k: v for k, v in delta_map.items() if k in priority_targets}

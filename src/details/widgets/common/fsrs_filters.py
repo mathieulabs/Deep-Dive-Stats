@@ -70,19 +70,20 @@ def fsrs_mode_labels(mode):
 
 
 def normalize_fsrs_filter_modes(modes):
-    """Four distinct valid modes in display order; anything unusable gives the defaults."""
+    """2 to 8 distinct valid modes in display order; anything unusable gives the defaults."""
     try:
         values = [str(m) for m in (modes or [])]
     except Exception:
         return FSRS_FILTER_MODES
     values = [canonical_fsrs_mode(m) for m in values]
-    if len(values) != 4 or len(set(values)) != 4 or any(parse_fsrs_mode(m) is None for m in values):
+    if (not 2 <= len(values) <= 8 or len(set(values)) != len(values)
+            or any(parse_fsrs_mode(m) is None for m in values)):
         return FSRS_FILTER_MODES
     return tuple(sorted(values, key=_fsrs_mode_sort_key))
 
 
 def resolve_fsrs_filters(modes=None):
-    """Return (modes, short_labels, long_labels) for the four radio buttons."""
+    """Return (modes, short_labels, long_labels) for the radio buttons."""
     resolved = normalize_fsrs_filter_modes(modes)
     return resolved, tuple(fsrs_mode_labels(m)[1] for m in resolved), tuple(fsrs_mode_labels(m)[0] for m in resolved)
 

@@ -114,6 +114,7 @@ def create_activity_chart_view(manager, activity_data, history_oldest_first):
         stacked_chart.set_value_mode(metric_mode)
         stacked_chart.set_average_mode(show_avg, avg_on_active)
         stacked_chart.set_cumulative_mode(show_cumulative)
+        stacked_chart.set_percent_mode(bool(manager._get_dd_widget_setting(section_key, "show_percent", False)))
         apply_chart_display_config(
             stacked_chart,
             opacity=manager._get_dd_widget_setting(section_key, "chart_opacity", 100),

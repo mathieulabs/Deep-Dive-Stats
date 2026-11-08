@@ -519,6 +519,9 @@ def draw_wrapped_bottom_stats(
 _DARK_CACHE = {}  # id(widget) -> (time, value): hundreds of bars per paint ask the same thing
 
 
+_FADE_CACHE = {}  # (colour, dark, strength): (fade top, fade bottom), see draw_bar_rect
+
+
 def _bar_is_dark(painter, widget=None) -> bool:
     try:
         key = id(widget) if widget is not None else id(painter.device())
@@ -549,9 +552,13 @@ def bar_fade_factor(width, height):
     return smooth((width - 2.0) / 4.0) * smooth((height - 2.0) / 8.0)
 
 
-def draw_bar_rect(painter, rect, radius=1.8, fade=True, widget=None):
+def draw_bar_rect(painter, rect, radius=1.8, fade=True, widget=None, fade_rect=None, rounded=True):
     """Bar with softly rounded top corners; plain rect for thin or flat bars
-    (hundreds of bars stay cheap)."""
+    (hundreds of bars stay cheap).
+
+    fade_rect: the whole bar when rect is only a part of it (a stacked bar): the fade
+    runs over the whole bar, so every part has the shade of its height in it, as one
+    bar. rounded=False: square corners (the lower parts of a stacked bar)."""
     w = rect.width()
     h = rect.height()
     r = min(float(radius), w * 0.25, h)
@@ -561,32 +568,43 @@ def draw_bar_rect(painter, rect, radius=1.8, fade=True, widget=None):
     base = None
     _fill = False
     try:
-        size_k = bar_fade_factor(w, h)
+        fr = fade_rect if fade_rect is not None else rect
+        size_k = bar_fade_factor(fr.width(), fr.height())
         base = painter.brush().color()
         if fade and base.alpha() > 0 and size_k > 0.01:
             from aqt.qt import QLinearGradient
 
-            top = QColor(base)
-            bot = QColor(base)
             k = chart_style(widget)[1] / 100.0 * size_k  # 0 = flat bars, 1 = full gradient
-            if _bar_is_dark(painter, widget):
-                # Dark background: lighter at the top, a deeper shade of the same hue at the
-                # base. Fading to transparent would look muddy on the dark card, so the color
-                # stays saturated.
-                top = top.lighter(100 + int(round(14 * k)))
-                top.setAlpha(base.alpha())
-                bot = bot.darker(100 + int(round(30 * k)))
-                bot.setAlpha(max(30, int(base.alpha() * (1.0 - 0.12 * k))))
-            else:
-                bot.setAlpha(max(30, int(base.alpha() * (1.0 - 0.38 * k))))
-            g = QLinearGradient(0, rect.y(), 0, rect.y() + h)
+            dark = _bar_is_dark(painter, widget)
+            # The two ends of the fade, kept for the next bars of the same colour and
+            # strength (a paint draws 100 bars or more, 60 times a second while animating).
+            ck = (base.rgba(), dark, int(round(k * 1000)))
+            ends = _FADE_CACHE.get(ck)
+            if ends is None:
+                top = QColor(base)
+                bot = QColor(base)
+                if dark:
+                    # Dark background: lighter at the top, a deeper shade of the same hue at the
+                    # base. Fading to transparent would look muddy on the dark card, so the color
+                    # stays saturated.
+                    top = top.lighter(100 + int(round(14 * k)))
+                    top.setAlpha(base.alpha())
+                    bot = bot.darker(100 + int(round(30 * k)))
+                    bot.setAlpha(max(30, int(base.alpha() * (1.0 - 0.12 * k))))
+                else:
+                    bot.setAlpha(max(30, int(base.alpha() * (1.0 - 0.38 * k))))
+                if len(_FADE_CACHE) > 4096:
+                    _FADE_CACHE.clear()
+                ends = _FADE_CACHE[ck] = (top, bot)
+            top, bot = ends
+            g = QLinearGradient(0, fr.y(), 0, fr.y() + fr.height())
             g.setColorAt(0.0, top)
             g.setColorAt(1.0, bot)
             painter.setBrush(g)
             _fill = True
     except Exception:
         _fill = False
-    if w < 4.0 or r < 1.0:
+    if w < 4.0 or r < 1.0 or not rounded:
         painter.drawRect(rect)
         if _fill:
             painter.setBrush(base)

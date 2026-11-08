@@ -104,6 +104,13 @@ def rebuild_charts_widgets(
     should_full_rebuild,
 ):
     registry_order = {wid: i for i, wid in enumerate(normalized_defs)}
+    from .....animations import view_fade
+
+    # The Fade style: the widgets updated here fade from their old picture (a full rebuild
+    # moves them into new rows: nothing to fade from).
+    faded = {} if should_full_rebuild else view_fade.capture(
+        [w for w in manager._active_widgets.values() if w is not None and not w.isHidden()]
+    )
     used_chart_boxes = []
     used_chart_box_set = set()
     used_text_boxes = []
@@ -324,6 +331,16 @@ def rebuild_charts_widgets(
                 widget.customContextMenuRequested.connect(
                     lambda pos, w=widget, wid=wid: manager._show_context_menu(w, wid, pos)
                 )
+
+                def _open_settings(w=widget, wid=wid):
+                    # (the folded range buttons' "Edit Buttons..." entry: see control_factory)
+                    from ...store.registry import WidgetRegistry
+
+                    wdef = next((d for d in WidgetRegistry.get_all() if d.get("id") == wid), None)
+                    if wdef:
+                        manager._open_widget_settings(w, wdef)
+
+                widget._open_settings = _open_settings
                 from ....common.more_button import attach_more_button
                 from ....common.guided_tour import attach_guided_tour
                 if wtype != "text_label":  # text fills the whole widget: no room for "⋯"
@@ -386,4 +403,5 @@ def rebuild_charts_widgets(
         manager._texts_vbox = None
         manager._text_masonry_rows = []
 
+    view_fade.play(faded)
     return has_widgets, charts_exist, widget_index

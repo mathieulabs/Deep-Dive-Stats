@@ -227,6 +227,25 @@ def update_data_impl(
     transition_mode=None,
     transition_align_right=None,
 ):
+    if transition_mode == "window":
+        # Another deck in Total (other first / last days): the axis moves while the bars change.
+        from ...chart_utils.zoom_camera import rows_empty, window_update
+
+        if rows_empty(widget, widget._full_data) or rows_empty(widget, new_data):
+            # To or from an empty deck (its range is only a default): the bars sink or grow
+            # as on any change to or from nothing.
+            transition_mode = None
+        elif window_update(widget, new_data, lambda rows: update_data_impl(
+                widget, rows, adaptive_binning=adaptive_binning, transition_mode=None)):
+            return
+        else:
+            from ..common.zoom.transition import rows_on_new_days
+
+            aligned = rows_on_new_days(widget._full_data, new_data)
+            if aligned is not None:
+                widget._full_data = aligned
+                widget._is_zoomed = False  # the update drops the zoom; the morph runs on whole rows
+
     def _row_total(rows):
         return sum(float(d[1] if isinstance(d, (list, tuple)) else d) for d in (rows or []))
 

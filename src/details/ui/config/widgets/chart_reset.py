@@ -44,12 +44,12 @@ def reset_chart_settings(dialog) -> None:
         dialog.line_opacity_slider.setValue(int(dialog.addon_config.get("Chart_Line_Opacity", 80)))
     if hasattr(dialog, "bar_gradient_slider"):
         dialog.bar_gradient_slider.setValue(int(dialog.addon_config.get("Chart_Bar_Gradient", 43)))
-    for _i, _combo in enumerate(getattr(dialog, "range_btn_combos", []) or []):
+    if getattr(dialog, "range_btn_combos", None) is not None and callable(getattr(dialog, "range_btn_set_values", None)):
         if getattr(dialog, "range_btn_key", "") == "filter_modes":
             from ....widgets.common.fsrs_filters import FSRS_FILTER_MODES as _DEFAULT
         else:
             from ....widgets.common.future_due_filters import FUTURE_DUE_DEFAULT_DAYS as _DEFAULT
-        _combo.set_value(_DEFAULT[_i])
+        dialog.range_btn_set_values(list(_DEFAULT))
     for _attr, _conf_key in (
         ("show_grid_cb", "Chart_Show_Grid"),
     ):

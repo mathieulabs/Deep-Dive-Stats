@@ -30,6 +30,13 @@ from unittest.mock import MagicMock
 class _AutoMeta(type):
     _cache = {}
 
+    # Qt flags combined with | (Qt.WindowState.A | Qt.WindowState.B): on Python 3.9 two
+    # classes cannot be or-ed (3.10 made it a type union), so the stand-in does it.
+    def __or__(cls, other):
+        return cls
+
+    __ror__ = __or__
+
     def __getattr__(cls, name):
         key = (cls, name)
         if key not in _AutoMeta._cache:
@@ -149,6 +156,11 @@ def _install_stubs():
     # Config files are written under a throwaway folder, not next to the add-on.
     scratch = tempfile.mkdtemp(prefix="deep_dive_check_")
     atexit.register(shutil.rmtree, scratch, True)
+    # Its log lines too (the add-on's debug.log is the user's, Anki may be writing it).
+    os.environ["DEEP_DIVE_STATS_LOG_DIR"] = scratch
+    import logging
+
+    atexit.register(logging.shutdown)  # before the folder goes (atexit runs the last one first)
     aqt_pkg.mw.addonManager.addonsFolder.return_value = scratch
     aqt_pkg.mw.addonManager.addonFromModule.return_value = "deep_dive_check"
     aqt_pkg.mw.pm.name = "check"

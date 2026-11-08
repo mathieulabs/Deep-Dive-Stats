@@ -53,12 +53,15 @@ def apply_visual_style(widget):
         try:
             from ...chart_utils import get_theme_colors
 
-            theme_bg = get_theme_colors(widget).get("bg")
+            t_colors = get_theme_colors(widget)
+            theme_bg = t_colors.get("bg")
+            surface = t_colors.get("surface")  # the theme's card color (None: Anki's own)
         except Exception:
-            theme_bg = None
+            theme_bg = surface = None
         # No stylesheet border: the colored glow (toggled by clicking the
         # card, strength = border slider) is the card's border.
-        bg_card, _border_col = tinted_card_surface(widget.base_color, is_dark, glass_int, border_alpha_pct, theme_bg)
+        bg_card, _border_col = tinted_card_surface(widget.base_color, is_dark, glass_int, border_alpha_pct, theme_bg,
+                                                   surface=surface)
     else:
         bg_card = resolve_card_background(
             widget.base_color,

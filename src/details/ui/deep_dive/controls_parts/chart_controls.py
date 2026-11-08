@@ -53,6 +53,15 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
 
         for chart_attr in ['activity_chart', 'stacked_chart', 'retention_chart', 'added_chart']:
             reset_chart(getattr(self, chart_attr, None))
+        # The added charts of days zoomed with them (runtime.zoom_sync).
+        try:
+            from ..extra_charts import zoom_linked_charts
+
+            for chart in zoom_linked_charts(self):
+                if getattr(chart, "_is_zoomed", False):
+                    reset_chart(chart)
+        except Exception:
+            log_swallowed()
         self._syncing_zoom = False
         if self.last_history_data:
             # In steps during the zoom animation, like a zoom from the charts.
@@ -120,6 +129,15 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
             is_z = bool(chart and hasattr(chart, '_is_zoomed') and chart._is_zoomed)
             states[attr] = is_z
             if is_z: any_zoomed = True
+
+        # The added charts (extra_charts): their arrows, and the linked ones zoomed.
+        try:
+            from ..extra_charts import update_reset_buttons
+
+            if update_reset_buttons(self, sync):
+                any_zoomed = True
+        except Exception:
+            log_swallowed()
 
         # If adaptive zoom is active, it means we are zoomed in conceptually
         if getattr(self, '_adaptive_zoom_active', False) or getattr(self, '_adaptive_zoom_active_added_only', False):
@@ -422,7 +440,7 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
     self.action_sync_zoom.triggered.connect(lambda: toggle_sync(self.action_sync_zoom.isChecked()))
 
     self.action_reset_order = QAction(tr("Reset Chart Layout"), self.dialog)
-    self.action_reset_order.triggered.connect(self._reset_chart_order)
+    self.action_reset_order.triggered.connect(lambda _checked=False: self._reset_chart_order())
 
     menu.addAction(self.action_show_avg)
     menu.addAction(self.action_avg_active)
@@ -502,6 +520,9 @@ def add_chart_controls(self, activity_header, retention_header, added_header, ac
         self.dialog.expanded_header_controls.addWidget(self.btn_reset_zoom, 0, Qt.AlignmentFlag.AlignVCenter)
         self.dialog.expanded_header_controls.addWidget(self.btn_zoom_out, 0, Qt.AlignmentFlag.AlignVCenter)
         self.dialog.expanded_header_controls.addWidget(self.btn_zoom_in, 0, Qt.AlignmentFlag.AlignVCenter)
+        from .. import extra_charts
+
+        self.dialog.expanded_header_controls.addWidget(extra_charts.add_button(self), 0, Qt.AlignmentFlag.AlignVCenter)
         self.dialog.expanded_header_controls.addWidget(btn_settings, 0, Qt.AlignmentFlag.AlignVCenter)
     else:
         header_layout = self.dialog.findChild(QHBoxLayout, "expanded_header_controls")

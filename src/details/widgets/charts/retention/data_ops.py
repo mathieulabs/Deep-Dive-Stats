@@ -145,7 +145,12 @@ def update_data_impl(widget, new_ret_data, adaptive_binning=None, transition=Fal
     widget._last_series_stats = (new_ret_data or {}, new_stats)
     old_total = float(sum(old_stats.get(f"{k}_sum", 0.0) for k in SERIES_KEYS))
     new_total = float(sum(new_stats.get(f"{k}_sum", 0.0) for k in SERIES_KEYS))
-    if transition and (not bool(getattr(widget, "_initial_animation_done", False))) and old_total <= 0.0 and new_total > 0.0:
+    # Only the very first data skips the transition (the intro shows it): an empty period
+    # shown before (Today without reviews) has its rows, then it animates as any change.
+    _old = widget.retention_data if isinstance(widget.retention_data, dict) else {}
+    old_had_rows = any(isinstance(v, (list, tuple)) and v for v in _old.values())
+    if (transition and (not bool(getattr(widget, "_initial_animation_done", False))) and old_total <= 0.0
+            and new_total > 0.0 and not old_had_rows):
         transition = False
 
     transition_payload = None

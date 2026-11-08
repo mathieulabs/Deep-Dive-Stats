@@ -100,7 +100,7 @@ def card_layout_margins(show_glass):
     return (0, 0, 0, 0)
 
 
-def tinted_card_surface(base_color, is_dark, glass_int, border_alpha_pct, theme_bg=None):
+def tinted_card_surface(base_color, is_dark, glass_int, border_alpha_pct, theme_bg=None, surface=None):
     """Stat card surface in the stat's own color.
 
     A soft glow from the top-left corner and a hairline border in that color.
@@ -144,7 +144,8 @@ def tinted_card_surface(base_color, is_dark, glass_int, border_alpha_pct, theme_
             mid_col, mid_a = mix(c, mix(card, c, 0.15), u), a0 * 0.55 + (1.0 - a0 * 0.55) * fill
             lo_col, lo_a = mix(c, card, u), a0 * 0.3 + (1.0 - a0 * 0.3) * fill
     else:
-        white = QColor("#ffffff")
+        # Light mode: the theme's card color (as the chart cards), white with Anki's own.
+        white = QColor(surface) if surface is not None and QColor(surface).isValid() else QColor("#ffffff")
         hi_col, hi_a = mix(white, c, 0.14 + k * 0.3), 1.0
         mid_col, mid_a = mix(white, c, 0.07 + k * 0.15), 1.0
         lo_col, lo_a = mix(white, c, 0.04 + k * 0.1), 1.0

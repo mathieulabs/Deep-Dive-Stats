@@ -23,6 +23,20 @@ CHARTS = (
     ("retrievability", N_("Card Retrievability")),
 )
 
+
+def chart_groups():
+    """[(group name, [(chart type, name)])]: the charts above, then the more detailed ones
+    by group (charts.more_charts)."""
+    from ....charts.more_charts import CHARTS as MORE_CHARTS
+
+    groups = [(N_("Charts"), list(CHARTS))]
+    for metric in MORE_CHARTS:
+        names = [g for g, _items in groups]
+        if metric.group not in names:
+            groups.append((metric.group, []))
+        dict(groups)[metric.group].append((metric.widget_type, metric.label))
+    return groups
+
 # Config attribute names of the stat cards, by group.
 STAT_GROUPS = (
     (N_("Study"), ("DASH_SHOW_TIME", "DASH_SHOW_REVIEWS", "DASH_SHOW_AVG_TIME", "DASH_SHOW_REVIEWS_PER_DAY",
@@ -69,6 +83,10 @@ class Choice:
         self.label = label
         self.stat_key = stat_key
         self.template = template
+        # Set by the widget gallery: the period and decks it is added with (None: defaults).
+        self.time_span = None
+        self.custom_days = None
+        self.deck_ids = None
 
     @property
     def family(self):
@@ -82,9 +100,17 @@ def pin_new(manager, choice, after_id=None, fields=None, refresh=True):
     extra = dict(fields or {})
     if choice.widget_type == "text_label":
         extra["template"] = choice.template or ""
+    # The period and decks picked in the widget gallery (see WidgetGallery.fields_for).
+    span = getattr(choice, "time_span", None)
+    if span is None:
+        span = default_span(choice.widget_type, choice.stat_key)
+    elif getattr(choice, "custom_days", None) is not None:
+        extra["custom_days"] = choice.custom_days
+    if getattr(choice, "deck_ids", None):
+        extra["deck_ids"] = list(choice.deck_ids)
     new_id = WidgetRegistry.add(
         choice.widget_type, choice.label, stat_key=choice.stat_key,
-        time_span=default_span(choice.widget_type, choice.stat_key), after_id=after_id, **extra,
+        time_span=span, after_id=after_id, **extra,
     )
     manager._last_state = None
     manager._last_widget_set = None

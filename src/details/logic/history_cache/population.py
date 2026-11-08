@@ -89,8 +89,18 @@ class PopulationMixin:
             "ELSE 'other' END"
         )
         rows_counts = mw.col.db.all(f"SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1), {status_sql}, COUNT(id) FROM cards GROUP BY 1, 2")
-        rows_future = mw.col.db.all("SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1), due, COUNT(*) FROM cards WHERE queue IN (2, 3) GROUP BY 1, 2")
-        rows_ivl = mw.col.db.all("SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1), ivl, COUNT(*) FROM cards WHERE queue IN (2, 3) AND ivl > 0 GROUP BY 1, 2")
+        # The cards of Future Due (counted as in Anki's graph), by Anki due day.
+        from ..metrics.future_due import due_day_sql
+
+        fd_day, fd_cond = due_day_sql()
+        rows_future = mw.col.db.all(
+            f"SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1), {int(mw.col.sched.today)} + {fd_day}, COUNT(*) "
+            f"FROM cards AS cards WHERE {fd_cond} GROUP BY 1, 2")
+        from ..metrics.review_intervals import INTERVAL_CARDS_COND
+
+        rows_ivl = mw.col.db.all(
+            "SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1), ivl, COUNT(*) "
+            f"FROM cards AS cards WHERE {INTERVAL_CARDS_COND} GROUP BY 1, 2")
 
         count_keys = ("new", "learn", "relearn", "young", "mature", "buried", "suspended")
         aggs = {}
@@ -215,49 +225,26 @@ class PopulationMixin:
         stability data of their clean children. The scan is cheap (cards.data only).
         """
         if not getattr(mw, "col", None): return {}, dirty_dids
-        import json as _json
-        from ..fsrs_math import retrievability
-        try:
-            from anki.cards_pb2 import CardData as _CD; _has_pb = True
-        except ImportError: _has_pb = False
+        import time as _time
+
+        from ..fsrs_math import FSRS_CARD_COLS, FSRS_CARD_COND, add_memory_state, memory_state
 
         try:
             # Always scan all cards, partial data would corrupt parent-deck aggregates
-            where_f = "WHERE queue IN (1,2,3) AND data IS NOT NULL AND data != ''"
             today_fsrs = mw.col.sched.today
-            raw_fsrs = mw.col.db.all(f"SELECT (CASE WHEN odid > 0 THEN odid ELSE did END), data, due, ivl, queue FROM cards {where_f}")
+            now = int(_time.time())
+            raw_fsrs = mw.col.db.all(
+                f"SELECT (CASE WHEN odid > 0 THEN odid ELSE did END), {FSRS_CARD_COLS} "
+                f"FROM cards AS cards WHERE {FSRS_CARD_COND}")
         except Exception: return {}, dirty_dids
 
         leaf_fsrs = {}
-        for did_, data, due, ivl, queue in raw_fsrs:
-            s = 0.0; d_val = 0.0; decay = None
-            if isinstance(data, bytes) and _has_pb:
-                try:
-                    cd = _CD.FromString(data)
-                    if cd.HasField("fsrs"): s = cd.fsrs.stability; d_val = cd.fsrs.difficulty
-                    else: continue
-                except Exception: continue
-            elif isinstance(data, str):
-                try:
-                    jd = _json.loads(data)
-                    if "cd" in jd and not ("s" in jd and "d" in jd):
-                        jd = _json.loads(jd["cd"]) if isinstance(jd["cd"], str) else jd["cd"]
-                    if "s" in jd and "d" in jd: s = float(jd["s"]); d_val = float(jd["d"]); decay = jd.get("decay")
-                    else: continue
-                except Exception: continue
-            else: continue
-            if s == 0 and d_val == 0: continue
-            s_b = min(int(s), 100)
-            d_b = int(((d_val - 1) / 9.0) * 100) if d_val > 0 else 0
-            d_b = max(0, min(100, d_b))
-
+        for did_, data, due, odue, odid, ivl, queue, ctype in raw_fsrs:
+            mem = memory_state(data)
+            if mem is None:
+                continue
             bk = leaf_fsrs.setdefault(did_, {"stability": {}, "difficulty": {}, "retrievability": {}})
-            bk["stability"][s_b] = bk["stability"].get(s_b, 0) + 1
-            bk["difficulty"][d_b] = bk["difficulty"].get(d_b, 0) + 1
-            if queue == 2 and s > 0:
-                elapsed = max(0, today_fsrs - (due - ivl))
-                r_pct = max(0, min(100, int(retrievability(elapsed, s, decay) * 100)))
-                bk["retrievability"][r_pct] = bk["retrievability"].get(r_pct, 0) + 1
+            add_memory_state(bk, mem, due, odue, odid, ivl, queue, ctype, today_fsrs, now)
         return leaf_fsrs, dirty_dids
 
     def _apply_fsrs_cache(self, future):

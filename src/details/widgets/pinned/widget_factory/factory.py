@@ -21,6 +21,17 @@ from .builders.stability import _build_stability
 from .builders.difficulty import _build_difficulty
 from .builders.retrievability import _build_retrievability
 from .builders.text_label import _build_text_label
+from .builders.daily_metrics import build_daily_metric, update_daily_metric
+from .builders.interval_load import build_interval_load, update_interval_load
+from .builders.card_history import build_card_history, update_card_history
+from .builders.due_today import build_due_today, update_due_today
+from .builders.week_hours import build_week_hours, update_week_hours
+from ...charts.more_charts import CHARTS as MORE_CHARTS
+
+_MORE_BUILDERS = {"daily": build_daily_metric, "intervals": build_interval_load, "cards": build_card_history,
+                  "today": build_due_today, "week": build_week_hours}
+_MORE_UPDATERS = {"daily": update_daily_metric, "intervals": update_interval_load, "cards": update_card_history,
+                  "today": update_due_today, "week": update_week_hours}
 from .....qss import set_qss
 from .....i18n import tr, N_, tr_name, upper
 
@@ -98,6 +109,7 @@ class WidgetFactory:
             "retrievability": N_("Card Retrievability"),
             "text_label": N_("Text Widget"),
         }
+        default_labels.update({m.widget_type: m.label for m in MORE_CHARTS})
         label = tr_name(widget_def.get("label") or default_labels.get(wtype, wtype.replace("_", " ").title()))
         if wtype != "stat_card" and widget_def.get("label") is not None and not str(widget_def.get("label")).strip():
             label = None  # emptied title: no header
@@ -126,6 +138,7 @@ class WidgetFactory:
             "retrievability": _build_retrievability,
             "text_label": _build_text_label,
         }
+        builders.update({m.widget_type: _MORE_BUILDERS[m.kind] for m in MORE_CHARTS})
 
         builder = builders.get(wtype)
         if not builder:
@@ -205,6 +218,7 @@ class WidgetFactory:
             "retrievability": _update_retrievability,
             "text_label": _update_text_label,
         }
+        updaters.update({m.widget_type: _MORE_UPDATERS[m.kind] for m in MORE_CHARTS})
 
         updater = updaters.get(wtype)
         if not updater:
@@ -246,6 +260,7 @@ class WidgetFactory:
                             "text_label": N_("Text Widget"),
                             "difficulty": N_("Card Difficulty"), "retrievability": N_("Card Retrievability")
                         }
+                        default_labels.update({m.widget_type: m.label for m in MORE_CHARTS})
                         label = default_labels.get(wtype, wtype.replace("_", " ").title())
                     label = tr_name(label)
 

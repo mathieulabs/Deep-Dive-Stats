@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ..common.cache_dpr import exporting, raster_dpr
+import math
 from datetime import datetime, timedelta
 
 from aqt.qt import QColor, QPainter, QPen, QRectF, Qt
@@ -146,13 +147,191 @@ def _prepared_pairs(widget, pairs, include_empty_pairs):
     return out
 
 
+_MAX_GROUPS = 12
+
+
+def _fade_pictures(widget, painter, prepared):
+    """The transition as a few pictures instead of a thousand cells drawn one by one (7 ms
+    a frame, measured): the cells are grouped by how they move (most stay; when a year is
+    added or removed, whole blocks shift by the same offset). Each group is drawn once with
+    its old colours and once with its new ones; a frame mixes the two and slides the
+    group. The same picture as drawing every cell. None when the cells change size or move
+    in too many different ways (drawn cell by cell)."""
+    from aqt.qt import QPixmap
+
+    try:
+        tr = painter.worldTransform()
+        if tr.isRotating() or abs(tr.m11() - tr.m22()) > 1e-6:
+            return None
+        dev = painter.device()
+        dpr = float(dev.devicePixelRatioF()) if hasattr(dev, "devicePixelRatioF") else 1.0
+        scale = dpr * abs(tr.m11())
+    except Exception:
+        return None
+    key = (id(prepared), round(scale, 4))
+    cached = getattr(widget, "_fade_pictures", None)
+    if cached is not None and cached[0] == key and cached[1] is prepared:
+        return cached[2]
+    result = None
+    groups = {}
+    ok = bool(prepared)
+    for item in prepared:
+        kind = item[0]
+        if kind in ("mix", "in", "out") and not item[10]:
+            # The cell's move as a scale and shift (another deck: another cell size and
+            # place); the cells of one block share it.
+            o, n = item[2], item[3]
+            if o[2] <= 0 or o[3] <= 0:
+                ok = False
+                break
+            sx, sy = n[2] / o[2], n[3] / o[3]
+            move = (round(sx, 3), round(sy, 3), round(n[0] - sx * o[0], 1), round(n[1] - sy * o[1], 1))
+        else:
+            move = (1.0, 1.0, 0.0, 0.0)
+        groups.setdefault(move, []).append(item)
+        if len(groups) > _MAX_GROUPS:
+            ok = False
+            break
+    if ok and groups:
+        result = []
+
+        def _pixel_box(r):
+            """r grown to whole screen pixels: (logical rect, width px, height px)."""
+            x0 = math.floor((r.x() - 1) * tr.m11() * dpr + tr.dx() * dpr)
+            y0 = math.floor((r.y() - 1) * tr.m22() * dpr + tr.dy() * dpr)
+            x1 = math.ceil((r.right() + 1) * tr.m11() * dpr + tr.dx() * dpr)
+            y1 = math.ceil((r.bottom() + 1) * tr.m22() * dpr + tr.dy() * dpr)
+            bx = (x0 / dpr - tr.dx()) / tr.m11()
+            by = (y0 / dpr - tr.dy()) / tr.m22()
+            return QRectF(bx, by, (x1 - x0) / scale, (y1 - y0) / scale), int(x1 - x0), int(y1 - y0)
+
+        for move, items in groups.items():
+            bounds = None
+            end = None  # where the group's cells end: their new rects (exact, not the rounded move)
+            for item in items:
+                bounds = QRectF(item[1]) if bounds is None else bounds.united(item[1])
+                n = item[3] if (item[0] in ("mix", "in", "out") and not item[10]) else None
+                r_new = QRectF(n[0], n[1], n[2], n[3]) if n is not None else QRectF(item[1])
+                end = r_new if end is None else end.united(r_new)
+            if bounds is None or bounds.width() <= 0 or bounds.height() <= 0 or end.width() <= 0 or end.height() <= 0:
+                continue
+            # The group's scale and shift, from its cells' old and new extents (exact).
+            sx = end.width() / bounds.width()
+            sy = end.height() / bounds.height()
+            tx = end.x() - sx * bounds.x()
+            ty = end.y() - sy * bounds.y()
+            # Each picture on whole screen pixels where it is shown as is: the old one at the
+            # start, the new one at the end, drawn at the new places and size. Both ends land
+            # pixel for pixel on the cells drawn one by one (a single picture scaled to the
+            # new size came out a hair soft and the cells sharpened when the fade ended).
+            box_old, pw_o, ph_o = _pixel_box(bounds)
+            box_new, pw_n, ph_n = _pixel_box(end)
+            if pw_o * ph_o > 16_000_000 or pw_n * ph_n > 16_000_000:
+                result = None
+                break
+            pics = []
+            for side, box, pw, ph in (("old", box_old, pw_o, ph_o), ("new", box_new, pw_n, ph_n)):
+                pm = QPixmap(pw, ph)
+                pm.fill(Qt.GlobalColor.transparent)
+                q = QPainter(pm)
+                q.setRenderHint(QPainter.RenderHint.Antialiasing)
+                q.setPen(Qt.PenStyle.NoPen)
+                q.scale(scale, scale)
+                q.translate(-box.x(), -box.y())
+                for kind, rect0, _o, n, r_old, r_new, c_old, c_new, _p1, _p2, same_rect, *_rest in items:
+                    if side == "old":
+                        if kind not in ("mix", "out", "old"):
+                            continue
+                        q.setBrush(c_old)
+                        q.drawRoundedRect(rect0, r_old, r_old)
+                        continue
+                    if kind in ("mix", "in"):
+                        q.setBrush(c_new)
+                    elif kind == "new":
+                        q.setBrush(c_old)  # a cell only in the new data keeps its colour in c_old
+                    else:
+                        continue
+                    if kind in ("mix", "in") and not same_rect:
+                        q.drawRoundedRect(QRectF(n[0], n[1], n[2], n[3]), r_new, r_new)
+                    else:
+                        q.drawRoundedRect(rect0, r_old, r_old)
+                q.end()
+                pics.append(pm)
+            result.append((box_old, pics[0], box_new, pics[1], (sx, sy, tx, ty)))
+    widget._fade_pictures = (key, prepared, result)
+    return result
+
+
+def _draw_mixed(painter, pictures, tt):
+    """Each group's old and new pictures mixed at tt (premultiplied, as _mix does per
+    cell), slid and scaled by tt of the group's move. The mix is made on the picture of the
+    side that weighs more (the old one first, the new one from halfway), so each end is
+    shown as drawn, pixel for pixel."""
+    from aqt.qt import QPixmap
+
+    def _lerp(a, b, t):
+        return QRectF(
+            a.x() + (b.x() - a.x()) * t,
+            a.y() + (b.y() - a.y()) * t,
+            a.width() + (b.width() - a.width()) * t,
+            a.height() + (b.height() - a.height()) * t,
+        )
+
+    def _apply(r, sx, sy, tx, ty, inverse=False):
+        if inverse:
+            return QRectF((r.x() - tx) / sx, (r.y() - ty) / sy, r.width() / sx, r.height() / sy)
+        return QRectF(r.x() * sx + tx, r.y() * sy + ty, r.width() * sx, r.height() * sy)
+
+    def _in_pixels(r, box, pm):
+        """r (logical) in the pixels of the picture pm covering box."""
+        kx = pm.width() / box.width()
+        ky = pm.height() / box.height()
+        return QRectF((r.x() - box.x()) * kx, (r.y() - box.y()) * ky, r.width() * kx, r.height() * ky)
+
+    tt = max(0.0, min(1.0, tt))
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    for box_old, pm_old, box_new, pm_new, (sx, sy, tx, ty) in pictures:
+        if tt < 0.5:
+            base, base_box, other, other_box = pm_old, box_old, pm_new, _apply(box_new, sx, sy, tx, ty, inverse=True)
+            base_t, other_t = 1.0 - tt, tt
+            at = _lerp(box_old, _apply(box_old, sx, sy, tx, ty), tt)
+        else:
+            base, base_box, other, other_box = pm_new, box_new, pm_old, _apply(box_old, sx, sy, tx, ty)
+            base_t, other_t = tt, 1.0 - tt
+            at = _lerp(_apply(box_new, sx, sy, tx, ty, inverse=True), box_new, tt)
+        mix = QPixmap(base.size())
+        mix.fill(Qt.GlobalColor.transparent)
+        q = QPainter(mix)
+        q.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        q.setOpacity(base_t)
+        q.drawPixmap(0, 0, base)
+        part = QPixmap(base.size())
+        part.fill(Qt.GlobalColor.transparent)
+        r = QPainter(part)
+        r.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        r.setOpacity(other_t)
+        r.drawPixmap(_in_pixels(other_box, base_box, base), other, QRectF(0, 0, other.width(), other.height()))
+        r.end()
+        q.setOpacity(1.0)
+        q.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        q.drawPixmap(0, 0, part)
+        q.end()
+        painter.drawPixmap(at, mix, QRectF(0, 0, mix.width(), mix.height()))
+    painter.restore()
+
+
 def _draw_transition_cells_from_pairs(widget, painter, pairs, tt, include_empty_pairs=False):
     painter.setPen(Qt.PenStyle.NoPen)
     if not pairs:
         return
-    for kind, rect0, o, n, r_old, r_new, c_old, c_new, p_old, p_new, same_rect, same_color in _prepared_pairs(
-        widget, pairs, include_empty_pairs
-    ):
+    prepared = _prepared_pairs(widget, pairs, include_empty_pairs)
+    # The last frame is drawn cell by cell: exactly the chart that follows.
+    pictures = _fade_pictures(widget, painter, prepared) if tt < 0.999 else None
+    if pictures is not None:
+        _draw_mixed(painter, pictures, tt)
+        return
+    for kind, rect0, o, n, r_old, r_new, c_old, c_new, p_old, p_new, same_rect, same_color in prepared:
         if kind in ("old", "new"):
             # A cell only on one side fades out (old) or in (new) where it is.
             color = QColor(c_old)

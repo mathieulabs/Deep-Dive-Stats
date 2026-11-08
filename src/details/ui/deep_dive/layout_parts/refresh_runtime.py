@@ -27,6 +27,7 @@ from .. import FutureDueDataProvider, ReviewIntervalsDataProvider
 from ....widgets.charts.common.zoom import (
     get_timespan_transition_meta,
     should_use_timespan_transition,
+    timespan_transition_mode,
 )
 from ....logic.logger import log_swallowed
 
@@ -91,6 +92,10 @@ def _dd_refresh_batch_animation_enabled(manager, section_key):
     """
     if str(getattr(manager, "_dd_refresh_reason", "") or "") != "time_span":
         return True
+    from ..extra_charts import BY_TYPE
+
+    if BY_TYPE.get(section_key) is not None and BY_TYPE[section_key].has_span:
+        return True  # an added chart of days: it follows the period like Activity
     return str(section_key or "") in {
         "activity",
         "retention",
@@ -105,6 +110,9 @@ def refresh_dashboard_data(self):
 
     # Guard against transient sync callbacks while we are replacing chart datasets.
     self._dd_refresh_in_progress = True
+    # Sections shown or hidden by this refresh: applied with its charts' data (_run_batch).
+    if getattr(self, "_dd_deferred_vis", None) is None:
+        self._dd_deferred_vis = {}
 
     # Reset adaptive zoom state: stale hi-res data from a previous deck must not leak.
     self._adaptive_zoom_active = False
@@ -169,6 +177,7 @@ def refresh_dashboard_data(self):
         return real or is_skeleton or show_empty
 
     if not self.last_history_data and not is_skeleton and not show_empty:
+        self._dd_deferred_vis = None
         for k in self.section_wrappers:
             if k != "stats": self._set_section_visible(k, False)
         self._dd_refresh_in_progress = False
@@ -240,13 +249,13 @@ def refresh_dashboard_data(self):
             total_span_active=(int(cur_span) == int(Period.TOTAL)),
         )
         # Keep span-change and TOTAL-range date-bound morphs driven by one shared rule set.
-        use_timespan_transition = should_use_timespan_transition(
+        use_timespan_transition = timespan_transition_mode(
             transition_meta,
             deck_policy="ignore",
         )
         if hasattr(self.activity_chart, "set_value_mode"):
             self.activity_chart.set_value_mode(metric_mode)
-        activity_transition_mode = "timespan" if use_timespan_transition else None
+        activity_transition_mode = use_timespan_transition
         activity_should_animate = _dd_refresh_batch_animation_enabled(self, "activity") and _payload_changed(
             list(getattr(self.activity_chart, "_full_data", []) or []),
             list(activity_data or []),
@@ -276,13 +285,13 @@ def refresh_dashboard_data(self):
                 new_series=metric_w_act_oldest,
                 total_span_active=(int(cur_span_b) == int(Period.TOTAL)),
             )
-            use_timespan_transition_b = should_use_timespan_transition(
+            use_timespan_transition_b = timespan_transition_mode(
                 transition_meta_b,
                 deck_policy="ignore",
             )
             if hasattr(self.stacked_chart, "set_value_mode"):
                 self.stacked_chart.set_value_mode(metric_mode)
-            stacked_transition_mode = "timespan" if use_timespan_transition_b else None
+            stacked_transition_mode = use_timespan_transition_b
             stacked_should_animate = _dd_refresh_batch_animation_enabled(self, "activity") and _payload_changed(
                 list(getattr(self.stacked_chart, "_full_data", []) or []),
                 list(metric_w_act_oldest or []),
@@ -376,11 +385,10 @@ def refresh_dashboard_data(self):
                 new_series=added_oldest,
                 total_span_active=(int(cur_span_a) == int(Period.TOTAL)),
             )
-            use_timespan_transition_a = should_use_timespan_transition(
+            added_transition_mode = timespan_transition_mode(
                 transition_meta_a,
                 deck_policy="ignore",
             )
-            added_transition_mode = "timespan" if use_timespan_transition_a else None
             added_should_animate = _dd_refresh_batch_animation_enabled(self, "added") and _payload_changed(
                 list(getattr(added_chart, "_full_data", []) or []),
                 list(added_oldest or []),
@@ -624,6 +632,11 @@ def refresh_dashboard_data(self):
         ranges=resolve_future_due_ranges(self._get_dd_widget_setting("future_due", "radio_ranges", None))[0],
     )
     show_backlog_cached = self._get_dd_widget_setting("future_due", "show_backlog", False)
+    from ....logic.metrics.future_due import resolve_breakdown
+
+    fd_hidden = self._get_dd_widget_setting("future_due", "hidden_series", None) or ()
+    fd_breakdown = resolve_breakdown(self._get_dd_widget_setting("future_due", "breakdown", None),
+                                     self._get_dd_widget_setting("future_due", "show_breakdown", False))
 
     current_deck_for_future_due = self.last_deck_identifier
     current_seq_for_future_due = getattr(self, "_loading_seq", 0)
@@ -641,7 +654,7 @@ def refresh_dashboard_data(self):
         # views or sub-spans.
         future_data = FutureDueDataProvider.fetch_data(
             self.addon_config, self.last_deck_identifier, is_deleted, f_span,
-            include_backlog=show_backlog_cached
+            include_backlog=show_backlog_cached, breakdown=fd_breakdown, hidden_parts=fd_hidden
         )
 
         has_future = bool(
@@ -657,7 +670,7 @@ def refresh_dashboard_data(self):
         if not has_future:
             total_check = FutureDueDataProvider.fetch_data(
                 self.addon_config, self.last_deck_identifier, is_deleted, Period.TOTAL,
-                include_backlog=show_backlog_cached
+                include_backlog=show_backlog_cached, breakdown=fd_breakdown, hidden_parts=fd_hidden
             )
             total_has_visible = bool(
                 total_check
@@ -673,7 +686,8 @@ def refresh_dashboard_data(self):
                 # Check for backlog even if checkbox is off (determines if section is useful)
                 backlog_check = FutureDueDataProvider.fetch_data(
                     self.addon_config, self.last_deck_identifier, is_deleted, f_span,
-                    include_backlog=True  # Always check backlog for visibility
+                    include_backlog=True,  # Always check backlog for visibility
+                    breakdown=fd_breakdown, hidden_parts=fd_hidden,
                 )
                 if backlog_check and backlog_check.get("backlog", 0) > 0:
                     has_future = True
@@ -746,6 +760,17 @@ def refresh_dashboard_data(self):
         intervals_chart._last_timespan_token = span_token_i
         intervals_chart._last_deck_id = self.last_deck_identifier
 
+    from .. import extra_charts
+
+    # The charts added with "+ Add Chart", in the same batch as the others.
+    extra_charts.queue_updates(
+        self,
+        queued_chart_updates,
+        queued_animation_candidates,
+        _effective_span_and_days,
+        lambda key: _dd_refresh_batch_animation_enabled(self, key),
+    )
+
     ordered_animation_candidates = _sort_animation_candidates_by_section_order(
         self,
         queued_animation_candidates,
@@ -755,18 +780,173 @@ def refresh_dashboard_data(self):
         queued_chart_updates,
     )
 
-    with chart_animation_batch(
-        self.dialog,
-        ordered_animation_candidates,
-        queue_mode=True,
-    ):
-        for _, apply_chart_update in ordered_chart_updates:
-            apply_chart_update()
+    def _flush_visibility():
+        """The sections shown or hidden by the refresh, applied with its charts' data. The
+        cards go to their new places at once (no slide: the charts' own animations show the
+        change; cards sliding meanwhile only delayed and blurred it)."""
+        pending = getattr(self, "_dd_deferred_vis", None) or {}
+        self._dd_deferred_vis = None
+        lay = getattr(self, "current_grid_layout", None)
+        if lay is not None and hasattr(lay, "hold_moves"):
+            lay.hold_moves()
+        for key, visible in pending.items():
+            try:
+                self._set_section_visible(key, visible)
+            except RuntimeError:
+                pass
+        if lay is not None:
+            try:
+                lay.activate()  # laid out now (held), so the charts' turns see their place
+            except RuntimeError:
+                pass
+        return lay
 
-    self._refresh_bottom_stats()
+    def _snap_animations(wrappers):
+        """Every chart in wrappers on its last frame now (its new data drawn as is)."""
+        from ....animations.view_fade import snap_animations
 
-    if hasattr(self, '_show_and_animate'):
-        self._show_and_animate()
-    self._dd_refresh_in_progress = False
+        snap_animations(wrappers)
+
+    def _cards_change():
+        """Whether this refresh shows or hides a chart (the other cards then move)."""
+        pending = getattr(self, "_dd_deferred_vis", None) or {}
+        wrappers = getattr(self, "section_wrappers", {}) or {}
+        for key, visible in pending.items():
+            w = wrappers.get(key)
+            try:
+                if w is not None and w.isHidden() == bool(visible):
+                    return True
+            except RuntimeError:
+                pass
+        return False
+
+    def _run_batch():
+        # Charts shown or hidden: the cards glide to their new places, the ones that go fade
+        # out, the new ones fade in (grid_fade, from pictures), then the charts animate their
+        # new data. Otherwise straight on.
+        old_view = None
+        viewport = None
+        old_rects = {}
+        cards = [w for w in (getattr(self, "section_wrappers", {}) or {}).values() if w is not None]
+        fade_all = False
+        snap_only = False
+        try:
+            from ....animations.motion import animations_enabled
+            from ....animations.view_fade import fade_wanted, snap_wanted
+
+            fade_all = fade_wanted("details")
+            snap_only = snap_wanted("details")  # "No Animation": the new data at once
+            if animations_enabled("details") and not snap_only and (fade_all or _cards_change()):
+                from .grid_fade import card_rects, grab_view
+
+                viewport = self.dialog.expanded_scroll.viewport()
+                old_view = grab_view(viewport)
+                old_rects = card_rects(viewport, cards)
+        except Exception:
+            log_swallowed()
+            old_view = None
+        _lay = _flush_visibility()
+        moves = []
+        if _lay is not None and hasattr(_lay, "take_held"):
+            try:
+                moves, _shown = _lay.take_held()
+            except Exception:
+                log_swallowed()
+                try:
+                    _lay.release_moves()
+                except Exception:
+                    pass
+
+        for widget, _start, target in moves:
+            try:
+                widget.setGeometry(target)
+            except RuntimeError:
+                pass
+        if old_view is not None and not fade_all:
+            # Only a change the user sees glides: a card going or coming below the fold
+            # leaves the charts in view to animate their data as usual. When the cards in
+            # view stay where they are (one only comes or goes), they animate as usual too:
+            # the one that goes fades out, the one that comes animates in with the others.
+            try:
+                from .grid_fade import card_rects, fade_out_gone, moves_in_view, visible_change
+
+                new_rects = card_rects(viewport, cards)
+                if not visible_change(viewport, old_rects, new_rects):
+                    old_view = None
+                elif not moves_in_view(viewport, old_rects, new_rects):
+                    _run_batch_inner()
+                    fade_out_gone(viewport, old_view, old_rects, new_rects)
+                    return
+            except Exception:
+                log_swallowed()
+                old_view = None
+        if old_view is None:
+            _run_batch_inner()
+            if snap_only:
+                _snap_animations(cards)
+            return
+
+        # One motion, not two: the charts take their new data at once (their own animations
+        # ended on their last frame), then the cards glide to their places while each one's
+        # old picture fades into its new one. (Gliding first, then animating the data, showed
+        # the change twice, one after the other.)
+        _run_batch_inner()
+        _snap_animations(cards)
+
+        from .grid_fade import glide
+
+        glide(viewport, old_view, old_rects, cards, lambda: None)
+
+    def _run_batch_inner():
+        with chart_animation_batch(
+            self.dialog,
+            ordered_animation_candidates,
+            queue_mode=True,
+        ):
+            for _chart, apply_chart_update in ordered_chart_updates:
+                try:
+                    apply_chart_update()
+                except RuntimeError:
+                    pass  # a chart closed while the refresh waited (see below)
+
+        self._refresh_bottom_stats()
+
+        if hasattr(self, '_show_and_animate'):
+            self._show_and_animate()
+        self._dd_refresh_in_progress = False
+
+    # The charts that read their data themselves are reading it (extra_charts.queue_updates):
+    # the batch starts once they have it (a few tenths of a second at most, 1.5 s at worst),
+    # so every chart animates in its turn, in the order of the window.
+    waiting = list(getattr(self, "_dd_extra_pending", None) or [])
+    self._dd_extra_pending = []
+    token = object()
+    self._dd_batch_token = token
+    if not waiting:
+        _run_batch()
+        return
+    import time as _wt
+    from aqt.qt import QTimer
+
+    started = _wt.monotonic()
+
+    def _poll():
+        if getattr(self, "_dd_batch_token", None) is not token:
+            return  # a newer refresh took over (it applies everything again)
+        try:
+            ready = all(c.is_ready(d) for c, d in waiting)
+        except RuntimeError:
+            ready = True
+        except Exception:
+            ready = True
+            from ....logic.logger import log_swallowed
+
+            log_swallowed()
+        if ready or _wt.monotonic() - started > 1.5:
+            _run_batch()
+        else:
+            QTimer.singleShot(20, _poll)
+
+    QTimer.singleShot(20, _poll)
 
 

@@ -214,8 +214,8 @@ def schedule_values(future_due, fsrs, prec, today=None):
     """Due today, backlog and FSRS averages; N/A for what is not in the data.
 
     The cache keeps the due cards by Anki due day (days since the collection was created,
-    review and day-learning cards), not by days from today: today's are those due on
-    today's day number, the backlog those due before it."""
+    the cards of Anki's Future Due graph, learning cards included), not by days from today:
+    today's are those due on today's day number, the backlog those due before it."""
     out = dict.fromkeys(SCHEDULE_FIELDS, "N/A")
     dist = (future_due or {}).get("distribution") if isinstance(future_due, dict) else None
     today = _today() if today is None else today
@@ -227,7 +227,7 @@ def schedule_values(future_due, fsrs, prec, today=None):
             except (TypeError, ValueError):
                 continue
             if day < 0 or day >= 1000000000:
-                continue  # invalid, or a learning card's timestamp (left out, as in Anki's forecast)
+                continue  # invalid (an older cache could still hold a learning card's timestamp)
             if day == today:
                 due_today += count or 0
             elif day < today:

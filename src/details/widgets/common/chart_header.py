@@ -90,7 +90,7 @@ def create_chart_header(
     stats_widget = None
     if show_header_stats and stats_text is not None:
         stats_widget = AdaptiveStatsWidget(stats_text, parent=header)
-        layout.addWidget(stats_widget)
+        layout.addWidget(stats_widget, 1)  # the free room goes to it (see AdaptiveStatsWidget)
 
     layout.addStretch()
     return header, layout, stats_widget

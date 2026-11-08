@@ -46,19 +46,24 @@ def future_due_span_max_days(span):
     return {Period.MONTH: 31, Period.THREE_MONTHS: 90, Period.YEAR: 365}.get(span)
 
 
+MIN_BUTTONS, MAX_BUTTONS = 2, 8  # how many range buttons a chart can have (folded into a menu when narrow)
+
+
 def normalize_future_due_days(days_list):
-    """Four valid, ordered day values (all last); anything unusable gives the defaults."""
+    """2 to 8 valid, distinct, ordered day values (all last); anything unusable gives the defaults."""
     try:
         values = [int(d) for d in (days_list or [])]
     except Exception:
         return FUTURE_DUE_DEFAULT_DAYS
-    if len(values) != 4 or any(not is_valid_future_due_days(v) for v in values):
+    if not MIN_BUTTONS <= len(values) <= MAX_BUTTONS or any(not is_valid_future_due_days(v) for v in values):
         return FUTURE_DUE_DEFAULT_DAYS
-    return tuple(sorted(set(values), key=lambda d: (d == -1, d))) if len(set(values)) == 4 else FUTURE_DUE_DEFAULT_DAYS
+    if len(set(values)) != len(values):
+        return FUTURE_DUE_DEFAULT_DAYS
+    return tuple(sorted(values, key=lambda d: (d == -1, d)))
 
 
 def resolve_future_due_ranges(days_list=None):
-    """Return (ranges, short_labels, long_labels) for the four radio buttons."""
+    """Return (ranges, short_labels, long_labels) for the radio buttons."""
     days = normalize_future_due_days(days_list)
     short = {d: s for d, _l, s in FUTURE_DUE_DAY_CHOICES}
     long_ = {d: l for d, l, _s in FUTURE_DUE_DAY_CHOICES}

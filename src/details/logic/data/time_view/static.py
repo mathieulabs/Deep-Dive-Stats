@@ -16,7 +16,8 @@ _TIME_VIEW_STATIC_WARMING = set()
 def _static_cache_key(excluded_dids):
     # The bundle describes one collection: never serve it across a profile/
     # collection switch inside the TTL.
-    return (tuple(sorted(excluded_dids or [])), id(getattr(mw, 'col', None)))
+    # str: the list holds deck ids and may hold "deleted" (Deleted Cards), which do not compare.
+    return (tuple(sorted(excluded_dids or [], key=str)), id(getattr(mw, 'col', None)))
 
 
 def get_time_view_static_bundle(excluded_dids):

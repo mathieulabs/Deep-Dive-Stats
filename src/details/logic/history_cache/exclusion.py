@@ -52,7 +52,8 @@ def deck_targets(did, deck_names, excluded):
     (by name; not the deck's own full name, or the deck would count twice) and the
     all-decks keys (unless the deck is excluded from them). A deck with no name (deleted,
     -1) counts in itself and the all-decks keys only."""
-    t = {did, None, "[[TOTAL]]"}
+    # (All decks is None: "[[TOTAL]]" reads the same entry, see core.DeckCache.)
+    t = {did, None}
     name = deck_names.get(did)
     if name:
         parts = name.split("::")

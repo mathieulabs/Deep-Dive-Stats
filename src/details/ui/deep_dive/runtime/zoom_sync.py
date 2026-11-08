@@ -11,16 +11,46 @@ from ....animations.chart_policy import local_chart_animation_batch
 # which made zoom frames late (measured: gaps of 45 to 125 ms between frames). They wait for
 # the end of the zoom, then run one after the other, STATS_SPACING_MS apart, the heatmap (the
 # heaviest) last. Every part plays its own transition.
-STATS_STEPS = (("cards", 90), ("dist", 120), ("hourly", 150), ("heatmap", 310))
+# "extra": the added charts that follow the zoom (Week by Hour...), see extra_charts.follow_zoom.
+STATS_STEPS = (("cards", 90), ("dist", 120), ("hourly", 150), ("extra", 200), ("heatmap", 310))
 STATS_SPACING_MS = 40
 _ZOOM_POLL_MS = 30
 _ZOOM_WAIT_MAX_S = 1.5  # never wait longer (an animation left behind must not block the stats)
 
 
+def window_dates(manager, rows):
+    """(first, last) day of rows (history rows, days or 10-minute bins), or None when they
+    cover the whole period (no zoom)."""
+    from ....ui.shared.zoom_span import _row_date
+
+    rows = list(rows or [])
+    if not rows:
+        return None
+    d0, d1 = _row_date(rows[0]), _row_date(rows[-1])
+    if d0 is None or d1 is None:
+        return None
+    dates = (min(d0, d1), max(d0, d1))
+    full = list(getattr(manager, "last_history_data", None) or [])
+    if full:
+        f0, f1 = _row_date(full[0]), _row_date(full[-1])
+        if f0 is not None and f1 is not None and dates == (min(f0, f1), max(f0, f1)):
+            return None
+    return dates
+
+
+def _linked_extras(manager):
+    try:
+        from ..extra_charts import zoom_linked_charts
+
+        return zoom_linked_charts(manager)
+    except Exception:
+        return []
+
+
 def _zoom_animating(manager):
     """True while one of the zoomed charts still shows its zoom animation."""
-    for attr in ("activity_chart", "stacked_chart", "retention_chart", "added_chart"):
-        chart = getattr(manager, attr, None)
+    charts = [getattr(manager, a, None) for a in ("activity_chart", "stacked_chart", "retention_chart", "added_chart")]
+    for chart in charts + _linked_extras(manager):
         try:
             if chart is not None and getattr(chart, "_zoom_camera", None) is not None:
                 return True
@@ -72,6 +102,13 @@ def _stats_candidates(manager):
 
 
 def _apply_stats(manager, part, data):
+    if part == "extra":
+        from ..extra_charts import follow_zoom
+
+        # The days of the stats (not a date kept from the last zoom: a reset by the Reset
+        # button does not go through sync_zoom).
+        follow_zoom(manager, window_dates(manager, data))
+        return
     candidates = _stats_candidates(manager)
     log_debug(f"[ZOOM-SYNC] Updating stats ({part}): rows={len(data)}", tag="DEEPDIVE")
     if candidates:
@@ -141,7 +178,8 @@ def setup_zoom_sync(manager):
                     continue
             valid_charts.append(chart)
 
-    if not valid_charts:
+    extras = _linked_extras(manager)
+    if not valid_charts and not extras:
         return
 
     def sync_zoom(source_chart, is_zoomed, start, end):
@@ -232,6 +270,30 @@ def setup_zoom_sync(manager):
                     data = history_oldest_first
                 log_debug(f"[ZOOM-SYNC] stats: adaptive={adaptive_active}, zoomed={is_zoomed}", tag="DEEPDIVE")
                 schedule_stats(manager, data)
+            else:
+                data = None
+
+            # The added charts of days: the same days as the stats (the 10-minute view
+            # included), by date (their own period may differ from Activity's).
+            if extras:
+                from ....widgets.pinned.zoom_link import _apply as _zoom_to
+
+                dates = window_dates(manager, data) if data else None
+                if dates is None and is_zoomed:
+                    try:
+                        from ....ui.shared.zoom_span import zoom_dates
+
+                        dates = zoom_dates(source_chart)
+                    except Exception:
+                        dates = None
+                origin = getattr(manager, "_dd_zoom_origin", None)
+                for target in extras:
+                    if target is source_chart or target is origin:
+                        continue
+                    try:
+                        _zoom_to(target, dates, False)
+                    except (RuntimeError, AttributeError, TypeError):
+                        pass
 
             if hasattr(manager, "update_all_reset_buttons"):
                 manager.update_all_reset_buttons()
@@ -241,6 +303,94 @@ def setup_zoom_sync(manager):
 
         finally:
             manager._is_syncing_zoom = False
+
+    def from_extra(chart, is_zoomed):
+        """An added chart of days zoomed: the base chart shown first takes the same dates and
+        passes them on as if zoomed itself (the others, the stats), else the other added
+        charts follow directly."""
+        if (
+            getattr(manager, "_is_syncing_zoom", False)
+            or getattr(manager, "_syncing_zoom", False)
+            or not getattr(manager, "last_sync_zoom", False)
+            or getattr(manager, "_dd_refresh_in_progress", False)
+        ):
+            return
+        if getattr(chart, "_applying_data", False):
+            # Its data came (read in the background, after the refresh): that reset its zoom.
+            # Not passed on: it takes the zoom of the others back once its update is done.
+            from aqt.qt import QTimer
+
+            QTimer.singleShot(0, lambda c=chart: _rejoin(c))
+            return
+        try:
+            from ....ui.shared.zoom_span import zoom_dates
+            from ....widgets.pinned.zoom_link import _apply as _zoom_to
+
+            dates = zoom_dates(chart) if is_zoomed else None
+            if is_zoomed and dates is None:
+                return
+            anchor = next((c for c in valid_charts if c.isVisible()), None)
+            manager._dd_zoom_origin = chart
+            try:
+                if anchor is not None:
+                    _zoom_to(anchor, dates, False)  # its zoom_changed runs sync_zoom
+                    return
+                manager._is_syncing_zoom = True
+                try:
+                    for other in extras:
+                        if other is not chart:
+                            _zoom_to(other, dates, False)
+                finally:
+                    manager._is_syncing_zoom = False
+                history = list(getattr(manager, "last_history_data", None) or [])[::-1]
+                if history and dates is not None:
+                    from ....ui.shared.zoom_span import _row_date
+
+                    history = [r for r in history if (_row_date(r) is not None and dates[0] <= _row_date(r) <= dates[1])]
+                if history:
+                    schedule_stats(manager, history)
+            finally:
+                manager._dd_zoom_origin = None
+        except RuntimeError:
+            pass
+        except Exception:
+            from ....logic.logger import log_swallowed
+
+            log_swallowed()
+
+    def _rejoin(chart):
+        """chart at the zoom of the charts it is linked with (after its data changed)."""
+        try:
+            from ....ui.shared.zoom_span import zoom_dates
+            from ....widgets.pinned.zoom_link import _apply as _zoom_to
+
+            anchor = next((c for c in valid_charts if c.isVisible()), None)
+            if anchor is None or not getattr(anchor, "_is_zoomed", False):
+                return
+            dates = zoom_dates(anchor)
+            if dates is None:
+                return
+            manager._is_syncing_zoom = True
+            try:
+                _zoom_to(chart, dates, False)
+            finally:
+                manager._is_syncing_zoom = False
+        except RuntimeError:
+            pass
+        except Exception:
+            from ....logic.logger import log_swallowed
+
+            log_swallowed()
+
+    for chart in extras:
+        if hasattr(chart, "_sync_zoom_handler"):
+            try:
+                chart.zoom_changed.disconnect(chart._sync_zoom_handler)
+            except (RuntimeError, TypeError):
+                pass
+        handler = (lambda c: (lambda z, _s, _e: from_extra(c, bool(z))))(chart)
+        chart.zoom_changed.connect(handler)
+        chart._sync_zoom_handler = handler
 
     for chart in valid_charts:
         # Disconnect only previously registered sync handler, not all slots.

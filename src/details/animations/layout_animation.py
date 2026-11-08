@@ -30,3 +30,34 @@ def animate_widget_geometry(widget, start_rect, end_rect, animations_dict, durat
     anim.finished.connect(_forget)
     anim.start()
     animations_dict[widget] = anim
+
+
+def animate_widget_position(widget, start_rect, end_rect, animations_dict, duration=300):
+    """As animate_widget_geometry, but only the position slides: the size is set at once.
+    A resize on every frame re-lays and repaints the whole widget (a chart card: its
+    chart, header and stats), dozens of cards at once on a grid; a move only shifts what
+    is already painted. The animation keeps end_rect as its target (anim.target_rect)."""
+    widget.resize(end_rect.size())
+    if not animations_enabled("pinned"):
+        widget.move(end_rect.topLeft())
+        return
+
+    if widget in animations_dict:
+        animations_dict[widget].stop()
+
+    anim = QPropertyAnimation(widget, b"pos")
+    anim.setDuration(duration)
+    anim.setStartValue(start_rect.topLeft())
+    anim.setEndValue(end_rect.topLeft())
+    anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+    anim.target_rect = end_rect
+
+    def _forget(_w=widget, _a=anim):
+        if animations_dict.get(_w) is _a:
+            animations_dict.pop(_w, None)
+
+    anim.finished.connect(_forget)
+    anim.start()
+    animations_dict[widget] = anim
+
+

@@ -8,6 +8,7 @@ from .. import Config
 from ...widgets import SparklineWidget
 from ...logic.logger import log_swallowed
 from ....i18n import upper
+from ..table.headers import header_key
 
 
 def auto_resize_window(dialog, table, resize_window=True):
@@ -73,6 +74,8 @@ def _auto_resize_impl(dialog, table, resize_window=True):
     # visibly flips back and forth while the others are resized.
     for c in range(table.columnCount()):
         raw_header = table.horizontalHeaderItem(c).text() if table.horizontalHeaderItem(c) else ""
+        # By its key, not its text (translated: "Boutons" in French).
+        is_buttons = bool(table.horizontalHeaderItem(c)) and header_key(table.horizontalHeaderItem(c)) == "Buttons"
         header_text = upper(raw_header) # CSS text-transform: uppercase
         max_width = header_fm.horizontalAdvance(header_text) + CELL_PADDING
 
@@ -114,12 +117,13 @@ def _auto_resize_impl(dialog, table, resize_window=True):
 
         if c == 0:
             max_width = min(max_width, 300) # Cap the deck column width but let the user widen it manually
-        elif raw_header == "Buttons" and show_buttons_visual:
+        elif is_buttons and show_buttons_visual:
             # The bar widget reports a tiny size hint; populate gives it 140 px, keep at least that.
-            max_width = max(max_width, table.columnWidth(c), 140)
-        elif raw_header == "Buttons" and not show_buttons_visual:
-            # Text mode only: keep a safe floor and preserve width set during populate.
-            max_width = max(max_width, table.columnWidth(c), 190)
+            # (populate's width, not the current one: see populate.)
+            max_width = max(max_width, getattr(table, "_dd_buttons_width", 140), 140)
+        elif is_buttons and not show_buttons_visual:
+            # Text mode only: keep a safe floor and the width set during populate.
+            max_width = max(max_width, getattr(table, "_dd_buttons_width", 190), 190)
         table.setColumnWidth(c, int(max_width))
 
     # Cell widgets (buttons bar, sparklines, rich labels) only move to the new column

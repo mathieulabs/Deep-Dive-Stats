@@ -175,6 +175,62 @@ def should_use_timespan_transition(
     return bool(use_transition or total_bounds_changed)
 
 
+def timespan_transition_mode(meta, deck_policy="ignore", **kwargs):
+    """Mode for a time chart's update: "window" when only the dates of a Total range changed
+    (another deck, whose first review is on another day), "timespan" for another period,
+    else None (the bars morph in place)."""
+    if not should_use_timespan_transition(meta, deck_policy=deck_policy, **kwargs):
+        return None
+    m = meta or {}
+    if m.get("total_bounds_changed") and not m.get("span_changed"):
+        return "window"
+    return "timespan"
+
+
+def _row_day(row):
+    if isinstance(row, (list, tuple)):
+        return row[0] if row else None
+    if isinstance(row, dict):
+        for k in ("logical_date", "date", "pretty_date"):
+            if row.get(k):
+                return row.get(k)
+    return None
+
+
+def _empty_row(row):
+    if isinstance(row, (list, tuple)):
+        out = list(row)
+        if len(out) >= 2:
+            out[1] = 0
+        return type(row)(out) if isinstance(row, tuple) else out
+    if isinstance(row, dict):
+        return {k: (0 if isinstance(v, (int, float)) and not isinstance(v, bool) else v) for k, v in row.items()}
+    return 0
+
+
+def rows_on_new_days(old_rows, new_rows):
+    """The old rows put on the days of the new ones (a day the old data does not have counts
+    0), or None when they share no day. A Total range of another deck starts on another
+    day: morphed row by row, each bar would turn into another period (and another bin
+    size); on the same days, each bar only changes its height, as on any deck change."""
+    by_day = {}
+    for r in old_rows or []:
+        d = _row_day(r)
+        if d is not None:
+            by_day[str(d)] = r
+    if not by_day:
+        return None
+    out, shared = [], 0
+    for r in new_rows or []:
+        old = by_day.get(str(_row_day(r)))
+        if old is None:
+            out.append(_empty_row(r))
+        else:
+            out.append(old)
+            shared += 1
+    return out if shared else None
+
+
 def update_chart_for_transition(
     chart,
     data,

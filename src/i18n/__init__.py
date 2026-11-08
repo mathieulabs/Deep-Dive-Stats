@@ -288,6 +288,15 @@ def weekday_short(weekday):
     return tr_name(_WEEKDAYS[int(weekday) % 7])
 
 
+_WEEKDAYS_LONG = (N_("Monday"), N_("Tuesday"), N_("Wednesday"), N_("Thursday"), N_("Friday"), N_("Saturday"),
+                  N_("Sunday"))
+
+
+def weekday_long(weekday):
+    """Full day name, weekday from 0 (Monday) to 6 (Sunday) like date.weekday()."""
+    return tr_name(_WEEKDAYS_LONG[int(weekday) % 7])
+
+
 # Numbers. The code formats them the English way ("1,234.5", "70.54%"), like Python does,
 # and num() writes them the way the language does where they are shown. The thousands
 # separator is only there when the Thousands Separator setting is on, in every language.

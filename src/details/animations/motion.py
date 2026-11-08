@@ -38,3 +38,41 @@ def animations_enabled(scope: str = "all") -> bool:
         return mode != MODE_NO_DETAILS
     return True
 
+
+TRANSITION_MORPH = "morph"
+TRANSITION_FADE = "fade"
+TRANSITION_NONE = "none"
+
+
+def transition_style(scope: str = "details") -> str:
+    """How the charts take new data (deck or period change) in scope ("details", the Deep
+    Dive, or "pinned"): "morph", each chart animating from its old data, "fade", its old
+    picture fading into the new one (much lighter), or "none", the new data shown at once.
+    In the Deep Dive, cards that come or go glide and fade unless it is "none"."""
+    key = Config.PINNED_TRANSITION_STYLE if str(scope) == "pinned" else Config.DEEP_DIVE_TRANSITION_STYLE
+    try:
+        from ...config import read_config_value
+        style = str(read_config_value(key, "") or "").strip().lower()
+        return style if style in (TRANSITION_FADE, TRANSITION_NONE) else TRANSITION_MORPH
+    except Exception:
+        return TRANSITION_MORPH
+
+
+
+def _flag(key) -> bool:
+    try:
+        from ...config import read_config_value
+        value = read_config_value(key, True)
+        return True if value is None else bool(value)
+    except Exception:
+        return True
+
+
+def appear_animated() -> bool:
+    """Whether the charts grow in when they first show (else they show at once)."""
+    return _flag(Config.CHART_APPEAR_ANIMATION)
+
+
+def zoom_animated() -> bool:
+    """Whether a zoom glides to its new range (else it jumps there)."""
+    return _flag(Config.ZOOM_ANIMATION)

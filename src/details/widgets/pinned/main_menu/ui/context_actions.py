@@ -127,6 +127,29 @@ def update_setting(manager, wid, key, value):
                     child.update()
         return
 
+    if key == "hidden_series":
+        widget = manager._active_widgets.get(wid)
+        applied = False
+        if widget:
+            from aqt.qt import QWidget
+            for child in widget.findChildren(QWidget):
+                if hasattr(child, "set_hidden_series"):
+                    child.set_hidden_series(value)
+                    applied = True
+        if applied:
+            return
+        manager.refresh()  # (Future Due: the data is read again)
+        return
+
+    if key == "show_percent":
+        widget = manager._active_widgets.get(wid)
+        if widget:
+            from aqt.qt import QWidget
+            for child in widget.findChildren(QWidget):
+                if hasattr(child, "set_percent_mode"):
+                    child.set_percent_mode(bool(value))
+        return
+
     if key == "fit_to_data":
         widget = manager._active_widgets.get(wid)
         if widget:

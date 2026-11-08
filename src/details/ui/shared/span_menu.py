@@ -55,7 +55,7 @@ def populate_span_menu(menu, current_span, current_days, on_update_callback, add
     if callable(on_zoom_callback):
         menu.addSeparator()
         zoom_act = QAction(tr("Set zoom as time span"), menu)
-        zoom_act.setIcon(get_svg_icon("zoom-in", size=14))
+        zoom_act.setIcon(get_svg_icon("zoom-in", size=14, context_ref=menu))
         zoom_act.triggered.connect(lambda _=False: on_zoom_callback())
         menu.addAction(zoom_act)
 
@@ -63,7 +63,7 @@ def populate_span_menu(menu, current_span, current_days, on_update_callback, add
         if not callable(on_zoom_callback):
             menu.addSeparator()
         add_new_act = QAction(tr("Add New Time Span"), menu)
-        add_new_act.setIcon(get_svg_icon("plus", size=14))
+        add_new_act.setIcon(get_svg_icon("plus", size=14, context_ref=menu))
         add_new_act.triggered.connect(on_manage_callback)
         menu.addAction(add_new_act)
 

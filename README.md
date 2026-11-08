@@ -26,9 +26,6 @@ Detailed statistics for Anki, in a separate window or pinned under your deck lis
   overview.
 - Settings per chart, built-in themes and custom colors.
 - Export as PNG, JPEG, PDF or CSV.
-- In English, French, German, Spanish, Italian, Portuguese (Brazil), Russian, Polish,
-  Turkish, Japanese, Korean and Chinese (Simplified). The language follows Anki's;
-  Settings > General > Language sets another one.
 
 ## Install
 
@@ -66,6 +63,14 @@ Writes `dist/Deep_Dive_Stats.ankiaddon`. Add `--check` to only run the audit.
 ## Support
 
 If you find this add-on useful, you can support me on [Ko-fi](https://ko-fi.com/mathieu_).
+
+## Credits
+
+Some of the charts are inspired by
+[Search Stats Extended](https://github.com/Luc-Mcgrady/Anki-Search-Stats-Extended)
+by Luc McGrady.
+
+Icons from [Lucide](https://lucide.dev) (ISC License).
 
 ## License
 

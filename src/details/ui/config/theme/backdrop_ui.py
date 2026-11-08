@@ -47,6 +47,17 @@ from ....logic.logger import log_swallowed
 from .....i18n import tr, N_, tr_name
 
 
+def _card_color(stats_dialog):
+    """The theme's card color (None with Anki's own colors: white cards)."""
+    try:
+        from ....widgets.chart_utils.theme import theme_card_surface
+
+        return theme_card_surface(get_theme_palette(stats_dialog.addon_config.config))
+    except Exception:
+        log_swallowed()
+        return None
+
+
 def _theme_colors(stats_dialog):
     """(bg, accent, is_dark) as currently used by the stats window."""
     flt = get_backdrop_filter(stats_dialog)
@@ -69,6 +80,7 @@ class BackdropPreview(QWidget):
 
     def paintEvent(self, _event):
         bg, accent, dark = _theme_colors(self._stats)
+        card = _card_color(self._stats)
         s = get_backdrop_settings(self._stats.addon_config.config)
         w, h = self.width(), self.height()
         p = QPainter(self)
@@ -94,7 +106,9 @@ class BackdropPreview(QWidget):
                 fill = QColor(255, 255, 255, 12)
                 pen = QColor(255, 255, 255, 18)
             else:
-                fill = QColor(255, 255, 255, 240)
+                # The theme's card color, as the Deep Dive cards (white with Anki's own).
+                fill = QColor(card or "#ffffff")
+                fill.setAlpha(240)
                 pen = QColor(0, 0, 0, 22)
             p.setPen(QPen(pen, 1))
             p.setBrush(fill)

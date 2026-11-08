@@ -128,6 +128,7 @@ def apply_tab_selection_state(dialog: Any, row: int) -> None:
         dialog.show_empty_charts_check.setChecked(conf.get(Config.SHOW_EMPTY_CHARTS, False))
         dialog.dd_collapsible_check.setChecked(conf.get(Config.DEEP_DIVE_CHARTS_COLLAPSIBLE, True))
         dialog.dd_fill_height_check.setChecked(conf.get(Config.DEEP_DIVE_FILL_HEIGHT, True))
+        dialog.dd_shared_height_check.setChecked(conf.get(Config.DEEP_DIVE_SHARED_ROW_HEIGHT, True))
 
         from .dialog_runtime_handlers import binning_index_from_scale
 
@@ -141,6 +142,10 @@ def apply_tab_selection_state(dialog: Any, row: int) -> None:
         dialog.binning_scale_reset_btn.setEnabled(_bin_on)
 
         dialog.thousands_separator_check.setChecked(conf.get(Config.USE_THOUSANDS_SEPARATOR, True))
+        if hasattr(dialog, "chart_help_check"):
+            dialog.chart_help_check.blockSignals(True)
+            dialog.chart_help_check.setChecked(conf.get(Config.SHOW_CHART_HELP, True))
+            dialog.chart_help_check.blockSignals(False)
 
         toolbar_style = conf.get(Config.TOOLBAR_BUTTON_STYLE, Config.TOOLBAR_STYLE_LOGO)
         if not conf.get(Config.SHOW_TOP_TOOLBAR_BUTTON, True):
@@ -195,6 +200,33 @@ def apply_tab_selection_state(dialog: Any, row: int) -> None:
         dialog.animation_scope_combo.blockSignals(True)
         dialog.animation_scope_combo.setCurrentIndex(max(0, idx_scope))
         dialog.animation_scope_combo.blockSignals(False)
+
+        style = str(conf.get(Config.DEEP_DIVE_TRANSITION_STYLE, "morph") or "morph").strip().lower()
+        idx_style = dialog.transition_style_combo.findData(style if style in ("fade", "none") else "morph")
+        dialog.transition_style_combo.blockSignals(True)
+        dialog.transition_style_combo.setCurrentIndex(max(0, idx_style))
+        dialog.transition_style_combo.blockSignals(False)
+
+        style = str(conf.get(Config.PINNED_TRANSITION_STYLE, "morph") or "morph").strip().lower()
+        idx_style = dialog.pinned_transition_style_combo.findData(style if style in ("fade", "none") else "morph")
+        dialog.pinned_transition_style_combo.blockSignals(True)
+        dialog.pinned_transition_style_combo.setCurrentIndex(max(0, idx_style))
+        dialog.pinned_transition_style_combo.blockSignals(False)
+
+        for check, key in (
+            (dialog.appear_animation_check, Config.CHART_APPEAR_ANIMATION),
+            (dialog.zoom_animation_check, Config.ZOOM_ANIMATION),
+        ):
+            value = conf.get(key, True)
+            check.blockSignals(True)
+            check.setChecked(True if value is None else bool(value))
+            check.blockSignals(False)
+        try:
+            from .dialog_runtime_handlers import sync_animation_controls
+
+            sync_animation_controls(dialog)
+        except Exception:
+            log_swallowed()
 
         threshold = conf.get(Config.CHART_ANIMATION_VISIBLE_THRESHOLD, 6)
         try:

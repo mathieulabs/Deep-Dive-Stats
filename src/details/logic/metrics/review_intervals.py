@@ -4,6 +4,11 @@ from aqt import mw
 from .. import Period
 from ..history_provider import HistoryProvider
 
+# The cards of Review Intervals, as in Anki's graph: review and relearning cards (by card
+# type, suspended and buried ones included). For "cards AS cards".
+INTERVAL_CARDS_COND = "cards.type IN (2, 3) AND cards.ivl > 0"
+
+
 class ReviewIntervalsDataProvider:
     @staticmethod
     def fetch_data(addon_config, deck_id=None, is_deleted=False, time_span=Period.TOTAL):
@@ -21,13 +26,10 @@ class ReviewIntervalsDataProvider:
         else:
             did_limit = HistoryProvider._get_did_limit(addon_config, deck_id)
 
-        # Review cards (queue 2) and day learning (queue 3). ivl > 0 leaves out learning
-        # cards, whose interval is negative (seconds).
         query = f"""
-            SELECT ivl
-            FROM cards
-            WHERE queue IN (2, 3) 
-            AND ivl > 0
+            SELECT cards.ivl
+            FROM cards AS cards
+            WHERE {INTERVAL_CARDS_COND}
             {did_limit}
         """
         rows = mw.col.db.all(query)

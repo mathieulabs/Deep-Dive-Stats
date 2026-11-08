@@ -163,7 +163,7 @@ def _box_fields(fam, box, row=None):
 def add_at(manager, target, choice):
     """Pin choice (an add_widget_menu.Choice) at target (see find_target; or {"kind":
     "after", "id", "family", "box", "row"} from the right-click menu), or at the end
-    without one."""
+    without one). Returns the new widget's id (None when nothing was added)."""
     from .add_widget_menu import pin_new
     from .drag_layout import _KEY_FN, _sections, new_line
     from .edit_mode import _config_manager, _defs, _refresh, _section_order
@@ -174,7 +174,7 @@ def add_at(manager, target, choice):
 
         choice.template = ask_text_template(manager, mw)
         if choice.template is None:
-            return
+            return None
     fam = choice.family
     defs = _defs()
     kind = (target or {}).get("kind")
@@ -187,15 +187,15 @@ def add_at(manager, target, choice):
 
     if kind == "after":
         # Right after the widget right clicked (see WidgetRegistry.add).
-        pin_new(manager, choice, after_id=target["id"], refresh=False)
+        new_id = pin_new(manager, choice, after_id=target["id"], refresh=False)
     elif kind == "end":
         mates = [d["id"] for d in defs if family(d) == fam and box_of(d) == target["box"] and row_of(d) == target["row"]]
-        pin_new(manager, choice, after_id=mates[-1] if mates else None, refresh=False)
+        new_id = pin_new(manager, choice, after_id=mates[-1] if mates else None, refresh=False)
     elif kind == "newline":
         new_id = pin_new(manager, choice, fields=_box_fields(fam, target["box"], target["row"]), refresh=False)
         if new_id:
             new_line(manager, new_id, target["box"], target["row"])
-            return
+            return new_id
     elif kind == "newbox":
         used = [box_of(d) for d in defs if family(d) == fam]
         box = (max(used) + 1) if used else 1
@@ -211,17 +211,62 @@ def add_at(manager, target, choice):
         from ..imports import Config
 
         _config_manager(manager).write_config_vals({Config.PINNED_BLOCK_ORDER: order})
-        pin_new(manager, choice, fields=_box_fields(fam, box), refresh=False)
+        new_id = pin_new(manager, choice, fields=_box_fields(fam, box), refresh=False)
     else:
-        pin_new(manager, choice, refresh=False)
+        new_id = pin_new(manager, choice, refresh=False)
     _refresh(manager)
+    return new_id
+
+
+def _after(new_id, fallback):
+    """The spot right after the widget new_id (the next one added from the same gallery
+    goes there, so they stay in the order picked), or fallback when it is not found."""
+    from ... import WidgetRegistry
+
+    d = next((d for d in WidgetRegistry.get_all() if d.get("id") == new_id), None) if new_id else None
+    if d is None:
+        return fallback
+    return {"kind": "after", "id": new_id, "family": family(d), "box": box_of(d), "row": row_of(d)}
 
 
 def open_gallery_at(manager, target):
     from .widget_gallery import open_widget_gallery
 
-    open_widget_gallery(manager, lambda choice: add_at(manager, target, choice),
-                        family=(target or {}).get("family"), where=(target or {}).get("kind"))
+    import copy
+
+    from ... import WidgetRegistry
+    from ..imports import Config
+    from .edit_mode import _refresh
+
+    # The widgets and the order of the boxes as they were: Cancel puts them back.
+    cfg = WidgetRegistry._config()
+    before = (copy.deepcopy(cfg.get(Config.PINNED_WIDGETS, [])), copy.deepcopy(cfg.get(Config.PINNED_BLOCK_ORDER)))
+    spot = {"target": target, "added": 0, "removed": 0}
+
+    def add(choice):
+        # The gallery stays open: each widget goes right after the one added before it.
+        new_id = add_at(manager, spot["target"], choice)
+        spot["target"] = _after(new_id, spot["target"])
+        if new_id:
+            spot["added"] += 1
+        return new_id
+
+    def remove(new_id):
+        WidgetRegistry.remove(new_id)
+        spot["removed"] += 1
+        _refresh(manager)
+
+    done = open_widget_gallery(manager, add, family=(target or {}).get("family"),
+                               where=(target or {}).get("kind"), on_remove=remove)
+    if not done and (spot["added"] or spot["removed"]):
+        cfg = WidgetRegistry._config()
+        cfg[Config.PINNED_WIDGETS] = before[0]
+        if before[1] is None:
+            cfg.pop(Config.PINNED_BLOCK_ORDER, None)
+        else:
+            cfg[Config.PINNED_BLOCK_ORDER] = before[1]
+        WidgetRegistry._write(cfg)
+        _refresh(manager)
 
 
 # -- hover --------------------------------------------------------------------------------

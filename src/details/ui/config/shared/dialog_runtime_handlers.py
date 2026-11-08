@@ -89,6 +89,51 @@ def on_side_view_changed(dialog, state) -> None:
 def on_animation_scope_changed(dialog) -> None:
     scope = str(dialog.animation_scope_combo.currentData() or "all")
     dialog.parent_dialog.addon_config.config[Config.ANIMATION_SCOPE] = scope
+    sync_animation_controls(dialog)
+
+
+def sync_animation_controls(dialog) -> None:
+    """The animation settings that cannot apply under the chosen Animation Mode greyed out
+    (the Deep Dive transitions when its animations are off, and so on)."""
+    scope = str(dialog.animation_scope_combo.currentData() or "all")
+    details_on = scope in ("all", "no_pinned")
+    pinned_on = scope in ("all", "no_details")
+    any_on = scope != "none"
+    for name, on in (
+        ("transition_style_combo", details_on),
+        ("pinned_transition_style_combo", pinned_on),
+        ("appear_animation_check", any_on),
+        ("zoom_animation_check", any_on),
+        ("chart_animation_threshold_spin", any_on),
+    ):
+        w = getattr(dialog, name, None)
+        if w is None:
+            continue
+        w.setEnabled(on)
+        try:
+            label = w.parentWidget().layout().labelForField(w)
+            if label is not None:
+                label.setEnabled(on)
+        except Exception:
+            pass
+
+
+def on_transition_style_changed(dialog) -> None:
+    style = str(dialog.transition_style_combo.currentData() or "morph")
+    dialog.parent_dialog.addon_config.config[Config.DEEP_DIVE_TRANSITION_STYLE] = style
+
+
+def on_pinned_transition_style_changed(dialog) -> None:
+    style = str(dialog.pinned_transition_style_combo.currentData() or "morph")
+    dialog.parent_dialog.addon_config.config[Config.PINNED_TRANSITION_STYLE] = style
+
+
+def on_appear_animation_changed(dialog, state) -> None:
+    dialog.parent_dialog.addon_config.config[Config.CHART_APPEAR_ANIMATION] = bool(state)
+
+
+def on_zoom_animation_changed(dialog, state) -> None:
+    dialog.parent_dialog.addon_config.config[Config.ZOOM_ANIMATION] = bool(state)
 
 
 def on_chart_animation_threshold_changed(dialog, value: int) -> None:
@@ -105,6 +150,13 @@ def on_stats_precision_changed(dialog, value: int) -> None:
 
 def on_thousands_separator_changed(dialog, state) -> None:
     dialog.parent_dialog.addon_config.config[Config.USE_THOUSANDS_SEPARATOR] = bool(state)
+    dialog.parent_dialog.update_dashboard_visibility()
+
+
+def on_chart_help_changed(dialog, state) -> None:
+    """The "?" next to chart titles (widgets.common.chart_help): shown on the next build of the
+    charts (closing the settings rebuilds them)."""
+    dialog.parent_dialog.addon_config.config[Config.SHOW_CHART_HELP] = bool(state)
     dialog.parent_dialog.update_dashboard_visibility()
 
 

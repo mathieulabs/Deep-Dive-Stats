@@ -3,6 +3,7 @@
 from aqt.qt import QWidget
 
 from ...chart_utils.tooltip import show_tooltip_near
+from .data_ops import is_time_mode_impl
 from ..common.metric import (
     change_event_impl,
     get_plot_geometry,
@@ -83,27 +84,41 @@ def mouse_move_event_impl(widget, event):
     lines = None
     if widget.hover_index != was_hover_index or not widget.tooltip_window.isVisible():
         item = display_data[widget.hover_index]
-        total_at_index = sum(item.get(c["key"], 0) for c in widget.series_config)
-        header_val = widget._format_metric_value(total_at_index, compact=False) if total_at_index > 0 else ""
+        pct = bool(getattr(widget, "percent_mode", False))
+        # "Show as %": the bar's count in the header, each series as "share (count)".
+        raw_time = is_time_mode_impl(widget)
+        if pct:
+            total_at_index = float(item.get("_raw_total", 0) or 0)
+            header_val = widget._format_metric_value(total_at_index, with_unit=raw_time, compact=False, raw=True) if total_at_index > 0 else ""
+        else:
+            total_at_index = sum(item.get(c["key"], 0) for c in widget.series_config)
+            header_val = widget._format_metric_value(total_at_index, compact=False) if total_at_index > 0 else ""
         lines = [{"text": item["pretty_date"], "header": True, "value": header_val}]
-        for config in widget.series_config:
+        # One part only (a chart not split, e.g. Card Counts over Time without its
+        # breakdown): its value is the header's, no line of its own with a colour dot.
+        for config in (widget.series_config if len(widget.series_config) > 1 or pct else ()):
             val = item.get(config["key"], 0)
             if val > 0:
+                text = widget._format_metric_value(
+                    val,
+                    with_unit=widget._is_time_mode(),
+                    compact=False,
+                )
+                if pct:
+                    raw = item.get("_raw_" + config["key"], 0)
+                    text = f"{text} ({widget._format_metric_value(raw, with_unit=raw_time, compact=False, raw=True)})"
                 lines.append(
                     {
                         "id": config["key"],
                         "text": tr_name(config["label"]),
-                        "value": widget._format_metric_value(
-                            val,
-                            with_unit=widget._is_time_mode(),
-                            compact=False,
-                        ),
+                        "value": text,
                         "color": config["color"],
                     }
                 )
-        cum_data = widget._get_cumulative()
-        running_total = cum_data[widget.hover_index]
-        lines.append({"id": "total", "text": tr("Total: {value}", value=widget._format_metric_value(running_total, compact=False)), "bold": True})
+        if not pct:
+            cum_data = widget._get_cumulative()
+            running_total = cum_data[widget.hover_index]
+            lines.append({"id": "total", "text": tr("Total: {value}", value=widget._format_metric_value(running_total, compact=False)), "bold": True})
 
     show_tooltip_near(
         widget,

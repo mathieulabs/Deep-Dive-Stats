@@ -87,6 +87,10 @@ def build_future_due_section(manager, deck_identifier, period_range, row_data, t
     manager._update_dd_widget_setting("future_due", "time_span_idx", default_idx, refresh=False)
 
     show_backlog = manager._get_dd_widget_setting("future_due", "show_backlog", False)
+    from ....logic.metrics.future_due import resolve_breakdown
+
+    bd_mode = resolve_breakdown(manager._get_dd_widget_setting("future_due", "breakdown", None),
+                                manager._get_dd_widget_setting("future_due", "show_breakdown", False))
     is_skeleton = getattr(manager, "_is_skeleton", False)
 
     if is_skeleton:
@@ -98,6 +102,8 @@ def build_future_due_section(manager, deck_identifier, period_range, row_data, t
             is_deleted,
             active_range,
             include_backlog=show_backlog,
+            breakdown=bd_mode,
+            hidden_parts=manager._get_dd_widget_setting("future_due", "hidden_series", None) or (),
         )
 
     if not is_skeleton:
@@ -134,6 +140,8 @@ def build_future_due_section(manager, deck_identifier, period_range, row_data, t
         show_backlog=show_backlog,
     )
     chart.binning_override = binning_override
+    chart.tooltip_hidden = list(manager._get_dd_widget_setting("future_due", "tooltip_hidden", None) or [])
+    chart.set_percent_mode(bool(manager._get_dd_widget_setting("future_due", "show_percent", False)), animate=False)
     apply_chart_display_config(
         chart,
         opacity=manager._get_dd_widget_setting("future_due", "chart_opacity", 100),
@@ -155,45 +163,50 @@ def build_future_due_section(manager, deck_identifier, period_range, row_data, t
         parent=manager.dialog,
     )
 
-    state = {"range_idx": default_idx}
-    backlog_cb = manager._make_styled_checkbox(tr("Backlog"), checked=show_backlog, parent=header_widget)
-    header_lay.addWidget(backlog_cb)
+    state = {"range_idx": default_idx, "backlog": bool(show_backlog), "breakdown": bd_mode}
 
-    def _refresh_chart(new_data, cur_backlog, transition_mode=None):
-        chart.show_backlog = cur_backlog
+    def _refetch(transition_mode=None):
+        cur_is_deleted = manager.last_row_data.get("is_deleted", False) if manager.last_row_data else False
+        new_data = FutureDueDataProvider.fetch_data(
+            manager.addon_config,
+            manager.last_deck_identifier,
+            cur_is_deleted,
+            fd_ranges[state["range_idx"]],
+            include_backlog=state["backlog"],
+            breakdown=state["breakdown"],
+            hidden_parts=manager._get_dd_widget_setting("future_due", "hidden_series", None) or (),
+        )
+        chart.show_backlog = state["backlog"]
         with local_chart_animation_batch(chart):
             chart.update_data(new_data, transition_mode=transition_mode)
         refresh_chart_header_stats(header_widget, chart)
         if hasattr(manager, "_refresh_bottom_stats"):
             manager._refresh_bottom_stats()
 
+    # "Breakdown": the bars split in three, by type (learning / young / mature) or by
+    # result (the reviews FSRS expects you to pass / fail), chosen in the button's menu.
+    from ....widgets.charts.future_due.breakdown_button import setup_breakdown_button
+
+    def on_breakdown(kind):
+        state["breakdown"] = kind
+        manager._update_dd_widget_setting("future_due", "breakdown", kind or "none", refresh=False)
+        _refetch(transition_mode="timespan")
+
+    breakdown_btn = manager._make_styled_checkbox(tr("Breakdown"), checked=bd_mode is not None, parent=header_widget)
+    setup_breakdown_button(breakdown_btn, bd_mode, on_breakdown)
+    header_lay.addWidget(breakdown_btn)
+
+    backlog_cb = manager._make_styled_checkbox(tr("Backlog"), checked=show_backlog, parent=header_widget)
+    header_lay.addWidget(backlog_cb)
+
     def on_future_due_radio(idx):
         state["range_idx"] = idx
-        cur_deck = manager.last_deck_identifier
-        cur_is_deleted = manager.last_row_data.get("is_deleted", False) if manager.last_row_data else False
-        cur_backlog = backlog_cb.isChecked()
-        new_data = FutureDueDataProvider.fetch_data(
-            manager.addon_config,
-            cur_deck,
-            cur_is_deleted,
-            fd_ranges[idx],
-            include_backlog=cur_backlog,
-        )
-        _refresh_chart(new_data, cur_backlog)
+        _refetch()
         manager._update_dd_widget_setting("future_due", "time_span_idx", idx, refresh=False)
 
     def on_backlog_toggled(checked):
-        cur_deck = manager.last_deck_identifier
-        cur_is_deleted = manager.last_row_data.get("is_deleted", False) if manager.last_row_data else False
-        cur_range = fd_ranges[state["range_idx"]]
-        new_data = FutureDueDataProvider.fetch_data(
-            manager.addon_config,
-            cur_deck,
-            cur_is_deleted,
-            cur_range,
-            include_backlog=checked,
-        )
-        _refresh_chart(new_data, checked, transition_mode="timespan")
+        state["backlog"] = bool(checked)
+        _refetch(transition_mode="timespan")
         manager._update_dd_widget_setting("future_due", "show_backlog", checked, refresh=False)
 
     backlog_cb.toggled.connect(on_backlog_toggled)

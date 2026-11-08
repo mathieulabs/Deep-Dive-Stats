@@ -441,6 +441,37 @@ class RowGroupedStatContainer(QFrame):
         except Exception:
             log_swallowed()
 
+    def place_at_end(self, card):
+        """A card put back on (Deep Dive's manager): at the end, after the last card shown,
+        never on a line of its own above the others."""
+        key = card_key(card)
+        nums = self._dense_row_nums()  # card is still hidden: the lines of the others
+        shown = [c for c in self._shown_cards() if c is not card]
+        last = max((nums.get(card_key(c), 0) for c in shown), default=0)
+        if key:
+            if last:
+                nums[key] = last
+            else:
+                nums.pop(key, None)
+        self._row_nums = normalize_row_nums(nums)
+        if card in self.cards:
+            self.cards.remove(card)
+            self.cards.append(card)
+        self._save_row_nums()
+        self._save_dashboard_order()
+
+    def layout_state(self):
+        """(cards in order, line numbers): to put them back as they were (Cancel)."""
+        return list(self.cards), dict(self._row_nums)
+
+    def restore_layout_state(self, state):
+        cards, nums = state
+        self.cards = [c for c in cards if c in self.cards] + [c for c in self.cards if c not in cards]
+        self._row_nums = normalize_row_nums(nums)
+        self._save_row_nums()
+        self._save_dashboard_order()
+        self._rebuild_row_groups()
+
     def apply_saved_order(self, ordered_keys):
         if not ordered_keys:
             return

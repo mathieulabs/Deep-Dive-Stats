@@ -85,6 +85,7 @@ def apply_theme_context(widget, context=ThemeContext.DETAILS, include_children=F
             obj.setProperty("deepdivestats_ignore_forced_dark_theme", ignore_forced)
         except Exception:
             continue
+    _ANCESTOR_FLAGS.clear()  # the flags just changed (see _memo_flag)
 
 
 def resolve_widget_theme_context(widget, default=ThemeContext.DETAILS):
@@ -213,7 +214,41 @@ def _normalize_theme_mode(mode):
     return None
 
 
+# The theme flags of a widget's ancestors, looked up again at most every 0.2 s: a chart
+# asked for them on every bar it painted (30 lookups up 20 ancestors per paint, a quarter
+# of a histogram's paint time, measured), and they only change with a theme switch.
+_ANCESTOR_FLAGS = {}
+_ANCESTOR_TTL = 0.2
+
+
+def _memo_flag(kind, widget, compute):
+    import time
+
+    key = (kind, id(widget))
+    now = time.monotonic()
+    hit = _ANCESTOR_FLAGS.get(key)
+    if hit is not None and now - hit[0] < _ANCESTOR_TTL:
+        return hit[1]
+    val = compute(widget)
+    if len(_ANCESTOR_FLAGS) > 2048:
+        _ANCESTOR_FLAGS.clear()
+    _ANCESTOR_FLAGS[key] = (now, val)
+    return val
+
+
 def _widget_forced_mode(widget):
+    if widget is None:
+        return None
+    return _memo_flag("forced", widget, _widget_forced_mode_now)
+
+
+def _widget_ignore_force_dark(widget) -> bool:
+    if widget is None:
+        return False
+    return _memo_flag("ignore", widget, _widget_ignore_force_dark_now)
+
+
+def _widget_forced_mode_now(widget):
     try:
         for w in _iter_widget_ancestors(widget):
             mode = _normalize_theme_mode(w.property("deepdivestats_forced_theme_mode"))
@@ -226,7 +261,7 @@ def _widget_forced_mode(widget):
     return None
 
 
-def _widget_ignore_force_dark(widget) -> bool:
+def _widget_ignore_force_dark_now(widget) -> bool:
     try:
         for w in _iter_widget_ancestors(widget):
             if bool(w.property("deepdivestats_ignore_forced_dark_theme")):
@@ -302,6 +337,7 @@ class _ThemeManager:
 
     def invalidate_cache(self):
         self._cache.clear()
+        _ANCESTOR_FLAGS.clear()  # the widgets' theme flags may have changed with it
 
     def set_details_theme_mode(self, mode):
         mode = _normalize_theme_mode(mode) or "native"
@@ -421,6 +457,7 @@ class _ThemeManager:
             accent = QColor("#58a6ff" if is_dark else "#3b82f6")
             theme_palette_applied = False
             _tpal_total_line = None
+            surface = None  # the theme's card color (bg_surface), when a theme palette is on
 
             if context == ThemeContext.DETAILS:
                 try:
@@ -434,6 +471,7 @@ class _ThemeManager:
                         text_primary = QColor(tpal.get("text_primary", text_primary.name()))
                         text_secondary = QColor(tpal.get("text_secondary", text_secondary.name()))
                         bg = QColor(tpal.get("bg_root", bg.name()))
+                        surface = theme_card_surface(tpal)
                         border = QColor(tpal.get("border_strong", border.name()))
                         accent = QColor(tpal.get("accent", accent.name()))
                         _tpal_total_line = tpal.get("total_line") or None
@@ -474,6 +512,7 @@ class _ThemeManager:
                         text_primary = QColor(tpal.get("text_primary", text_primary.name()))
                         text_secondary = QColor(tpal.get("text_secondary", text_secondary.name()))
                         bg = QColor(tpal.get("bg_root", bg.name()))
+                        surface = theme_card_surface(tpal)
                         border = QColor(tpal.get("border_strong", border.name()))
                         accent = QColor(tpal.get("accent", accent.name()))
                         _tpal_total_line = tpal.get("total_line") or None
@@ -525,6 +564,7 @@ class _ThemeManager:
                 "is_dark": bool(is_dark),
                 # True when an add-on theme palette is active (not Anki native).
                 "themed": bool(theme_palette_applied),
+                "surface": QColor(surface).name() if surface and QColor(surface).isValid() else None,
             }
             self._cache[key] = colors
         return {
@@ -539,6 +579,7 @@ class _ThemeManager:
             "total_line": QColor(colors["total_line"]),
             "is_dark": bool(colors["is_dark"]),
             "themed": bool(colors.get("themed", False)),
+            "surface": QColor(colors["surface"]) if colors.get("surface") else None,
         }
 
     def subscribe(self, callback):
@@ -697,6 +738,7 @@ _NON_STYLE_KEYS = frozenset((
     Config.DETAILS_TABLE_DRAWER_AUTO_CLOSE,
     Config.DETAILS_TABLE_DRAWER_SHORTCUT,
     Config.DEEP_DIVE_FILL_HEIGHT,
+    Config.DEEP_DIVE_SHARED_ROW_HEIGHT,
     Config.DETAILS_TABLE_DRAWER_OPEN,
     Config.DETAILS_TABLE_DRAWER_SIZES,
     Config.DETAILS_TIME_TAB_INDEX,
@@ -799,3 +841,21 @@ def settings_dialog_qss_for(widget_or_context=None, conf=None, default=ThemeCont
         bool(theme_manager.get_night_mode()),
         get_context_theme_config(widget_or_context, conf, default) or None,
     )
+
+
+def theme_card_surface(palette):
+    """The card color of a theme palette (its bg_surface), or None for Anki's own colors
+    (the native preset gives its look-alike palette, whose cards stay white)."""
+    if not isinstance(palette, dict):
+        return None
+    surface = palette.get("bg_surface")
+    if not surface:
+        return None
+    try:
+        native = ThemePalettes.ANKI_LIKE_PALETTE_LIGHT
+        if (str(surface).lower() == native["bg_surface"].lower()
+                and str(palette.get("bg_root", "")).lower() == native["bg_root"].lower()):
+            return None
+    except Exception:
+        log_swallowed()
+    return surface

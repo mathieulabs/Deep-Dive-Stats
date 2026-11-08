@@ -37,7 +37,7 @@ from aqt.qt import (
     QWidget,
 )
 
-from ...animations.motion import animations_enabled
+from ...animations.motion import animations_enabled, zoom_animated
 from ...logic.logger import log_swallowed
 from .geometry import ChartGeometry
 from .theme import palette_memo
@@ -194,6 +194,7 @@ def _can_animate(widget):
             and widget.width() > 40
             and widget.height() > 40
             and animations_enabled(_scope(widget))
+            and zoom_animated()
             and _in_viewport(widget)
         )
     except RuntimeError:
@@ -211,7 +212,12 @@ def _rehover(chart):
             return
         g = QCursor.pos()
         local = chart.mapFromGlobal(g)
-        if not chart.rect().contains(local):
+        # Only when the mouse is really on the chart: not when something covers it there
+        # (the quick tour, a dialog), or its tooltip showed and stayed with no mouse to move.
+        top = QApplication.widgetAt(g)
+        covered = (top is not None and top is not chart and not chart.isAncestorOf(top)
+                   and top.window() is chart.window())  # (its own tooltip is a window apart)
+        if not chart.rect().contains(local) or covered:
             if getattr(chart, "hover_index", -1) not in (-1, None):
                 chart.hover_index = -1  # mouse elsewhere: the old index is meaningless now
             return
@@ -258,8 +264,13 @@ def camera_zoom(*charts):
         if _depth == 0:
             jobs = list(_pending.values())
             _pending.clear()
+            # Many charts zooming together (the linked zoom): only the chart under the mouse
+            # (the one zoomed) draws its bars on every frame; the others slide their pictures
+            # (as Retention does), about 0.3 ms a frame instead of 2 to 15: with 7 charts the
+            # frames took up to 60 ms (measured) and every chart jerked.
+            many = len(jobs) >= _PICTURES_FROM
             for chart, old in jobs:
-                _start(chart, old)
+                _start(chart, old, pictures=many and not _under_mouse(chart))
 
 
 def active():
@@ -297,7 +308,17 @@ def _vector_capable(chart):
     )
 
 
-def _start(chart, old):
+_PICTURES_FROM = 4
+
+
+def _under_mouse(chart):
+    try:
+        return bool(chart.underMouse())
+    except RuntimeError:
+        return False
+
+
+def _start(chart, old, pictures=False):
     try:
         if not _can_animate(chart) or (chart.width(), chart.height()) != old["size"]:
             chart.update()
@@ -310,7 +331,7 @@ def _start(chart, old):
         new = _snapshot(chart, ref_year)
         oi, ni = old.get("index"), new.get("index")
         same_rows = old.get("rows_id") is not None and old.get("rows_id") == new.get("rows_id")
-        if _vector_capable(chart) and same_rows and oi and ni and oi[2] == ni[2] and oi != ni:
+        if not pictures and _vector_capable(chart) and same_rows and oi and ni and oi[2] == ni[2] and oi != ni:
             _VectorZoom(chart, old, new).start()
         else:
             _PixmapZoom(chart, [chart], old, new).start()
@@ -366,6 +387,8 @@ def _grab_without_children(widget):
 
 
 _NO_PAINT = object()
+_LIVE_ZOOMS = set()  # the vector zooms running (see _VectorZoom._skip_this_frame)
+_ZOOM_SEQ = 0
 
 
 def _suppress_paint(widget):
@@ -493,6 +516,19 @@ class _Overlay(QWidget):
         """Work the first frames would do once (caches); done before the clock starts."""
 
     def _begin_clock(self):
+        plan = getattr(self, "_wait_plan", None)
+        if plan:
+            # Part of a refresh's cascade (another deck in Total): its first frame (the old
+            # chart) stays until its turn, the charts before it in the window started.
+            from ...animations.anim_driver import run_in_turn
+
+            self._wait_plan = None
+            try:
+                duration = int(self._anim.duration())
+            except RuntimeError:
+                return
+            run_in_turn(self._host, plan, self._begin_clock, duration)
+            return
         try:
             self._warm()
         except Exception:
@@ -519,6 +555,7 @@ class _Overlay(QWidget):
                 self.repaint()
         except RuntimeError:
             pass
+        _LIVE_ZOOMS.discard(self)
         if self._memo_state["memo"]:
             self._memo_state["memo"] = False
             palette_memo(False)
@@ -688,12 +725,13 @@ def _bin_step(chart, span):
         return 1
 
 
-def _data_cache(chart):
+def _data_cache(chart, full=None):
     """What a zoom works out from the chart's whole data (bins of each size, running totals),
     kept on the chart from one zoom to the next while the data and the way it is binned stay
     the same. Before, every zoom binned the whole data again (5 to 15 ms per chart, 25 ms
     for 4599 days the first time) before its first frame."""
-    full = chart._full_data
+    if full is None:
+        full = chart._full_data
     sig = (
         type(chart).__name__,
         len(full),
@@ -727,7 +765,9 @@ def _row_total(chart, row):
 
 
 def _scale_row(chart, row, f):
-    if f == 1.0:
+    # A chart of averages (seconds per review): a bin's value is already per review, its
+    # height does not grow with the bin size.
+    if f == 1.0 or getattr(chart, "_bins_are_averages", False):
         return row
     if isinstance(row, (list, tuple)) and len(row) >= 2:
         out = list(row)
@@ -807,9 +847,9 @@ class _VectorZoom(_Overlay):
         self._end_max = (ends[0][0], ends[1][0])
         # Running total (cumulative line) of the start and end windows: its scale glides
         # from one to the other (see charts.common.zoom_view.cumulative_range).
-        full = chart._full_data
+        full = self._src()
         n_rows = len(full)
-        data_cache = _data_cache(chart)
+        data_cache = _data_cache(chart, full)
         prefix = data_cache["prefix"]
         if prefix is None:
             prefix = [0.0]
@@ -826,6 +866,12 @@ class _VectorZoom(_Overlay):
 
         self._cum_ends = (max(1.0, window_total(*self._a)), max(1.0, window_total(*self._b)))
         self._end_ratio = tuple((x[1] / x[0]) if x[0] > 0 else 0.0 for x in ends)
+
+    _src_rows = None  # rows the zoom runs on, when not the chart's own (see window_update)
+
+    def _src(self):
+        rows = self._src_rows
+        return self._chart._full_data if rows is None else rows
 
     def _fine_weight(self, span):
         """0: bars at the coarse bin size, 1: at the fine one."""
@@ -852,16 +898,16 @@ class _VectorZoom(_Overlay):
     def _slice_binned(self, s, e, k):
         """Bins of size k for rows [s, e) (s a multiple of k). The whole data is binned once
         per size and sliced: the same bins as binning the slice itself, at no cost per frame."""
-        cache = _data_cache(self._chart)["bins"]
+        cache = _data_cache(self._chart, self._src())["bins"]
         allk = cache.get(k)
         if allk is None:
-            allk = cache[k] = self._binned(self._chart._full_data, k)
+            allk = cache[k] = self._binned(self._src(), k)
         i0 = s // k
         return allk[i0 : i0 + int(math.ceil((e - s) / float(k)))]
 
     def _bins(self, v0, v1, k):
         """(first row index, bins at size k) covering [v0, v1)."""
-        n = len(self._chart._full_data)
+        n = len(self._src())
         s = int(math.floor(v0 / k)) * k
         e = min(n, int(math.ceil(v1 / k)) * k)
         if e <= s:
@@ -886,7 +932,7 @@ class _VectorZoom(_Overlay):
         Values are per row of the bin, times k_glide (see _build_frame).
         Returns (first row, bars, [(x, width)] in fine bins from the first bar)."""
         c = self._chart
-        full = c._full_data
+        full = self._src()
         n = len(full)
         kf, kc = self._kf, self._kc
         # While the coarse bars fade into the fine ones (w < FADE_W) the fine bars keep
@@ -929,7 +975,7 @@ class _VectorZoom(_Overlay):
         At the start and end of the animation every bar in view counts fully, as in the
         chart itself."""
         c = self._chart
-        n = len(c._full_data)
+        n = len(self._src())
         span = max(1e-9, v1 - v0)
         band = EDGE_BAND * span
         ends = 1.0 - _smooth(min(e, 1.0 - e) / 0.12)
@@ -962,7 +1008,7 @@ class _VectorZoom(_Overlay):
         """(offset, view) in bars of size k for the window [v0, v1), bars starting at row s.
         The chart draws a last, shorter bin (when the row count is not a multiple of k) as a
         full bar, so rows are mapped the same way."""
-        n = len(self._chart._full_data)
+        n = len(self._src())
         full_bins = n // k
         rest = n - full_bins * k
 
@@ -977,12 +1023,13 @@ class _VectorZoom(_Overlay):
         """Running total of the real counts of `count` bins of size k from row s. The bars
         drawn are rescaled (k_glide) so their height stays continuous while the bin size
         changes; the total line must not be: it would overshoot the real total."""
-        return self._cumulative_of(s, k, self._slice_binned(s, min(len(self._chart._full_data), s + count * k), k))
+        return self._cumulative_of(s, k, self._slice_binned(s, min(len(self._src()), s + count * k), k))
 
     def _cumulative_of(self, s, k, rows):
         """The running total line the chart itself would draw for these bars."""
         c = self._chart
-        saved = {a: getattr(c, a, None) for a in ("data", "_zoom_start", "_zoom_end")}
+        saved = {a: getattr(c, a, None) for a in ("data", "_zoom_start", "_zoom_end", "_full_data")}
+        c._full_data = self._src()
         c.data = rows
         c._zoom_start, c._zoom_end = s, s + len(rows) * k
         c._forced_bin_step = 1
@@ -999,7 +1046,8 @@ class _VectorZoom(_Overlay):
         c = self._chart
         # Before the chart is set up for this frame (_cumulative_of sets and restores it).
         cum_true = self._true_cumulative(s, k, len(rows)) if getattr(c, "cumulative_visible", False) else None
-        saved = {a: getattr(c, a, None) for a in ("data", "_zoom_start", "_zoom_end", "hover_index")}
+        saved = {a: getattr(c, a, None) for a in ("data", "_zoom_start", "_zoom_end", "hover_index", "_full_data")}
+        c._full_data = self._src()
         c.data = rows
         c._zoom_start, c._zoom_end = s, s + len(rows) * k
         c.hover_index = -1
@@ -1044,6 +1092,9 @@ class _VectorZoom(_Overlay):
 
     def _on_value(self, value):
         self._t = float(value)
+        if self._skip_this_frame():
+            self._fire_progress()
+            return
         try:
             self._build_frame()
         except Exception:
@@ -1051,6 +1102,36 @@ class _VectorZoom(_Overlay):
             self._frame = None
         self.update()
         self._fire_progress()
+
+    # Many charts zooming together (the linked zoom of Deep Dive or the pinned charts): each
+    # frame of a chart is a full drawing of it (about 3 ms in Python), so 7 charts took 20 to
+    # 28 ms a frame instead of 16 and every chart jerked. Then the chart under the mouse (the
+    # one zoomed) keeps every frame and the others draw every other frame, in turns, half of
+    # them on each frame: smooth where one looks, the frame time back under 16 ms.
+    HALF_RATE_FROM = 4
+
+    def start(self):
+        _LIVE_ZOOMS.add(self)  # counted before the first frame of any of them
+        global _ZOOM_SEQ
+        _ZOOM_SEQ += 1
+        self._seq = _ZOOM_SEQ  # alternate turns: half of the charts draw on each frame
+        super().start()
+
+    def _skip_this_frame(self):
+        if self._t >= 0.999 or self._t <= 0.0:
+            return False  # the first and last frames are always drawn
+        if not hasattr(self, "_rate_phase"):
+            live = [z for z in _LIVE_ZOOMS if getattr(z, "_t", 1.0) < 0.999]
+            try:
+                lead = bool(self._host.underMouse())
+            except RuntimeError:
+                lead = False
+            self._rate_phase = None if (lead or len(live) < self.HALF_RATE_FROM) else (getattr(self, "_seq", 0) % 2)
+            self._ticks = 0
+        if self._rate_phase is None:
+            return False
+        self._ticks += 1
+        return (self._ticks + self._rate_phase) % 2 == 1
 
     RATIO_FOLLOW = True
     CLIP_ALLOWED = 0.95  # the axis may go this far under the tallest bar in view (see _steady_bars)
@@ -1066,7 +1147,7 @@ class _VectorZoom(_Overlay):
         The last frame is exactly the chart."""
         ks, ke = self._k_start, self._k_end
         ma, mb = self._end_max
-        if abs(ks - ke) < 1e-9 or ma <= 0 or mb <= 0:
+        if abs(ks - ke) < 1e-9 or ma <= 0 or mb <= 0 or getattr(self._chart, "_bins_are_averages", False):
             return mx
         kg = math.exp(math.log(ks) + (math.log(ke) - math.log(ks)) * e)
         f0, f1 = ks / ma, ke / mb
@@ -1087,6 +1168,15 @@ class _VectorZoom(_Overlay):
         return out
 
     def _warm(self):
+        # The bins of every size the animation goes through are worked out now (the data is
+        # binned once per size, then sliced): the frames where a new size first shows paid
+        # for it (5 to 15 ms, the worst frames of a zoom).
+        n = len(self._src())
+        for e in (0.0, 0.5, 1.0):  # the coarse and the fine size (bins cached per size)
+            v0, v1 = _zoom_path(self._a, self._b, e)
+            v0, v1 = max(0.0, v0), min(float(n), v1)
+            if v1 - v0 >= 1e-3:
+                self._layers(v0, v1, e)
         # The axis maximum of every step of the animation is looked up (and cached) now, so
         # the first frames, which already draw two layers, do not also pay for it.
         if self._camera_axis():
@@ -1166,7 +1256,7 @@ class _VectorZoom(_Overlay):
             return cache[g]
         e = min(1.0, g * self.HOLD_STEP)
         v0, v1 = _zoom_path(self._a, self._b, e)
-        n = len(self._chart._full_data)
+        n = len(self._src())
         v0, v1 = max(0.0, v0), min(float(n), v1)
         val = None
         if v1 - v0 >= 1e-3:
@@ -1207,7 +1297,7 @@ class _VectorZoom(_Overlay):
     def _build_frame(self):
         e = _EASE.valueForProgress(max(0.0, min(1.0, self._t)))
         v0, v1 = _zoom_path(self._a, self._b, e)
-        n = len(self._chart._full_data)
+        n = len(self._src())
         v0, v1 = max(0.0, v0), min(float(n), v1)
         if v1 - v0 < 1e-3:
             self._frame = None
@@ -1356,6 +1446,208 @@ class _VectorZoom(_Overlay):
         p.end()
 
 
+class _BlendZoom(_VectorZoom):
+    """A zoom over rows whose values also change: from_rows (the old values, on the same
+    days) at the start, the zoom's rows at the end, mixed with the view's easing."""
+
+    def __init__(self, chart, old, new, rows, from_rows, duration):
+        self._src_rows = rows
+        self._from_rows = from_rows
+        self._from_bins = {}
+        self._blend_w = 1.0
+        super().__init__(chart, old, new)
+        self._anim.setDuration(int(duration))
+        # The start and end of the zoom, worked out again: the start on the old values.
+        k_a = _bin_step(chart, self._a[1] - self._a[0])
+        k_b = _bin_step(chart, self._b[1] - self._b[0])
+        ends = []
+        for (w0, w1), k, e in ((self._a, k_a, 0.0), (self._b, k_b, 1.0)):
+            self._blend_w = e
+            s0, bins = self._bins(w0, w1, k)
+            ends.append(self._targets(s0, k, bins, w0, w1, e))
+        self._blend_w = None
+        self._end_max = (ends[0][0], ends[1][0])
+        # Tallest bar per day at the start and at the end (see _value_weight).
+        self._per_day = (max(1e-9, ends[0][0] / float(k_a)), max(1e-9, ends[1][0] / float(k_b)))
+        self._end_ratio = tuple((x[1] / x[0]) if x[0] > 0 else 0.0 for x in ends)
+
+        def total(src, w0, w1):
+            i0, i1 = max(0, int(math.floor(w0))), min(len(src), int(math.ceil(w1)))
+            return sum(_row_total(chart, r) for r in src[i0:i1])
+
+        self._cum_ends = (max(1.0, total(from_rows, *self._a)), max(1.0, total(rows, *self._b)))
+
+    def _split_state(self, v0, v1, e):
+        """(p, k_glide): p = 1 when the fine bars are at their own place, 0 when each one
+        lies on its coarse bar."""
+        k_glide = math.exp(math.log(self._k_start) + (math.log(self._k_end) - math.log(self._k_start)) * e)
+        p = e if self._k_end < self._k_start else 1.0 - e
+        return p, k_glide
+
+    def _layers(self, v0, v1, e):
+        """The fine bars only, no fade: each one starts (or ends) exactly on the coarse bar
+        its middle falls in, same place, same width, same height, then moves to its own
+        place and value. Fine bars lying on one coarse bar draw it once (they are the same
+        rectangle), so the first and last frames are exactly the two charts."""
+        c = self._chart
+        p, k_glide = self._split_state(v0, v1, e)
+        kf, kc = self._kf, self._kc
+        if kf == kc:
+            s, rows = self._bins(v0, v1, kf)
+            return [(s, kf, [_scale_row(c, r, k_glide / kf) for r in rows], 1.0, None)]
+        n = len(self._src())
+        (oml, omr), (nml, nmr) = self._old["plot"], self._new["plot"]
+        plot_w = max(10.0, c.width() - (oml + (nml - oml) * e) - (omr + (nmr - omr) * e))
+        s, fine = self._bins(v0, v1, kf)
+        sc = int(math.floor(s / kc)) * kc
+        ec = min(n, int(math.ceil((s + len(fine) * kf) / kc)) * kc)
+        coarse = self._slice_binned(sc, ec, kc)
+        slot_px = plot_w / max(1e-6, (v1 - v0) / kf)
+        r_f = self._bar_ratio(slot_px)
+        r_c = self._bar_ratio(slot_px * kc / kf)
+        rows, geom = [], []
+        for i, row in enumerate(fine):
+            center = s + i * kf + kf / 2.0
+            j = min(len(coarse) - 1, max(0, int((center - sc) // kc))) if coarse else -1
+            own = _scale_row(c, row, k_glide / kf)
+            if j < 0:
+                rows.append(own)
+                geom.append((i + (1.0 - r_f) / 2.0, r_f))
+                continue
+            parent = _scale_row(c, coarse[j], k_glide / kc)
+            p0 = (sc + j * kc - s) / float(kf)
+            p1 = (min(n, sc + (j + 1) * kc) - s) / float(kf)
+            pw = (p1 - p0) * r_c
+            px = (p0 + p1) / 2.0 - pw / 2.0
+            ox, ow = i + (1.0 - r_f) / 2.0, r_f
+            rows.append(_lerp_row(c, parent, own, p))
+            geom.append((px + (ox - px) * p, pw + (ow - pw) * p))
+        return [(s, kf, rows, 1.0, {"geom": geom})]
+
+    def _average(self, v0, v1, e):
+        p, k_glide = self._split_state(v0, v1, e)
+        avg = 0.0
+        for k, share in ((self._kf, p), (self._kc, 1.0 - p)):
+            if share <= 0.0:
+                continue
+            s, rows = self._bins(v0, v1, k)
+            rows = [_scale_row(self._chart, r, k_glide / k) for r in rows]
+            avg += share * self._targets(s, k, rows, v0, v1, e)[1]
+        return avg
+
+    def _value_weight(self, e):
+        """Share of the new values at eased progress e. The axis glides from the old maximum
+        to the new one on a log scale; the values are mixed so the tallest bar follows that
+        glide. A plain linear mix stayed near the old values while the axis had already come
+        down a long way (deck of 2 years to one of a few months): the bars shot up past the
+        top, then came back down."""
+        m0, m1 = self._per_day
+        if abs(m0 - m1) <= 1e-6 * max(m0, m1):
+            return e
+        g = math.exp(math.log(m0) * (1.0 - e) + math.log(m1) * e)
+        return max(0.0, min(1.0, (m0 - g) / (m0 - m1)))
+
+    def _slice_binned(self, s, e, k):
+        to = super()._slice_binned(s, e, k)
+        w = self._blend_w
+        if w is None:
+            w = self._value_weight(_EASE.valueForProgress(max(0.0, min(1.0, self._t))))
+        if w >= 1.0:
+            return to
+        allk = self._from_bins.get(k)
+        if allk is None:
+            allk = self._from_bins[k] = self._binned(self._from_rows, k)
+        i0 = s // k
+        fr = allk[i0 : i0 + len(to)]
+        return [_lerp_row(self._chart, f, t, w) for f, t in zip(fr, to)]
+
+
+def rows_empty(chart, rows):
+    """True when rows count nothing (an empty deck)."""
+    return all(_row_total(chart, r) == 0 for r in (rows or []))
+
+
+def _day_span(rows):
+    """(first day, last day) of rows holding one day each, in order; None otherwise."""
+    first, last = _parse_label(_row_text(rows[0])), _parse_label(_row_text(rows[-1]))
+    if not first or not last or first[1] != timedelta(days=1):
+        return None
+    d0, d1 = first[0].date(), last[0].date()
+    if (d1 - d0).days + 1 != len(rows):
+        return None
+    return d0, d1
+
+
+def window_update(chart, new_rows, commit, duration=VECTOR_DURATION_MS):
+    """Another deck in Total: its range starts (or ends) on another day. The time axis moves from
+    the old range to the new one while the bars change their heights, as one zoom.
+
+    commit(rows) puts the new rows in the chart without animation. Returns False (nothing
+    done) when this cannot be animated so; the caller then updates the chart its own way."""
+    from ..charts.common.zoom.transition import _empty_row
+
+    try:
+        if not (_can_animate(chart) and _vector_capable(chart)):
+            return False
+        finish(chart)  # a zoom still running ends now (its last frame is the chart as it is)
+        old_rows = list(chart._full_data or [])
+        new_rows = list(new_rows or [])
+        if len(old_rows) < 2 or len(new_rows) < 2:
+            return False
+        span_old, span_new = _day_span(old_rows), _day_span(new_rows)
+        if span_old is None or span_new is None:
+            return False
+        first = min(span_old[0], span_new[0])
+        old_off, new_off = (span_old[0] - first).days, (span_new[0] - first).days
+        old = _snapshot(chart)
+        try:
+            from ...animations.chart_policy import chart_animation_queue_plan
+
+            plan = chart_animation_queue_plan(chart)  # its turn in the refresh's cascade
+        except Exception:
+            plan = None
+    except Exception:
+        log_swallowed()
+        return False
+    commit(new_rows)
+    try:
+        _freeze(chart)
+        new = _snapshot(chart)
+        k_a = _bin_step(chart, len(old_rows))
+        k_b = _bin_step(chart, len(new_rows))
+        # Both ranges laid on one run of days (with empty days around them), each starting
+        # on a bin of its own size and ending on a bin end: the first frame is then exactly
+        # the old chart (its last, shorter bin drawn as a whole bar, as the chart does), and
+        # the last frame exactly the new one.
+        pad = next((p for p in range(k_a * k_b + 1) if (old_off + p) % k_a == 0 and (new_off + p) % k_b == 0),
+                   None)
+        if pad is None:
+            # No run of days fits both bin grids (e.g. 2 and 7 days, the ranges an odd number
+            # of days apart): the new one wins, the last frame is the chart exactly.
+            pad = (-new_off) % k_b
+        a0, b0 = pad + old_off, pad + new_off
+        a1 = a0 + int(math.ceil(len(old_rows) / float(k_a))) * k_a
+        b1 = b0 + int(math.ceil(len(new_rows) / float(k_b))) * k_b
+        lcm = k_a * k_b // math.gcd(k_a, k_b)
+        n = int(math.ceil(max(a1, b1) / float(lcm))) * lcm
+        zero = _empty_row(new_rows[0])
+        if isinstance(zero, dict):
+            # Marked: a chart of states (a bin shows its last day) must not take a padding
+            # day for the last day of a bin.
+            zero = dict(zero, _pad=True)
+        to_rows = [zero] * b0 + new_rows + [zero] * (n - b0 - len(new_rows))
+        from_rows = [zero] * a0 + old_rows + [zero] * (n - a0 - len(old_rows))
+        old["index"] = (a0, a1, n)
+        new["index"] = (b0, b1, n)
+        zoom = _BlendZoom(chart, old, new, to_rows, from_rows, duration)
+        zoom._wait_plan = plan
+        zoom.start()
+    except Exception:
+        log_swallowed()
+        chart.update()
+    return True
+
+
 class _SinkOut(_Overlay):
     """The old page's picture sinks to the baseline and fades, over the new page."""
 
@@ -1422,7 +1714,16 @@ def switch_stack(stack, index, scope="all"):
         if old_page is None or not stack.isVisible() or stack.width() < 40 or not animations_enabled(scope):
             stack.setCurrentIndex(index)
             return
-        old = _snapshot(old_page)
+        # The 10-minute bars are labelled without their year ("Jul 15, 10:30"): read them
+        # with the year of the review dots page they go to (its hours are exact), else
+        # they were taken for this year and the switch of a past day jumped instead.
+        hint = None
+        target = stack.widget(index)
+        if callable(getattr(target, "zoom_window_seconds", None)):
+            target_window = _window_of(target)
+            if target_window:
+                hint = datetime.fromtimestamp(target_window[0]).year
+        old = _snapshot(old_page, hint)
         ref_year = datetime.fromtimestamp(old["window"][0]).year if old["window"] else None
         stack.setCurrentIndex(index)
         new_page = stack.currentWidget()

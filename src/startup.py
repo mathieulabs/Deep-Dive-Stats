@@ -364,6 +364,8 @@ def add_toolbar_action():
 
     troubleshooting_action = menu.addAction(tr("Troubleshooting..."))
     troubleshooting_action.triggered.connect(on_troubleshooting)
+    report_action = menu.addAction(tr("Report a Bug"))
+    report_action.triggered.connect(open_bug_report)
 
     def on_rate():
         from .details.ui.details_dialog import links
@@ -372,7 +374,14 @@ def add_toolbar_action():
         links.open_link(links.RATE_URL)
         mark_rated()  # the banner in Deep Dive no longer asks
 
+    def on_github():
+        from .details.ui.details_dialog import links
+
+        links.open_link(links.GITHUB_URL)
+
     menu.addSeparator()
+    github_action = menu.addAction(tr("Star on GitHub"))
+    github_action.triggered.connect(on_github)
     rate_action = menu.addAction(tr("Rate this add-on"))
     rate_action.triggered.connect(on_rate)
 
@@ -384,6 +393,8 @@ def add_toolbar_action():
         settings_action.setText(tr("Settings"))
         tour_action.setText(tr("Guided Tour"))
         troubleshooting_action.setText(tr("Troubleshooting..."))
+        report_action.setText(tr("Report a Bug"))
+        github_action.setText(tr("Star on GitHub"))
         rate_action.setText(tr("Rate this add-on"))
 
     menu.aboutToShow.connect(_retranslate_menu)

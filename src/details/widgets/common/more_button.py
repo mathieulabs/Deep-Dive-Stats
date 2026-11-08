@@ -42,6 +42,15 @@ def draws_nothing(w):
     return False
 
 
+def _has_shown_children(w):
+    """w holds other widgets (not a leaf). The chevron of a menu button ("1m", "Breakdown")
+    is part of the button, not a child to look at."""
+    from .menu_chevron import CHEVRON_NAME
+
+    return any(isinstance(child, QWidget) and child.isVisible() and child.objectName() != CHEVRON_NAME
+               for child in w.children())
+
+
 def _free_spot(card, title, width, height):
     """x, y for the button in the title row: the right end of the row's rightmost empty
     stretch, right before its buttons, or None when there is no room."""
@@ -62,9 +71,11 @@ def _free_spot(card, title, width, height):
     row_left, row_right = 2, card.width() - 2
     taken = [(row_left, title_end)]
     for w in card.findChildren(QWidget):
-        if w is title or not w.isVisible() or w.objectName() in ("dd_more_button", "dd_pin_button"):
+        # The "?" gives way to "⋯" (it fades out while they would overlap, see _mute_help).
+        if (w is title or not w.isVisible()
+                or w.objectName() in ("dd_more_button", "dd_pin_button", "dd_menu_chevron", "chart_help")):
             continue
-        if any(isinstance(child, QWidget) and child.isVisible() for child in w.children()):
+        if _has_shown_children(w):
             continue  # only leaf widgets: their parents span the whole row
         if draws_nothing(w):
             continue
@@ -89,9 +100,9 @@ def _controls_spot(card, width, height):
     Returns (x, y, label to take the dot color from) or None."""
     row = []
     for w in card.findChildren(QWidget):
-        if not w.isVisible() or w.objectName() in ("dd_more_button", "dd_pin_button"):
+        if not w.isVisible() or w.objectName() in ("dd_more_button", "dd_pin_button", "dd_menu_chevron"):
             continue
-        if any(isinstance(child, QWidget) and child.isVisible() for child in w.children()):
+        if _has_shown_children(w):
             continue
         pos = w.mapTo(card, QPoint(0, 0))
         if pos.y() <= 8 and w.height() <= 32 and w.width() < card.width() // 2:
@@ -269,6 +280,7 @@ class _HoverFilter(QObject):
                 self.button.shown = False
                 self.button.hide()
                 self._show_pin()
+                self._mute_help(False)
             elif kind == QEvent.Type.Resize and self._hovered:
                 self._replace()
         except RuntimeError:
@@ -289,8 +301,23 @@ class _HoverFilter(QObject):
                 b.shown = False
                 b.hide()
             self._show_pin()
+            self._mute_help(True)
         except RuntimeError:
             pass
+
+    def _mute_help(self, hovered):
+        """"⋯" (and the pin) first: the chart's "?" hides while one of them is over it (its
+        explanation is also in the right-click menu)."""
+        from .chart_help import set_help_muted
+
+        for help_icon in self.card.findChildren(QLabel, "chart_help"):
+            over = False
+            if hovered:
+                r = help_icon.geometry().translated(help_icon.parentWidget().mapTo(self.card, QPoint(0, 0)))
+                for w in (self.button, self.pin):
+                    if w is not None and getattr(w, "shown", False) and w.geometry().adjusted(-2, 0, 2, 0).intersects(r):
+                        over = True
+            set_help_muted(help_icon, over)
 
     def _show_pin(self):
         """The pin where _place put it (left of "⋯", or alone when the row is short)."""

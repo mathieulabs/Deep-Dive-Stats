@@ -148,6 +148,7 @@ def paint_event_impl(widget, event):
     margin_bottom = calculate_stats_margin(widget, painter, avail_w)
 
     avail_h = h - margin_top - margin_bottom
+    widget._plot_geom = (margin_left, margin_top, avail_w, avail_h)  # for overlays (charts.due_today)
     t_colors = get_theme_colors(widget)
     presence = compute_transition_presence(widget, t, relative_transition=use_relative_transition)
 
@@ -223,7 +224,9 @@ def paint_event_impl(widget, event):
     width_ratio = dense_bar_ratio(slot_w, width_ratio)
     bar_w = slot_w * width_ratio
     bar_slots = None
-    if widget._data_transition_active and widget._transition_align_right:
+    # From / to an empty period the bars keep one layout (the data shown): the slots of
+    # an empty one would squeeze them to one side, then they jumped.
+    if widget._data_transition_active and widget._transition_align_right and getattr(widget, "_global_transition_mode", None) is None:
         bar_slots = widget.interpolate_bar_slots(
             len(widget._transition_old_display_data),
             len(widget._transition_new_display_data),
@@ -240,6 +243,15 @@ def paint_event_impl(widget, event):
     _chart_alpha = int(getattr(widget, "chart_opacity_pct", 100) * 2.55)
     _intensity = getattr(widget, "_intensity_by_value_coloring", False)
     _series_colors = {c["key"]: QColor(c["color"]) for c in widget.series_config}
+    # Work done once per paint, not per bar (a paint draws 100 bars or more, 60 times a
+    # second while animating): the keys, the pen, and the colours of each shade, kept on
+    # the chart between paints (the same few shades come back on every frame).
+    _keys = [c["key"] for c in widget.series_config]
+    _radius = zv.get("radius", 1.8) if zv is not None else 1.8
+    _hover = widget.hover_index
+    _scale = avail_h * presence / max(1e-9, bar_scale_max)
+    _colors = _shade_cache(widget, _night, _chart_alpha)
+    painter.setPen(Qt.PenStyle.NoPen)
     for i, item in enumerate(bar_display_data):
         if bar_slots and i < len(bar_slots):
             center_x, slot_w = bar_slots[i]
@@ -254,58 +266,44 @@ def paint_event_impl(widget, event):
             continue
         current_y = margin_top + avail_h
         _base_y = current_y
-        _total_h = sum(
-            max(0.0, item.get(_c["key"], 0)) for _c in widget.series_config
-        ) / max(1e-9, bar_scale_max) * avail_h * presence
+        _vals = [item.get(k, 0) for k in _keys]
+        _total_h = sum(v for v in _vals if v > 0) * _scale
         _size_k = bar_fade_factor(draw_bar_w, _total_h)
         top_key = None
-        for _c in widget.series_config:
-            if item.get(_c["key"], 0) > 0:
-                top_key = _c["key"]
+        for k, v in zip(_keys, _vals):
+            if v > 0:
+                top_key = k
+        _shade_l = None
+        if _intensity:
+            bar_total = sum(_vals)
+            _ratio = min(1.0, (bar_total / max(1.0, _shade_max))) if _shade_max > 0 else 0.0
+        _k = _style_k * _size_k
+        _fade = _size_k > 0.01
+        _fade_ints = (
+            int(round(14 * _k)), int(round(30 * _k)), int(1000 * _k)
+        ) if _fade else None
+        _grad = None
 
-        for config in widget.series_config:
-            key = config["key"]
-            val = item.get(key, 0)
+        for key, val in zip(_keys, _vals):
             if val <= 0:
                 continue
-            bar_h = (val / bar_scale_max) * avail_h * presence
+            bar_h = val * _scale
             y = current_y - bar_h
             rect = QRectF(x, y, draw_bar_w, bar_h)
-            alpha = _chart_alpha
-            base_color = QColor(_series_colors[key])
-            base_color.setAlpha(alpha)
-
             if _intensity:
-                bar_total = sum(item.get(c["key"], 0) for c in widget.series_config)
-                ratio = min(1.0, (bar_total / max(1.0, _shade_max))) if _shade_max > 0 else 0.0
-                dark = _night
-                light_mul = 1.4 if dark else 1.22
-                dark_mul = 0.7 if dark else 0.68
-                light_l = min(255, int(base_color.lightness() * light_mul))
-                dark_l = max(0, int(base_color.lightness() * dark_mul))
-                current_l = int(light_l - ((light_l - dark_l) * ratio))
-                base_color.setHsl(base_color.hslHue(), base_color.hslSaturation(), current_l)
-                base_color.setAlpha(alpha)
-
-            if i == widget.hover_index:
-                base_color = base_color.lighter(130) if _night else base_color.darker(115)
-
-            if _size_k > 0.01:
-                # Same soft vertical fade as the plain Activity bars, spread over the whole stack.
-                _bot = QColor(base_color)
-                _top = QColor(base_color)
-                _k = _style_k * _size_k
-                if _night:
-                    _top = _top.lighter(100 + int(round(14 * _k)))
-                    _top.setAlpha(base_color.alpha())
-                    _bot = _bot.darker(100 + int(round(30 * _k)))
-                    _bot.setAlpha(max(30, int(base_color.alpha() * (1.0 - 0.12 * _k))))
-                else:
-                    _bot.setAlpha(max(30, int(base_color.alpha() * (1.0 - 0.38 * _k))))
-                _g = QLinearGradient(0, _base_y - _total_h, 0, _base_y)
-                _g.setColorAt(0.0, _top)
-                _g.setColorAt(1.0, _bot)
-                painter.setBrush(_g)
+                _shade_l = _intensity_l(_colors, _series_colors[key], _night, _ratio)
+            ck = (key, _shade_l, i == _hover, _fade_ints)
+            shade = _colors.get(ck)
+            if shade is None:
+                shade = _colors[ck] = _shade(
+                    _series_colors[key], _chart_alpha, _shade_l, i == _hover, _night, _k if _fade else None,
+                )
+            base_color, _top, _bot = shade
+            if _fade:
+                _grad = QLinearGradient(0, _base_y - _total_h, 0, _base_y)
+                _grad.setColorAt(0.0, _top)
+                _grad.setColorAt(1.0, _bot)
+                painter.setBrush(_grad)
             else:
                 if draw_bar_w < 2.0:
                     # Hair-thin bar: a plain filled rectangle (same picture, much cheaper).
@@ -313,12 +311,8 @@ def paint_event_impl(widget, event):
                     current_y = y
                     continue
                 painter.setBrush(base_color)
-            painter.setPen(Qt.PenStyle.NoPen)
             if key == top_key:
-                draw_bar_rect(
-                    painter, rect, fade=False,
-                    radius=(zv.get("radius", 1.8) if zv is not None else 1.8), widget=widget,
-                )
+                draw_bar_rect(painter, rect, fade=False, radius=_radius, widget=widget)
             else:
                 painter.drawRect(rect)
             current_y = y
@@ -341,7 +335,8 @@ def paint_event_impl(widget, event):
             cumulative_draw_max = max_cumulative
         step_x_line = avail_w / (n - 1) if n > 1 else 0
         x_positions = None
-        if widget._data_transition_active and widget._transition_align_right:
+        # (From / to an empty period: the layout of the data shown, as the bars.)
+        if widget._data_transition_active and widget._transition_align_right and widget._global_transition_mode is None:
             x_positions = widget.interpolate_line_x_positions(
                 len(widget._transition_old_display_data),
                 len(widget._transition_new_display_data),
@@ -515,7 +510,8 @@ def paint_event_impl(widget, event):
             x = margin_left + (widget.hover_index * (avail_w / n)) + (avail_w / n) * 0.5
         painter.setPen(get_hover_guide_pen(widget, width=1))
         painter.drawLine(QPointF(x, margin_top), QPointF(x, margin_top + avail_h))
-        if getattr(widget, "show_hover_marker", True):
+        # (One part only: no dot of its colour, as Activity without its breakdown.)
+        if getattr(widget, "show_hover_marker", True) and len(widget.series_config) > 1:
             item = bar_display_data[widget.hover_index]
             current_y = margin_top + avail_h
             for config in widget.series_config:
@@ -561,3 +557,51 @@ def paint_event_impl(widget, event):
     widget.draw_selection_overlay(painter, margin_left, margin_top, avail_w, avail_h)
     if widget._data_transition_active and widget.get_progress() >= 0.999:
         widget._finalize_data_transition()
+
+
+def _shade_cache(widget, night, alpha):
+    """The bar colours worked out for this chart, kept while its colours, theme and
+    opacity stay the same."""
+    sig = (night, alpha, tuple(QColor(c["color"]).rgba() for c in widget.series_config))
+    cache = getattr(widget, "_bar_shades", None)
+    if cache is None or cache.get("__sig") != sig or len(cache) > 4096:
+        cache = widget._bar_shades = {"__sig": sig}
+    return cache
+
+
+def _intensity_l(cache, color, night, ratio):
+    """Lightness of a bar shaded by its height (Added and the one colour charts)."""
+    key = ("__l", color.rgba(), night)
+    ends = cache.get(key)
+    if ends is None:
+        light_mul = 1.4 if night else 1.22
+        dark_mul = 0.7 if night else 0.68
+        light_l = min(255, int(color.lightness() * light_mul))
+        dark_l = max(0, int(color.lightness() * dark_mul))
+        ends = cache[key] = (light_l, dark_l)
+    light_l, dark_l = ends
+    return int(light_l - ((light_l - dark_l) * ratio))
+
+
+def _shade(color, alpha, shade_l, hover, night, k):
+    """(fill, fade top, fade bottom) of a bar: the series colour at the chart's opacity,
+    its height shade, hovered, and the soft vertical fade of strength k (None: none)."""
+    base_color = QColor(color)
+    base_color.setAlpha(alpha)
+    if shade_l is not None:
+        base_color.setHsl(base_color.hslHue(), base_color.hslSaturation(), shade_l)
+        base_color.setAlpha(alpha)
+    if hover:
+        base_color = base_color.lighter(130) if night else base_color.darker(115)
+    if k is None:
+        return base_color, None, None
+    top = QColor(base_color)
+    bot = QColor(base_color)
+    if night:
+        top = top.lighter(100 + int(round(14 * k)))
+        top.setAlpha(base_color.alpha())
+        bot = bot.darker(100 + int(round(30 * k)))
+        bot.setAlpha(max(30, int(base_color.alpha() * (1.0 - 0.12 * k))))
+    else:
+        bot.setAlpha(max(30, int(base_color.alpha() * (1.0 - 0.38 * k))))
+    return base_color, top, bot

@@ -618,15 +618,16 @@ def populate_table(
                 buttons_col = c
                 break
         if buttons_col is not None:
-            prev_w = table.columnWidth(buttons_col)
+            # Its own width, not the current one: fill_width widens it, and starting from that
+            # made it grow at each refresh.
             if not show_buttons_visual:
                 # Cells + 3 separators + margins.
                 wanted = int(sum(cols_widths) + 30 + 22)
                 applied_w = max(170, wanted)
-                table.setColumnWidth(buttons_col, applied_w)
             else:
-                applied_w = max(140, prev_w)
-                table.setColumnWidth(buttons_col, applied_w)
+                applied_w = 140
+            table._dd_buttons_width = applied_w
+            table.setColumnWidth(buttons_col, applied_w)
 
     table.setVerticalHeaderLabels(["" for _ in range(table.rowCount())])
     table.setUpdatesEnabled(updates_were_enabled)

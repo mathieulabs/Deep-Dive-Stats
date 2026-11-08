@@ -171,13 +171,14 @@ def apply_chart_opacity_live_change(dialog):
     if _range_combos:
         _key = getattr(dialog, "range_btn_key", "radio_ranges")
         _vals = [c.currentData() for c in _range_combos]
+        _vals = list(dict.fromkeys(_vals))  # a value picked twice: kept once
         if _key == "filter_modes":
             from ....widgets.common.fsrs_filters import FSRS_FILTER_MODES as _DEFAULT, normalize_fsrs_filter_modes as _normalize
         else:
             from ....widgets.common.future_due_filters import FUTURE_DUE_DEFAULT_DAYS as _DEFAULT, normalize_future_due_days as _normalize
         _norm = _normalize(_vals)
-        # Duplicates fall back to the defaults, so only a valid set is stored.
-        if len(set(_vals)) < 4 or tuple(_norm) == tuple(_DEFAULT):
+        # Fewer than 2 buttons fall back to the defaults, so only a valid set is stored.
+        if len(_vals) < 2 or tuple(_norm) == tuple(_DEFAULT):
             dialog.widget_def.pop(_key, None)
             dialog.local_config.pop(_key, None)
         else:

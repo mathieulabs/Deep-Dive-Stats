@@ -63,9 +63,7 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
     if self.grid_mode:
         wid = state_key if state_key else (label_text.lower() if label_text else "unknown_widget")
         col_span = int(self._get_dd_widget_setting(wid, "col_span", 1))
-        saved_h = self._get_dd_widget_setting(wid, "height")
-        if saved_h is not None:
-            saved_h = int(saved_h)
+        saved_h = self._grid_saved_height(wid)  # one height for every row (see layout.py)
 
         container = ResizableWrapper(
             widget_id=wid,
@@ -127,6 +125,8 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
         section_key = state_key if state_key else (label_text.strip().lower() if label_text else "unknown")
 
         container.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        # (the folded range buttons' "Edit Buttons..." entry: see control_factory)
+        container._open_settings = lambda w=container, k=section_key: self._open_dd_widget_settings(k, w)
         container.customContextMenuRequested.connect(
             lambda pos, w=container, k=section_key: context_menu.show(w, k, pos)
         )
@@ -196,6 +196,18 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
                 controls_wrapper.setVisible(not is_collapsed)
             else:
                 header_lay.addStretch()
+            if label_text:
+                # The "?" with what the chart shows, at the right end of the header as on the
+                # pinned charts (widgets.common.chart_help). Never fatal: a chart shows without
+                # its "?" rather than not at all.
+                try:
+                    from ....widgets.common.chart_help import insert_help_button
+
+                    insert_help_button(header_widget, state_key)
+                except Exception:
+                    from ....logic.logger import log_swallowed
+
+                    log_swallowed()
 
             layer.addWidget(header_widget)
             container.header_widget = header_widget
@@ -213,7 +225,7 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
 
         min_w = 200 if self.grid_mode else 450; min_h = 200
 
-        saved_h = self._get_dd_widget_setting(section_key, "height")
+        saved_h = self._grid_saved_height(section_key)
         if saved_h:
             min_h = int(saved_h)
         else:
@@ -231,6 +243,13 @@ def add_section_card(self, label_text, widget_or_layout, spacing=25, target_layo
         container.setMinimumWidth(min_w)
         container.original_min_h = min_h
         self._update_grid_widget_height(container, min_h)
+        # Its automatic height's floor; a height set by hand is a scale of the automatic
+        # height (see layout.py, GRID_SCALE_KEY).
+        container._grid_base_min_h = min_h
+        if self.grid_mode and hasattr(self, "_grid_height_scale"):
+            scale = self._grid_height_scale(section_key)
+            if scale:
+                self._apply_grid_scale(container, scale)
 
         if is_collapsed:
             self._update_grid_widget_collapse(container, True, update_persistence=False)

@@ -98,6 +98,30 @@ def invalidate_data_caches_impl(widget):
         widget._get_avg()
 
 
+def percent_rows(widget, rows):
+    """"Show as %": each bar's series as shares of the bar (they sum to 100); the counts are
+    kept in "_raw_<key>" and "_raw_total" for the tooltip."""
+    keys = [cfg["key"] for cfg in widget.series_config]
+    out = []
+    for row in rows or []:
+        total = sum(float(row.get(k, 0) or 0.0) for k in keys)
+        new = dict(row)
+        new["_raw_total"] = total
+        for k in keys:
+            v = float(row.get(k, 0) or 0.0)
+            new["_raw_" + k] = v
+            new[k] = (v * 100.0 / total) if total else 0.0
+        out.append(new)
+    return out
+
+
+def format_percent_value(value, axis=False):
+    from ...chart_utils.formatting import fmt_num_trim_zeros
+    from .....i18n import percent_text
+
+    return percent_text(fmt_num_trim_zeros(float(value or 0.0), 0 if axis else 1))
+
+
 def compute_display_data_impl(widget, source_data):
     source_data = source_data or []
     if not widget.binning_active:
@@ -180,9 +204,10 @@ def get_stats_text_impl(widget):
     else:
         avg = sum(counts) / len(counts) if counts else 0
 
-    stats = [tr("Total: {value}", value=widget._format_metric_value(total, compact=False))]
+    # The counts, also in "Show as %" (raw: not as shares).
+    stats = [tr("Total: {value}", value=widget._format_metric_value(total, compact=False, raw=True))]
     if avg > 0:
-        stats.append(tr("Avg: {value}", value=widget._format_metric_value(avg, per_day=True, compact=False)))
+        stats.append(tr("Avg: {value}", value=widget._format_metric_value(avg, per_day=True, compact=False, raw=True)))
     return stats
 
 
@@ -222,6 +247,25 @@ def update_data_impl(
     transition_mode=None,
     transition_align_right=None,
 ):
+    if transition_mode == "window":
+        # Another deck in Total (other first / last days): the axis moves while the bars change.
+        from ...chart_utils.zoom_camera import rows_empty, window_update
+
+        if rows_empty(widget, widget._full_data) or rows_empty(widget, new_data):
+            # To or from an empty deck (its range is only a default): the bars sink or grow
+            # as on any change to or from nothing.
+            transition_mode = None
+        elif window_update(widget, new_data, lambda rows: update_data_impl(
+                widget, rows, adaptive_binning=adaptive_binning, transition_mode=None)):
+            return
+        else:
+            from ..common.zoom.transition import rows_on_new_days
+
+            aligned = rows_on_new_days(widget._full_data, new_data)
+            if aligned is not None:
+                widget._full_data = aligned
+                widget._is_zoomed = False  # the update drops the zoom; the morph runs on whole rows
+
     keys = [cfg["key"] for cfg in widget.series_config]
 
     def _row_total(rows):

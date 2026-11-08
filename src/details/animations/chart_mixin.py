@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from aqt.qt import QEasingCurve, QAbstractAnimation, QTimer, pyqtProperty
-from .motion import animations_enabled
+from .motion import animations_enabled, appear_animated
 from .anim_driver import _AnimProxy
 from .chart_policy import chart_animations_allowed, chart_animation_force_repaint_requested
 from ..logic.logger import log_swallowed
@@ -235,6 +235,9 @@ class ChartAnimationMixin:
         if not self.isVisible():
             return
         self._initial_animation_done = True
+        if not appear_animated():
+            self._finish_without_animation()
+            return
         self.replay_animation()
 
     @pyqtProperty(float)
@@ -255,12 +258,27 @@ class ChartAnimationMixin:
     def showEvent(self, event):
         if hasattr(super(), "showEvent"):
             super().showEvent(event)
+        try:
+            from .anim_driver import _driver
+
+            if _driver.is_running(self):
+                # Shown again while it moves (the main screen fades in the widgets that were
+                # loading, right after Anki opens): it goes on. Cut short here, it jumped to
+                # its end, on the old charts (Card Counts) as on the new ones.
+                return
+        except Exception:
+            log_swallowed()
         if not chart_animations_allowed(self):
             self._finish_without_animation()
             return
         animation = getattr(self, "animation", None)
         if animation is None:
             self._progress = 1.0
+            return
+        if not appear_animated() and animation.state() != QAbstractAnimation.State.Running:
+            # Appearance animations off: shown as they are (a data change already moving
+            # goes on).
+            self._finish_without_animation()
             return
         # External container transitions (fade in/out for pinned show/hide) can request
         # skipping the chart intro animation once to avoid double-animation cost.
@@ -382,6 +400,7 @@ class ChartAnimationMixin:
         self._idle_paint_count = 0
         old_vals = self._flatten_numeric_payload(old_payload)
         new_vals = self._flatten_numeric_payload(new_payload)
+        old_had_rows = bool(old_vals)  # an empty period still has its rows (all zero)
         max_len = max(len(old_vals), len(new_vals))
         if max_len == 0:
             self.animation.stop()
@@ -399,10 +418,12 @@ class ChartAnimationMixin:
 
         old_has_data = old_total > 0.0
         new_has_data = new_total > 0.0
-        is_empty_transition = (old_has_data != new_has_data)
+        # Only the very first data: an empty period shown before (Today without reviews)
+        # has its rows, then its bars grow from it like any other change.
         first_data_fill = (
             (not bool(getattr(self, "_initial_animation_done", False)))
             and (not old_has_data)
+            and (not old_had_rows)
             and new_has_data
         )
 
@@ -416,12 +437,11 @@ class ChartAnimationMixin:
             self.update()
             return False
 
-        if is_empty_transition:
-            duration = int(empty_transition_duration_ms)
-            easing = QEasingCurve.Type.InOutSine
-        else:
-            duration = int(round((float(min_duration_ms) + float(max_duration_ms)) / 2.0))
-            easing = QEasingCurve.Type.InOutCubic
+        # Growing from / sinking to nothing goes at the pace of the other changes (a
+        # gentler curve of its own looked slower next to them; empty_transition_duration_ms
+        # is kept for the callers).
+        duration = int(round((float(min_duration_ms) + float(max_duration_ms)) / 2.0))
+        easing = QEasingCurve.Type.InOutCubic
         active = ChartAnimationMixin._active_data_animation_count
         if not self._is_data_animating:
             ChartAnimationMixin._active_data_animation_count += 1
@@ -586,6 +606,5 @@ class ChartAnimationMixin:
     def _on_resize_settled(self):
         self._is_resizing = False
         self.update()
-
 
 

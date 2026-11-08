@@ -142,7 +142,7 @@ class DeepDiveControlsMixin:
         finally:
             self._adaptive_transitioning = False
 
-    def _reset_chart_order(self):
+    def _reset_chart_order(self, rebuild=True):
         """Reset the chart order and all chart sizes to defaults."""
         conf = self.addon_config.config
         changed = False
@@ -154,8 +154,11 @@ class DeepDiveControlsMixin:
         if Config.DEEP_DIVE_WIDGET_SETTINGS in conf:
             settings = conf[Config.DEEP_DIVE_WIDGET_SETTINGS]
             for section in settings:
-                if "height" in settings[section]:
-                    del settings[section]["height"]
+                if not isinstance(settings[section], dict):
+                    continue
+                if "height" in settings[section] or "height_scale" in settings[section]:
+                    settings[section].pop("height", None)
+                    settings[section].pop("height_scale", None)  # (the grid's heights, see layout.py)
                     changed = True
                 if "col_span" in settings[section]:
                     settings[section]["col_span"] = 1
@@ -163,7 +166,7 @@ class DeepDiveControlsMixin:
 
         if changed:
             self.addon_config.write_config()
-            if hasattr(self, '_populate_dashboard'):
+            if rebuild and hasattr(self, '_populate_dashboard'):
                 self._populate_dashboard()
 
 

@@ -36,13 +36,18 @@ class AdaptiveStatsWidget(QWidget):
         self._theme_subscription = subscribe_theme_changed(self._on_theme_changed)
         self._apply_theme()
 
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        # It asks only for its icon and takes the header's free room (stretch 1 in the header):
+        # its text shows when it fits. Asking for the whole text made a crowded header shrink
+        # the chart's title too (cut with "..."), while the stats, reduced to their icon,
+        # left that room empty.
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setFixedHeight(20)
 
+    def _full_width(self):
+        return self.label.fontMetrics().horizontalAdvance(self.stats_text) + 20
+
     def sizeHint(self):
-        fm = self.label.fontMetrics()
-        text_w = fm.horizontalAdvance(self.stats_text) + 20
-        return QSize(text_w, 20)
+        return QSize(20, 20)
 
     def minimumSizeHint(self):
         return QSize(20, 20)
@@ -52,6 +57,9 @@ class AdaptiveStatsWidget(QWidget):
         self.stats_text_list = stats_text_list
         self.label.setText(self.stats_text)
         self.updateGeometry()
+        # Text or icon again: a new text brings no resize (stats read in the background
+        # come after the header is laid out).
+        self._fit()
 
     def _on_enter(self, event):
         lines = []
@@ -117,7 +125,10 @@ class AdaptiveStatsWidget(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        full_w = self.sizeHint().width()
+        self._fit()
+
+    def _fit(self):
+        full_w = self._full_width()
 
         if self.width() < full_w:
             self.label.hide()

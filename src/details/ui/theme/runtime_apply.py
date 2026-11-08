@@ -27,6 +27,12 @@ def apply_styles(dialog):
     # Scope-aware flags: only widgets under this dialog should force details mode.
     dialog.setProperty("deepdivestats_force_dark_theme", base_mode == ThemePalettes.MODE_DARK)
     dialog.setProperty("deepdivestats_forced_theme_mode", "" if base_mode == ThemePalettes.MODE_NATIVE else base_mode)
+    try:
+        from ...widgets.chart_utils.theme import _ANCESTOR_FLAGS
+
+        _ANCESTOR_FLAGS.clear()  # the theme flags just changed (charts look them up, memoized)
+    except Exception:
+        pass
     apply_theme_context(dialog, ThemeContext.DETAILS)
     # Decide before the silent sync below records the new state. apply_styles() runs every time a
     # Deep Dive window is built; if the config and Anki's light/dark mode match what every listener

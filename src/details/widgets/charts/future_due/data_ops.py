@@ -11,7 +11,7 @@ from ..common.discrete import (
     set_chart_opacity_impl,
     set_cumulative_mode_impl,
 )
-from .....i18n import tr, tr_n
+from .....i18n import N_, percent_text, tr, tr_n, tr_name
 
 
 def get_min_day_impl(widget):
@@ -45,6 +45,8 @@ def update_max_val_impl(widget):
         day, next_day = widget._get_bin_day_range(i, points_count)
         bucket_sum = sum(dist.get(d, 0) for d in range(day, next_day))
         current_max = max(current_max, bucket_sum)
+    if current_max > 0 and widget.percent_active():
+        current_max = 100.0  # the bars are shares
     widget.max_val = current_max if current_max > 0 else 1
 
 
@@ -105,18 +107,65 @@ def get_points_count_for_dist_impl(widget, dist, max_days, show_backlog):
 
 
 def build_display_values_impl(widget, dist, max_days, show_backlog):
+    widget._built_backlog = bool(show_backlog)  # the backlog setting of the bars shown
     min_day = widget._get_min_day_for_dist(dist, show_backlog)
     points_count = widget._get_points_count_for_dist(dist, max_days, show_backlog)
     values = []
     for i in range(points_count):
         day, next_day = widget._get_bin_day_range_for(i, points_count, min_day, max_days)
         values.append(sum(float(dist.get(d, 0) or 0.0) for d in range(day, next_day)))
+    if widget.percent_active():
+        values = [100.0 if v > 0 else 0.0 for v in values]  # "Show as %": full bars
     return points_count, values
 
 
 def refresh_data_colors_impl(widget):
     from ....ui import Config, get_chart_color
     widget.bar_color = QColor(get_chart_color(Config.COLOR_FUTURE_DUE, widget))
+
+
+def breakdown_parts(kind):
+    """The parts of a breakdown, bottom to top: (tooltip id, label, colour key)."""
+    from ....ui import Config
+
+    if kind == "result":
+        return (
+            ("pass", N_("Predicted pass"), Config.COLOR_GOOD),
+            ("fail", N_("Predicted fail"), Config.COLOR_AGAIN),
+            ("no_fsrs", N_("No FSRS data"), Config.COLOR_FUTURE_DUE),
+        )
+    return (
+        ("mature", N_("Mature"), Config.COLOR_MATURE),
+        ("young", N_("Young"), Config.COLOR_YOUNG),
+        ("learn", N_("Learning"), Config.COLOR_LEARN),
+    )
+
+
+def _bin_parts(days, day, next_day):
+    sums = [0.0, 0.0, 0.0]
+    for d in range(day, next_day):
+        c3 = days.get(d)
+        if c3:
+            for k in range(3):
+                sums[k] += c3[k]
+    return sums
+
+
+def type_shares(widget, data, dist, max_days, count):
+    """Breakdown: (kind, each bar's shares of its three parts bottom to top), a share of
+    (0, 0, 0) for a bar without cards; None without a breakdown (plain bars). Kept for the
+    old and the new data so the parts glide during a transition, as the bars do."""
+    bd = (data or {}).get("breakdown")
+    if not bd or not bd.get("days"):
+        return None
+    days = bd["days"]
+    min_day = widget._get_min_day_for_dist(dist, widget.show_backlog)
+    out = []
+    for i in range(int(count or 0)):
+        sums = _bin_parts(days, *widget._get_bin_day_range_for(i, count, min_day, max_days))
+        total = float(sum(sums))
+        out.append(tuple(v / total for v in sums) if total > 0 else (0.0, 0.0, 0.0))
+    return bd.get("kind"), out
 
 
 def update_data_impl(widget, new_data, adaptive_binning=None, transition_mode=None):
@@ -135,10 +184,20 @@ def update_data_impl(widget, new_data, adaptive_binning=None, transition_mode=No
             return [False] * int(count or 0)
         return [widget._get_bin_day_range_for(i, count, min_day, max_days)[0] < 0 for i in range(int(count or 0))]
 
-    old_flags = _backlog_flags(old_dist, widget.max_days, old_points_count)
+    # The old bars as they are shown: the caller may already have switched the backlog on or
+    # off (show_backlog) before this update, which placed the old parts and colours on the
+    # wrong bars (the mature parts then appeared at once when toggling Backlog).
+    new_backlog = widget.show_backlog
+    old_backlog = bool(getattr(widget, "_built_backlog", new_backlog))
+    widget.show_backlog = old_backlog
+    try:
+        old_flags = _backlog_flags(old_dist, widget.max_days, old_points_count)
+        old_shares = type_shares(widget, widget.data_dict, old_dist, widget.max_days, old_points_count)
+    finally:
+        widget.show_backlog = new_backlog
 
-    def _has_backlog(dist):
-        if not widget.show_backlog:
+    def _has_backlog(dist, shown=None):
+        if not (widget.show_backlog if shown is None else shown):
             return False
         return any((int(k) < 0 and float(v or 0.0) > 0.0) for k, v in (dist or {}).items())
 
@@ -151,8 +210,9 @@ def update_data_impl(widget, new_data, adaptive_binning=None, transition_mode=No
     new_points_count = int(widget._points_count or len(new_values))
     new_max = max(new_values) if new_values and max(new_values) > 0 else 1.0
     widget._backlog_flags = (old_flags, _backlog_flags(dist, widget.max_days, new_points_count))
+    widget._type_shares = (old_shares, type_shares(widget, widget.data_dict, dist, widget.max_days, new_points_count))
 
-    backlog_presence_changed = _has_backlog(old_dist) != _has_backlog(dist)
+    backlog_presence_changed = _has_backlog(old_dist, old_backlog) != _has_backlog(dist)
     effective_transition_mode = transition_mode
     if effective_transition_mode is None and backlog_presence_changed:
         effective_transition_mode = "timespan"
@@ -194,9 +254,61 @@ def update_data_impl(widget, new_data, adaptive_binning=None, transition_mode=No
     widget.update()
 
 
-def get_tooltip_text_impl(widget, idx, points_count):
-    text = _bin_tooltip_line(widget, idx, points_count)
+def _running_total(widget, idx, points_count):
+    dist = widget.data_dict.get("distribution", {})
+    first, _ = widget._get_bin_day_range(0, points_count)
+    _day, next_day = widget._get_bin_day_range(idx, points_count)
+    return sum(dist.get(d, 0) for d in range(first, next_day))
+
+
+def _bin_label(day, next_day):
+    if next_day - day > 1:
+        if day < 0 and next_day <= 0:
+            return tr("{start}-{end} days ago", start=abs(day), end=abs(next_day - 1))
+        return tr("Days {start}-{end}", start=day, end=next_day - 1)
+    if day == -1:
+        return tr("Yesterday")
+    if day < -1:
+        return tr("{days} days ago", days=abs(day))
+    if day == 0:
+        return tr("Today")
+    return tr("Day {day}", day=day)
+
+
+def _breakdown_tooltip_lines(widget, idx, points_count, bd):
+    """With a breakdown: the tooltip of Activity's breakdown (the days and their cards as
+    header, a coloured line per part, top part first, then the running total)."""
+    from ....ui import get_chart_color
+
+    day, next_day = widget._get_bin_day_range(idx, points_count)
+    sums = _bin_parts(bd.get("days") or {}, day, next_day)
+    dist = widget.data_dict.get("distribution", {})
+    total = sum(dist.get(d, 0) for d in range(day, next_day))
+    lines = [{"text": _bin_label(day, next_day), "header": True,
+              "value": tr_n("{count} card", "{count} cards", total, count=fmt_num(total)) if total else ""}]
+    for (key, label, color), n in reversed(list(zip(breakdown_parts(bd.get("kind")), sums))):
+        if n >= 0.05:
+            value = fmt_num(n) if float(n).is_integer() else fmt_num(n, 1)
+            if widget.percent_active() and sum(sums) > 0:
+                value = f"{percent_text(fmt_num(n * 100.0 / sum(sums), 1))} ({value})"
+            lines.append({"id": key, "text": tr_name(label), "value": value,
+                          "color": QColor(get_chart_color(color, widget)).name()})
+    if bd.get("kind") == "result" and (sums[0] + sums[1]) > 0:
+        r = sums[0] / (sums[0] + sums[1])
+        lines.append({"id": "retention", "text": tr("Expected retention"), "value": percent_text(fmt_num(r * 100.0, 1))})
     if getattr(widget, "cumulative_visible", True):
+        running = _running_total(widget, idx, points_count)
+        lines.append({"id": "total", "text": tr("Total: {value}", value=fmt_num(running)), "bold": True})
+    return lines
+
+
+def get_tooltip_text_impl(widget, idx, points_count):
+    """Text of a bar's tooltip, or its lines (dicts) with a breakdown."""
+    bd = widget.data_dict.get("breakdown")
+    if bd and bd.get("days"):
+        return _breakdown_tooltip_lines(widget, idx, points_count, bd)
+    text = _bin_tooltip_line(widget, idx, points_count)
+    if getattr(widget, "cumulative_visible", True) and "total" not in (getattr(widget, "tooltip_hidden", None) or ()):
         # The running total the cumulative curve shows at this bar.
         dist = widget.data_dict.get("distribution", {})
         first, _ = widget._get_bin_day_range(0, points_count)
@@ -236,4 +348,15 @@ def get_stats_text_impl(widget):
     ]
     if widget.show_backlog and backlog > 0:
         stats.append(tr("Backlog: {count} overdue", count=fmt_num_compact(backlog)))
+    ret = widget.data_dict.get("retention")
+    bd = widget.data_dict.get("breakdown") or {}
+    if ret and bd.get("kind") == "result":
+        # Breakdown by Result: the expected retention of the cards due in the period shown.
+        r_sum = n = 0
+        for d, c2 in ret.items():
+            if d >= 0 or widget.show_backlog:
+                r_sum += c2[0]
+                n += c2[1]
+        if n:
+            stats.append(tr("Expected retention: {value}", value=percent_text(fmt_num(r_sum / n * 100.0, 1))))
     return stats

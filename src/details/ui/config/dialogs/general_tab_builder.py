@@ -142,36 +142,6 @@ def build_general_tab(dialog) -> None:
 
     _build_language_row(dialog, layout_global)
 
-    dialog.animation_scope_combo = QComboBox()
-    dialog.animation_scope_combo.addItem(tr("All Animations"), "all")
-    dialog.animation_scope_combo.addItem(tr("No Pinned Animations"), "no_pinned")
-    dialog.animation_scope_combo.addItem(tr("No Details Animations"), "no_details")
-    dialog.animation_scope_combo.addItem(tr("No Animations"), "none")
-    dialog.animation_scope_combo.setToolTip(
-        tr("Choose where animations are active: everywhere, only pinned off, only details off, or off globally.")
-    )
-    dialog.animation_scope_combo.currentIndexChanged.connect(dialog.on_animation_scope_changed)
-    layout_global.addRow(tr("Animation Mode:"), dialog.animation_scope_combo)
-
-    dialog.chart_animation_threshold_spin = QSpinBox()
-    dialog.chart_animation_threshold_spin.setRange(1, 24)
-    chart_animation_threshold_tip = tr(
-        "Maximum number of charts animating at once in a window.\n"
-        "When more are ready together, the extra animations are queued.\n"
-        "A single chart always animates right away. Lower this if the window lags."
-    )
-    dialog.chart_animation_threshold_spin.setToolTip(chart_animation_threshold_tip)
-    dialog.chart_animation_threshold_spin.valueChanged.connect(dialog.on_chart_animation_threshold_changed)
-    chart_animation_threshold_label = QLabel(tr("Chart Animation Threshold:"))
-    chart_animation_threshold_label.setToolTip(chart_animation_threshold_tip)
-    layout_global.addRow(chart_animation_threshold_label, dialog.chart_animation_threshold_spin)
-    chart_animation_threshold_help = QLabel(
-        tr("Extra chart animations are queued once this limit is reached.")
-    )
-    chart_animation_threshold_help.setWordWrap(True)
-    chart_animation_threshold_help.setToolTip(chart_animation_threshold_tip)
-    set_qss(chart_animation_threshold_help, "color: rgba(127,127,127,0.95);")
-    layout_global.addRow("", chart_animation_threshold_help)
 
     dialog.stats_precision_spin = QSpinBox()
     dialog.stats_precision_spin.setRange(0, 4)
@@ -185,7 +155,89 @@ def build_general_tab(dialog) -> None:
     dialog.thousands_separator_check = QCheckBox()
     dialog.thousands_separator_check.stateChanged.connect(dialog.on_thousands_separator_changed)
     layout_global.addRow(tr("Thousands Separator (400,000):"), dialog.thousands_separator_check)
+
+    dialog.chart_help_check = QCheckBox()
+    dialog.chart_help_check.setToolTip(tr("A \"?\" next to each chart title: hover it to read what the chart shows."))
+    dialog.chart_help_check.stateChanged.connect(dialog.on_chart_help_changed)
+    layout_global.addRow(tr("Chart Explanations (?):"), dialog.chart_help_check)
     gen_main_layout.addWidget(group_global)
+
+    group_anim = QGroupBox(tr("Animations"))
+    layout_anim = QFormLayout(group_anim)
+
+    dialog.animation_scope_combo = QComboBox()
+    dialog.animation_scope_combo.addItem(tr("All Animations"), "all")
+    dialog.animation_scope_combo.addItem(tr("No Pinned Animations"), "no_pinned")
+    dialog.animation_scope_combo.addItem(tr("No Details Animations"), "no_details")
+    dialog.animation_scope_combo.addItem(tr("No Animations"), "none")
+    dialog.animation_scope_combo.setToolTip(
+        tr("Choose where animations are active: everywhere, only pinned off, only details off, or off globally.")
+    )
+    dialog.animation_scope_combo.currentIndexChanged.connect(dialog.on_animation_scope_changed)
+    layout_anim.addRow(tr("Animation Mode:"), dialog.animation_scope_combo)
+
+    dialog.appear_animation_check = QCheckBox()
+    dialog.appear_animation_check.setToolTip(tr("Charts grow in when they first show. Off: they show at once."))
+    dialog.appear_animation_check.stateChanged.connect(dialog.on_appear_animation_changed)
+    layout_anim.addRow(tr("Appearance Animations:"), dialog.appear_animation_check)
+
+    dialog.zoom_animation_check = QCheckBox()
+    dialog.zoom_animation_check.setToolTip(tr("A zoom glides to its new range. Off: it jumps there at once."))
+    dialog.zoom_animation_check.stateChanged.connect(dialog.on_zoom_animation_changed)
+    layout_anim.addRow(tr("Zoom Animations:"), dialog.zoom_animation_check)
+
+    dialog.transition_style_combo = QComboBox()
+    dialog.transition_style_combo.addItem(tr("Animate Each Chart"), "morph")
+    dialog.transition_style_combo.addItem(tr("Fade (Lighter)"), "fade")
+    dialog.transition_style_combo.addItem(tr("No Animation"), "none")
+    transition_style_tip = tr(
+        "How the Deep Dive charts show new data when the deck or period changes.\n"
+        "Animate Each Chart: every chart moves from its old values to the new ones.\n"
+        "Fade: the view fades from the old charts to the new ones, much lighter on slow computers.\n"
+        "No Animation: the new data shows at once."
+    )
+    dialog.transition_style_combo.setToolTip(transition_style_tip)
+    dialog.transition_style_combo.currentIndexChanged.connect(dialog.on_transition_style_changed)
+    transition_style_label = QLabel(tr("Deep Dive Transitions:"))
+    transition_style_label.setToolTip(transition_style_tip)
+    layout_anim.addRow(transition_style_label, dialog.transition_style_combo)
+
+    dialog.pinned_transition_style_combo = QComboBox()
+    dialog.pinned_transition_style_combo.addItem(tr("Animate Each Chart"), "morph")
+    dialog.pinned_transition_style_combo.addItem(tr("Fade (Lighter)"), "fade")
+    dialog.pinned_transition_style_combo.addItem(tr("No Animation"), "none")
+    pinned_transition_style_tip = tr(
+        "How the pinned widgets show new data when the deck changes.\n"
+        "Animate Each Chart: every chart moves from its old values to the new ones.\n"
+        "Fade: each widget fades from its old chart to the new one, much lighter on slow computers.\n"
+        "No Animation: the new data shows at once."
+    )
+    dialog.pinned_transition_style_combo.setToolTip(pinned_transition_style_tip)
+    dialog.pinned_transition_style_combo.currentIndexChanged.connect(dialog.on_pinned_transition_style_changed)
+    pinned_transition_style_label = QLabel(tr("Pinned Transitions:"))
+    pinned_transition_style_label.setToolTip(pinned_transition_style_tip)
+    layout_anim.addRow(pinned_transition_style_label, dialog.pinned_transition_style_combo)
+
+    dialog.chart_animation_threshold_spin = QSpinBox()
+    dialog.chart_animation_threshold_spin.setRange(1, 24)
+    chart_animation_threshold_tip = tr(
+        "Maximum number of charts animating at once in a window.\n"
+        "When more are ready together, the extra animations are queued.\n"
+        "A single chart always animates right away. Lower this if the window lags."
+    )
+    dialog.chart_animation_threshold_spin.setToolTip(chart_animation_threshold_tip)
+    dialog.chart_animation_threshold_spin.valueChanged.connect(dialog.on_chart_animation_threshold_changed)
+    chart_animation_threshold_label = QLabel(tr("Chart Animation Threshold:"))
+    chart_animation_threshold_label.setToolTip(chart_animation_threshold_tip)
+    layout_anim.addRow(chart_animation_threshold_label, dialog.chart_animation_threshold_spin)
+    chart_animation_threshold_help = QLabel(
+        tr("Extra chart animations are queued once this limit is reached.")
+    )
+    chart_animation_threshold_help.setWordWrap(True)
+    chart_animation_threshold_help.setToolTip(chart_animation_threshold_tip)
+    set_qss(chart_animation_threshold_help, "color: rgba(127,127,127,0.95);")
+    layout_anim.addRow("", chart_animation_threshold_help)
+    gen_main_layout.addWidget(group_anim)
 
     group_display = QGroupBox(tr("Deep Dive Display"))
     layout_display = QFormLayout(group_display)
@@ -367,6 +419,18 @@ def build_general_tab(dialog) -> None:
 
     dialog.dd_fill_height_check.toggled.connect(_on_fill_height_toggled)
     layout_display.addRow(tr("Fill Window Height:"), dialog.dd_fill_height_check)
+
+    dialog.dd_shared_height_check = QCheckBox()
+    dialog.dd_shared_height_check.setToolTip(
+        tr("Resizing a chart's height resizes every row of the Deep Dive. "
+        "Off: only the row of that chart, each row keeping its own height.")
+    )
+
+    def _on_shared_height_toggled(checked):
+        _bool_setting(Config.DEEP_DIVE_SHARED_ROW_HEIGHT, checked)
+
+    dialog.dd_shared_height_check.toggled.connect(_on_shared_height_toggled)
+    layout_display.addRow(tr("Same Height for All Rows:"), dialog.dd_shared_height_check)
     gen_main_layout.addWidget(group_display)
 
     group_chart_style = QGroupBox(tr("Chart Style"))

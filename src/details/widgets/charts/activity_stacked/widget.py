@@ -5,6 +5,8 @@ from aqt.qt import QWidget
 from ...chart_utils import ChartAnimationMixin, ZoomableMixin
 from ..common.metric import init_metric_chart_base
 from .data_ops import (
+    format_percent_value,
+    percent_rows,
     axis_value_formatter_for_mode_impl,
     axis_value_formatter_impl,
     binning_active_getter,
@@ -51,6 +53,42 @@ class ActivityStackedChart(ZoomableMixin, ChartAnimationMixin, QWidget):
     A widget that displays a stacked bar chart.
     Data format: List of dicts with series keys and optional `pretty_date`.
     """
+
+    # "Show as %": each bar split into the shares of its series (100% high); no average
+    # line nor running total then (they mean nothing in shares). See set_percent_mode.
+    percent_mode = False
+
+    @property
+    def avg_visible(self):
+        return bool(getattr(self, "_avg_visible", True)) and not self.percent_mode
+
+    @avg_visible.setter
+    def avg_visible(self, value):
+        self._avg_visible = bool(value)
+
+    @property
+    def cumulative_visible(self):
+        return bool(getattr(self, "_cumulative_visible", False)) and not self.percent_mode
+
+    @cumulative_visible.setter
+    def cumulative_visible(self, value):
+        self._cumulative_visible = bool(value)
+
+    def set_percent_mode(self, enabled):
+        enabled = bool(enabled)
+        if enabled == self.percent_mode:
+            return
+        self.percent_mode = enabled
+        # Shares are not summed in a bin: the zoom animation must not rescale them by bin size.
+        if enabled:
+            self._bins_avg_before_percent = bool(getattr(self, "_bins_are_averages", False))
+            self._bins_are_averages = True
+        else:
+            self._bins_are_averages = bool(getattr(self, "_bins_avg_before_percent", False))
+        self._invalidate_data_caches()
+        self._chrome_cache_key = None
+        self._scaffold_cache_key = None
+        self.update()
 
     def __init__(self, data, series_config, parent=None, adaptive_binning=True):
         super().__init__(parent)
@@ -113,9 +151,12 @@ class ActivityStackedChart(ZoomableMixin, ChartAnimationMixin, QWidget):
         return set_value_mode_impl(self, mode)
 
     def _is_time_mode(self):
-        return is_time_mode_impl(self)
+        # In % mode the axis labels go through _format_metric_value too (as in time mode).
+        return self.percent_mode or is_time_mode_impl(self)
 
-    def _format_metric_value(self, value, with_unit=True, per_day=False, axis=False, compact=True):
+    def _format_metric_value(self, value, with_unit=True, per_day=False, axis=False, compact=True, raw=False):
+        if self.percent_mode and not raw:
+            return format_percent_value(value, axis=axis)
         return format_metric_value_impl(
             self,
             value,
@@ -135,7 +176,8 @@ class ActivityStackedChart(ZoomableMixin, ChartAnimationMixin, QWidget):
         return invalidate_all_data_caches_impl(self)
 
     def _compute_display_data(self, source_data):
-        return compute_display_data_impl(self, source_data)
+        rows = compute_display_data_impl(self, source_data)
+        return percent_rows(self, rows) if self.percent_mode else rows
 
     def _get_display_data(self):
         return get_display_data_impl(self)

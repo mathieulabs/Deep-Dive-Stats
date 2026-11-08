@@ -48,7 +48,7 @@ from ....qss import set_qss
 _KEY = "guided_tour"
 _FIRST_DELAY_MS = 2500
 _RETRY_MS = 4000
-_MAX_TRIES = 40
+_MAX_TRIES = 150  # 10 minutes: a first cache build of a big collection can take that long
 
 _done = None
 _pinned = weakref.WeakSet()
@@ -1307,6 +1307,7 @@ class _Tour(QWidget):
             pass
 
     def start(self):
+        _pause_warmup(True)
         self._prev_focus = QApplication.focusWidget()
         self._top_timer.start()
         self.setGeometry(self._win.rect())
@@ -1388,6 +1389,7 @@ class _Tour(QWidget):
             self.close_tour()
             return
         self._gen = getattr(self, "_gen", 0) + 1
+        self._pending_action = False  # a demo waiting for a scroll belonged to the last step
         self._measuring = False
         # Interrupted measuring: the picture over the screen stays. Taken away, it uncovered
         # the layout being measured (the all years one...) and the new picture showed it.
@@ -1423,7 +1425,7 @@ class _Tour(QWidget):
             return
         self._apply_card_text()
         self._place()
-        self._start_action()
+        self._start_action_after_scroll()
 
     def _card_waiting(self, on):
         """The card fades a little while the next step gets ready: the click was taken."""
@@ -1475,16 +1477,18 @@ class _Tour(QWidget):
         try:
             self._keep_on_top()
             r = self._steps[self._i][1](self._win)
-            settled = (r is not None and last is not None and r == last and tries >= 2
+            # Settled: the new widgets are all there with their data, at the same place on
+            # two looks in a row (polled often: the card goes to its new place right away).
+            settled = (r is not None and last is not None and r == last and tries >= 1
                        and _scene_built() and not _scene_loading(anims=False))
-            if settled or tries >= 30:
+            if settled or tries >= 60:
                 self._busy = False
                 for b in (self._back, self._next):
                     b.setEnabled(True)
                 self._thaw()
-                self._start_action()
+                self._start_action_after_scroll()
                 return
-            QTimer.singleShot(60, lambda: self._wait_scene(tries + 1, r))
+            QTimer.singleShot(30, lambda: self._wait_scene(tries + 1, r))
         except RuntimeError:
             pass
 
@@ -1510,12 +1514,18 @@ class _Tour(QWidget):
             self._apply_card_text()
         self._place(move_card=move_card, instant=True)
         if not move_card and self._hole is not None and self._card.geometry().intersects(self._hole):
-            # An example grew over the card: it only slides down, never sideways, and stays
-            # where it is if there is no room (it then goes over the bottom edge a little).
+            # An example grew over the card: it moves away on the side it is already on
+            # (above stays above, below stays below; going from one to the other looked
+            # odd), never sideways, and stays where it is if there is no room.
             card, h = self._card.geometry(), self._hole
-            y = min(h.bottom() + 12, self.height() - card.height() - 8)
-            if y > card.y():
-                self._card.move(card.x(), y)
+            if card.center().y() < h.center().y():
+                y = h.top() - 12 - card.height()
+                if 8 <= y < card.y():
+                    self._card.move(card.x(), y)
+            else:
+                y = min(h.bottom() + 12, self._card_limits()[1] - card.height() - 8)
+                if y > card.y():
+                    self._card.move(card.x(), y)
             self._card.raise_()
         self._show_span_badge()
         cover, self._cover = self._cover, None
@@ -1603,9 +1613,11 @@ class _Tour(QWidget):
             self._watch_target()
         try:
             self.raise_()
-            self._card.raise_()
             for g in self._ghosts:
                 g.raise_()
+            # The card last: the pictures go under it when they cannot go clear of it (a
+            # small window), so its text can always be read.
+            self._card.raise_()
         except RuntimeError:
             pass
 
@@ -1948,11 +1960,18 @@ class _Tour(QWidget):
                 pass
 
     def _gallery_place(self, g):
-        """Where the gallery picture goes: centered, at most 70 % of the window."""
+        """Where the gallery picture goes: centered, at most 70 % of the window, with room
+        for the card under it (a small window: the picture is smaller, not under the card)."""
         W, H = self.width(), self.height()
-        scale = min(1.0, (W * 0.7) / max(1, g.width()), (H * 0.7) / max(1, g.height()))
+        ch = self._card.sizeHint().height() if self._card is not None else 0
+        room = H - ch - 12 - 16
+        scale = min(1.0, (W * 0.7) / max(1, g.width()), (H * 0.7) / max(1, g.height()),
+                    max(0.3, room / max(1, g.height())))
         w, h = int(g.width() * scale), int(g.height() * scale)
-        return QRect((W - w) // 2, (H - h) // 2, w, h), scale
+        y = (H - h) // 2
+        if y + h + 12 + ch > H - 8:
+            y = max(8, (H - (h + 12 + ch)) // 2)  # the card fits under it
+        return QRect((W - w) // 2, y, w, h), scale
 
     def _gallery_frame(self, which, where="after"):
         """A picture of the gallery on the tab of the widget added, the pointer on it.
@@ -2144,6 +2163,14 @@ class _Tour(QWidget):
             area = self._add_area()
             if area is not None:
                 self._card_clear_of(area)
+            # The card keeps one place for the whole step when it can (clear of all its
+            # pictures). In a smaller window there is no such place (the menu and the
+            # gallery together take most of it): then clear of the pictures shown now.
+            shown = None
+            for _pm, rect in pics:
+                shown = rect if shown is None else shown.united(rect)
+            if shown is not None and self._card.geometry().intersects(shown):
+                self._card_clear_of(shown)
         except Exception:
             log_swallowed()
 
@@ -2220,7 +2247,8 @@ class _Tour(QWidget):
         """Where a picture of the menu step goes: x, y, width, height, scale."""
         dpr = max(1.0, pm.devicePixelRatio())
         size = pm.size() / dpr
-        scale = 1.0
+        # A long menu in a small window: smaller, so it fits in it.
+        scale = min(1.0, (self.height() - 16) / max(1, size.height()))
         r = _rect_in(self._win, w)
         if kind == "settings":
             scale = min(1.0, 0.62 * self.height() / max(1, size.height()), 0.42 * self.width() / max(1, size.width()))
@@ -2268,7 +2296,7 @@ class _Tour(QWidget):
         if not card.intersects(rect):
             return
         cw, ch = card.width(), card.height()
-        W, H = self.width(), self.height()
+        W, H = self._card_limits()
         running = self._hole_anim.state() == self._hole_anim.State.Running
         h = self._hole_to if running and self._hole_to is not None else self._hole
         spots = []
@@ -2283,12 +2311,25 @@ class _Tour(QWidget):
             for y in (h.bottom() + 12, h.top() - 12 - ch):
                 for x in (h.left(), h.right() - cw, (W - cw) // 2):
                     spots.append((x, y))
+        # Around the picture itself: under, over, beside it.
+        spots += [(rect.center().x() - cw // 2, rect.bottom() + 12), (rect.center().x() - cw // 2, rect.top() - ch - 12),
+                  (rect.left() - cw - 12, rect.top()), (rect.right() + 12, rect.top()),
+                  (rect.left() - cw - 12, rect.bottom() - ch), (rect.right() + 12, rect.bottom() - ch)]
+        best = None
         for x, y in spots:
             cand = QRect(max(8, min(x, W - cw - 8)), max(8, min(y, H - ch - 8)), cw, ch)
             if not cand.intersects(rect):
                 self._card.move(cand.topLeft())
                 self._card.raise_()
                 return
+            inter = cand.intersected(rect)
+            overlap = inter.width() * inter.height()
+            if best is None or overlap < best[0]:
+                best = (overlap, cand)
+        # No room clear of it (a small window): where it covers the least, over the picture.
+        if best is not None and best[0] < card.intersected(rect).width() * card.intersected(rect).height():
+            self._card.move(best[1].topLeft())
+        self._card.raise_()
 
     def _drag_alive(self, token):
         return (_tour is self and token == getattr(self, "_drag_token", 0)
@@ -2837,10 +2878,112 @@ class _Tour(QWidget):
         except Exception:
             log_swallowed()
 
+    def _card_limits(self):
+        """(width, height) the card stays within: the window, less what the taskbar (or the
+        Dock) covers of it when the window goes under it."""
+        W, H = self.width(), self.height()
+        try:
+            screen = self._win.screen() or QApplication.primaryScreen()
+            avail = screen.availableGeometry()
+            bottom_right = self.mapFromGlobal(avail.bottomRight())
+            W = min(W, bottom_right.x() + 1)
+            H = min(H, bottom_right.y() + 1)
+        except Exception:
+            log_swallowed()
+        return max(1, W), max(1, H)
+
+    def _start_action_after_scroll(self):
+        """The step's demo, now or once the page has scrolled to its widget."""
+        if getattr(self, "_scrolled_pending", False):
+            self._pending_action = True
+        else:
+            self._start_action()
+
+    def _scroll_into_view(self, r, target_fn, move_card, instant):
+        """A target below (or above) what the page shows (many decks above the widgets):
+        the page scrolls to it, then the step is placed again. True when it scrolled."""
+        try:
+            from aqt import mw
+
+            web = getattr(mw, "web", None)
+            if web is None or r is None or not web.isVisible():
+                return False
+            view = QRect(web.mapTo(self._win, QPoint(0, 0)), web.size())
+            view.setBottom(min(view.bottom(), self._card_limits()[1] - 1))  # not under the taskbar
+            margin = 24
+            # Room for the card under the target when it fits, as the step places it.
+            need_bottom = r.bottom() + margin + (self._card.sizeHint().height() + 12 if r.height() < view.height() // 2 else 0)
+            if r.top() >= view.top() + margin and need_bottom <= view.bottom():
+                return False
+            if (getattr(self, "_page_end_reached", False) and r.top() >= view.top() + margin
+                    and r.bottom() <= view.bottom()):
+                return False  # the page is at its end: only room for the card was missing
+            key = (self._i, getattr(self, "_gen", 0))
+            tries = self._scroll_tries.get(key, 0) if hasattr(self, "_scroll_tries") else 0
+            if tries >= 2:
+                return False
+            if not hasattr(self, "_scroll_tries"):
+                self._scroll_tries = {}
+            self._scroll_tries[key] = tries + 1
+            if need_bottom > view.bottom() and r.height() + 2 * margin < view.height():
+                dy = need_bottom - view.bottom()
+                dy = min(dy, r.top() - (view.top() + margin))  # never past its top
+            else:
+                dy = r.top() - (view.top() + margin)
+            if abs(dy) < 3:
+                return False
+            zoom = float(web.zoomFactor() or 1.0)
+            web.eval(f"window.scrollBy({{top: {int(round(dy / zoom))}, left: 0, behavior: 'auto'}});")
+            # The widgets follow the page a moment later: then the light, the card, and the
+            # step's own demo (its pointer and pictures go where the widgets are then).
+            self._scrolled_pending = True
+
+            def again():
+                if _tour is not self:
+                    return
+                self._scrolled_pending = False
+                self._place(target_fn, move_card, instant)
+                if getattr(self, "_pending_action", False) and not self._scrolled_pending:
+                    self._pending_action = False
+                    self._start_action()
+
+            # As soon as the widgets have followed the page (their place changed, then held
+            # still one tick), not after a fixed wait: the light comes at once.
+            def poll(tries, last):
+                if _tour is not self:
+                    return
+                try:
+                    now = target_fn(self._win)
+                except RuntimeError:
+                    now = None
+                if now is not None and now == r and tries >= 3:
+                    # Nothing moved: the page cannot scroll further (already at its end).
+                    # Not tried again while the widgets themselves are in view.
+                    self._scroll_tries[key] = 99
+                    self._page_end_reached = True
+                    again()
+                    return
+                if now is not None and now != r:
+                    self._page_end_reached = False
+                if tries >= 12 or (now is not None and now != r and now == last):
+                    again()
+                    return
+                QTimer.singleShot(25, lambda: poll(tries + 1, now))
+
+            QTimer.singleShot(25, lambda: poll(0, None))
+            return True
+        except RuntimeError:
+            return False
+        except Exception:
+            log_swallowed()
+            return False
+
     def _place(self, target_fn=None, move_card=True, instant=False):
         if target_fn is None:
             target_fn = self._steps[self._i][1]
         r = target_fn(self._win)
+        if self._scroll_into_view(r, target_fn, move_card, instant):
+            return
         hole = r.adjusted(-self.PAD, -self.PAD, self.PAD, self.PAD) if r is not None else None
         if instant:
             self._hole_anim.stop()
@@ -2853,7 +2996,7 @@ class _Tour(QWidget):
             return
         self._card.adjustSize()
         cw, ch = self._card.width(), self._card.height()
-        W, H = self.width(), self.height()
+        W, H = self._card_limits()
         h = self._hole_to if self._hole_anim.state() == self._hole_anim.State.Running else self._hole
         if h is None:
             x, y = (W - cw) // 2, (H - ch) // 2
@@ -2866,7 +3009,8 @@ class _Tour(QWidget):
             if action == "layouts":
                 # Not all measured (Next clicked right away): under the tallest seen so far,
                 # the card then slides down if a taller one comes (see _thaw).
-                tallest = _layout_heights.get((W, H)) or _layout_partial.get((W, H))
+                size = (self.width(), self.height())  # as measured (not the taskbar limit)
+                tallest = _layout_heights.get(size) or _layout_partial.get(size)
                 slack = 0 if tallest is None else max(0, tallest - h.height())
             if h.bottom() + 12 + ch <= H - 8:
                 y = min(h.bottom() + 12 + slack, H - ch - 8)
@@ -2935,6 +3079,7 @@ class _Tour(QWidget):
 
     def close_tour(self):
         global _tour
+        _pause_warmup(False)
         try:
             self._win.removeEventFilter(self)
         except RuntimeError:
@@ -3063,10 +3208,41 @@ def start_from_menu():
     start_tour(force=True)
 
 
+def _cache_busy():
+    """The history cache is still being built in the background (a first install): its
+    work there slows the whole interface (the animations of the tour stutter, the widgets
+    change size as their data comes), so the tour waits for it."""
+    try:
+        from ...logic.history_cache import GlobalHistoryCache
+
+        cache = getattr(GlobalHistoryCache, "_instance", None)
+        if cache is None:
+            return True
+        # Not the warmup of every deck that follows (minutes on a big collection): it
+        # waits while the tour plays (see _pause_warmup), the decks shown load on demand.
+        return bool(not cache.is_initialized or cache._is_initializing or getattr(cache, "_fsrs_pending", False))
+    except Exception:
+        return False
+
+
+def _pause_warmup(on):
+    """The background warmup of every deck stands still while the tour plays: its work
+    slows the interface (the animations stutter)."""
+    try:
+        from ...logic.history_cache import GlobalHistoryCache
+
+        cache = getattr(GlobalHistoryCache, "_instance", None)
+        if cache is not None:
+            cache._warmup_paused = bool(on)
+    except Exception:
+        log_swallowed()
+
+
 def _ready(win):
     try:
         return (
-            getattr(win, "state", None) == "deckBrowser"
+            not _cache_busy()
+            and getattr(win, "state", None) == "deckBrowser"
             and win.isActiveWindow()
             and QApplication.activeModalWidget() is None
             and QApplication.activePopupWidget() is None

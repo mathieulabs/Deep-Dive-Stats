@@ -4,10 +4,8 @@ from ..utils import _addon_config, _make_radio_group, _make_checkbox
 from . import pinned_title
 from ..wrapper import _wrap
 from . import ADAPTIVE_CHART_BINNING, Config, Period
-from ..shared.context import get_pinned_context_value
 from .....animations.chart_policy import local_chart_animation_batch
 from ....common import (
-    future_due_span_max_days,
     resolve_future_due_ranges,
     apply_chart_display_config,
     create_chart_header_for_chart,
@@ -25,14 +23,20 @@ def _build_future_due(widget_def, deck_id, cache=None, parent=None, cfg=None):
     config = cfg or _addon_config()
     span = widget_def.get("time_span", Period.YEAR)
     show_backlog = widget_def.get("show_backlog", False)
+    from .....logic.metrics.future_due import resolve_breakdown
+
+    bd_mode = resolve_breakdown(widget_def.get("breakdown"), widget_def.get("show_breakdown", False))
     # fetch_data uses GlobalHistoryCache internally for the distribution,
     # then adds the backlog SQL if needed - no need for a separate cache shortcut
-    data = FutureDueDataProvider.fetch_data(config, deck_id, False, span, include_backlog=show_backlog)
+    data = FutureDueDataProvider.fetch_data(config, deck_id, False, span, include_backlog=show_backlog, breakdown=bd_mode,
+                                            hidden_parts=widget_def.get("hidden_series") or ())
 
     adaptive_binning = config.config.get(ADAPTIVE_CHART_BINNING, True)
 
     chart = FutureDueChart(data, parent=parent, adaptive_binning=adaptive_binning, show_backlog=show_backlog)
     chart.binning_override = widget_def.get("binning_override", None)
+    chart.tooltip_hidden = list(widget_def.get("tooltip_hidden") or [])
+    chart.set_percent_mode(bool(widget_def.get("show_percent", False)), animate=False)
     chart.set_cumulative_mode(widget_def.get("show_cumulative", True))
     apply_chart_display_config(
         chart,
@@ -57,34 +61,50 @@ def _build_future_due(widget_def, deck_id, cache=None, parent=None, cfg=None):
     fd_ranges, fd_short, _ = resolve_future_due_ranges(widget_def.get("radio_ranges"))
     default_idx, _, _ = resolve_future_due_choice(fallback_range=default_range, default_idx=2, ranges=fd_ranges)
 
-    state = {"range_idx": default_idx, "deck_id": deck_id}
+    state = {"range_idx": default_idx, "deck_id": deck_id, "backlog": bool(show_backlog), "breakdown": bd_mode}
     chart._pinned_state = state
 
-    backlog_cb = _make_checkbox(tr("Backlog"), checked=show_backlog, parent=header_widget)
-    header_lay.addWidget(backlog_cb)
-
-    def _refresh(new_data, cur_backlog, transition_mode=None):
-        chart.show_backlog = cur_backlog
+    def _refetch(transition_mode=None):
+        new_data = FutureDueDataProvider.fetch_data(
+            config, state.get("deck_id", deck_id), False, fd_ranges[state["range_idx"]],
+            include_backlog=state["backlog"], breakdown=state["breakdown"],
+            hidden_parts=widget_def.get("hidden_series") or (),
+        )
+        chart.show_backlog = state["backlog"]
         with local_chart_animation_batch(chart):
             chart.update_data(new_data, transition_mode=transition_mode)
         refresh_parent_chart_header_stats(chart)
 
-    def on_range_change(idx):
-        state["range_idx"] = idx
-        new_range = fd_ranges[idx]
-        cur_backlog = backlog_cb.isChecked()
-        cur_deck_id = state.get("deck_id", deck_id)
-        new_data = FutureDueDataProvider.fetch_data(config, cur_deck_id, False, new_range, include_backlog=cur_backlog)
-        _refresh(new_data, cur_backlog)
+    # "Breakdown": the bars split in three, by type (learning / young / mature) or by
+    # result (the reviews FSRS expects you to pass / fail), chosen in the button's menu.
+    from ....charts.future_due.breakdown_button import setup_breakdown_button
+
+    def on_breakdown(kind):
         from ...store.registry import WidgetRegistry
-        WidgetRegistry.update_setting(widget_def["id"], "time_span", new_range)
+
+        state["breakdown"] = kind
+        _refetch(transition_mode="timespan")
+        WidgetRegistry.update_setting(widget_def["id"], "breakdown", kind or "none")
+
+    breakdown_btn = _make_checkbox(tr("Breakdown"), checked=bd_mode is not None, parent=header_widget)
+    setup_breakdown_button(breakdown_btn, bd_mode, on_breakdown)
+    header_lay.addWidget(breakdown_btn)
+
+    backlog_cb = _make_checkbox(tr("Backlog"), checked=show_backlog, parent=header_widget)
+    header_lay.addWidget(backlog_cb)
+
+    def on_range_change(idx):
+        from ...store.registry import WidgetRegistry
+
+        state["range_idx"] = idx
+        _refetch()
+        WidgetRegistry.update_setting(widget_def["id"], "time_span", fd_ranges[idx])
 
     def on_backlog_toggled(checked):
-        cur_range = fd_ranges[state["range_idx"]]
-        cur_deck_id = state.get("deck_id", deck_id)
-        new_data = FutureDueDataProvider.fetch_data(config, cur_deck_id, False, cur_range, include_backlog=checked)
-        _refresh(new_data, checked, transition_mode="timespan")
         from ...store.registry import WidgetRegistry
+
+        state["backlog"] = bool(checked)
+        _refetch(transition_mode="timespan")
         WidgetRegistry.update_setting(widget_def["id"], "show_backlog", checked)
 
     backlog_cb.toggled.connect(on_backlog_toggled)
@@ -101,71 +121,22 @@ def _build_future_due(widget_def, deck_id, cache=None, parent=None, cfg=None):
 
 
 def _update_future_due(chart, widget_def, deck_id, cache=None, fail_if_not_cached=False, cfg=None):
-    from .....logic.metrics.future_due import FutureDueDataProvider, build_future_due_payload
+    from .....logic.metrics.future_due import FutureDueDataProvider
 
     config = cfg or _addon_config()
     span = widget_def.get("time_span", Period.YEAR)
     show_backlog = widget_def.get("show_backlog", False)
+    pinned_state = getattr(chart, "_pinned_state", None) or {}
+    from .....logic.metrics.future_due import resolve_breakdown
 
-    # Compute max_days for the widget's span (mirrors FutureDueDataProvider logic)
-    span_max_days = future_due_span_max_days(span)  # None means dynamic (all)
+    if "breakdown" in pinned_state:
+        bd_mode = pinned_state["breakdown"]
+    else:
+        bd_mode = resolve_breakdown(widget_def.get("breakdown"), widget_def.get("show_breakdown", False))
 
-    # Check GlobalHistoryCache first - but only reuse if the span matches or data needs trimming
-    _, cached_data = get_pinned_context_value(
-        deck_id,
-        Period.TOTAL,
-        "future_due",
-        cfg=config,
-        allow_slow_ops=False,
-    )
-
-    data = None
-    if cached_data:
-        # Cache has Total-span data: re-filter distribution to the widget's span
-        raw_dist = cached_data.get("distribution", {})
-        from aqt import mw
-        today = int(mw.col.sched.today or 0)
-
-        filtered = {}
-        backlog_count = 0
-        for k, v in raw_dist.items():
-            try:
-                k = int(k)
-            except Exception:
-                continue
-            # Cache stores absolute Anki day offsets, convert to relative days.
-            # Skip epoch timestamps (queue=1 learning cards, excluded to match Anki native forecast).
-            if k >= 1000000000:
-                continue
-            rel_day = k - today
-            # For day-based dues, the minimum plausible relative day is -today.
-            # Values far below this are invalid artifacts (e.g. -100000).
-            if rel_day < -today:
-                continue
-
-            is_in_span = (span_max_days is None) or (rel_day <= span_max_days)
-
-            if rel_day >= 0:
-                if is_in_span:
-                    filtered[rel_day] = filtered.get(rel_day, 0) + v
-            elif show_backlog:
-                # Backlog is always included regardless of span limit (it's the past)
-                filtered[rel_day] = filtered.get(rel_day, 0) + v
-                backlog_count += v
-
-        if filtered:
-            data = build_future_due_payload(
-                filtered,
-                time_span=span,
-                addon_config=config,
-                backlog_count=backlog_count,
-            )
-
-    # Fall back to the provider fetch on a cache miss or unresolved span. This
-    # widget must stay live when navigating decks even if the Deep Dive has not
-    # primed the cache key yet.
-    if data is None:
-        data = FutureDueDataProvider.fetch_data(config, deck_id, False, span, include_backlog=show_backlog)
+    # Straight from the cards table (a quick grouped query), counted as in Anki's graph.
+    data = FutureDueDataProvider.fetch_data(config, deck_id, False, span, include_backlog=show_backlog, breakdown=bd_mode,
+                                            hidden_parts=widget_def.get("hidden_series") or ())
 
     if data is None:
         return False
@@ -181,6 +152,8 @@ def _update_future_due(chart, widget_def, deck_id, cache=None, fail_if_not_cache
         chart.binning_override = widget_def.get("binning_override", None)
         chart.set_cumulative_mode(widget_def.get("show_cumulative", True))
         chart.update_data(data, adaptive_binning=adaptive_binning)
+        if hasattr(chart, "_pinned_state"):
+            chart._pinned_state["backlog"] = bool(show_backlog)
 
         refresh_parent_chart_header_stats(chart)
 

@@ -100,9 +100,14 @@ from ..shared.dialog_runtime_handlers import (
     on_adaptive_binning_changed as on_adaptive_binning_changed_impl,
     on_animation_scope_changed as on_animation_scope_changed_impl,
     on_chart_animation_threshold_changed as on_chart_animation_threshold_changed_impl,
+    on_transition_style_changed as on_transition_style_changed_impl,
+    on_pinned_transition_style_changed as on_pinned_transition_style_changed_impl,
+    on_appear_animation_changed as on_appear_animation_changed_impl,
+    on_zoom_animation_changed as on_zoom_animation_changed_impl,
     on_binning_scale_changed as on_binning_scale_changed_impl,
     on_global_row_height_changed as on_global_row_height_changed_impl,
     on_thousands_separator_changed as on_thousands_separator_changed_impl,
+    on_chart_help_changed as on_chart_help_changed_impl,
     on_toolbar_button_style_changed as on_toolbar_button_style_changed_impl,
     on_side_view_changed as on_side_view_changed_impl,
     on_stats_precision_changed as on_stats_precision_changed_impl,
@@ -268,6 +273,9 @@ class DetailedStatsConfigDialog(QDialog):
 
     def on_thousands_separator_changed(self, state):
         on_thousands_separator_changed_impl(self, state)
+
+    def on_chart_help_changed(self, state):
+        on_chart_help_changed_impl(self, state)
 
     def on_toolbar_button_style_changed(self, index):
         on_toolbar_button_style_changed_impl(self)
@@ -545,6 +553,18 @@ class DetailedStatsConfigDialog(QDialog):
 
     def on_animation_scope_changed(self, _index):
         on_animation_scope_changed_impl(self)
+
+    def on_transition_style_changed(self, _index):
+        on_transition_style_changed_impl(self)
+
+    def on_pinned_transition_style_changed(self, _index):
+        on_pinned_transition_style_changed_impl(self)
+
+    def on_appear_animation_changed(self, state):
+        on_appear_animation_changed_impl(self, state)
+
+    def on_zoom_animation_changed(self, state):
+        on_zoom_animation_changed_impl(self, state)
 
     def on_chart_animation_threshold_changed(self, value):
         on_chart_animation_threshold_changed_impl(self, value)

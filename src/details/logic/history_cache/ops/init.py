@@ -175,9 +175,17 @@ def init_async(cache_cls, callback=None):
                     break
 
             if not has_fsrs:
+                instance._fsrs_pending = True
+
+                def fsrs_done(f):
+                    try:
+                        instance._apply_fsrs_cache(f)
+                    finally:
+                        instance._fsrs_pending = False
+
                 mw.taskman.run_in_background(
                     lambda: cache_cls._populate_fsrs_cache(),
-                    on_done=lambda f: instance._apply_fsrs_cache(f),
+                    on_done=fsrs_done,
                 )
             else:
                 instance._save_to_disk()

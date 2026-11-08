@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+from __future__ import annotations
 
 import copy
 import json
@@ -92,6 +93,23 @@ _BOX_INTENSITY_KEYS = (
     Config.TEXT_WIDGET_GLASS_INTENSITY,
     Config.HEATMAP_GLASS_INTENSITY,
 )
+
+
+def _drop_old_default_heights(normalized):
+    """Once: the old defaults gave Difficulty, Retrievability and Added a fixed height of 200
+    px. With the heights that follow the card width, that kept the last row of Deep Dive
+    flat while the others grew. Only that exact default value is dropped."""
+    dd = normalized.get(Config.DEEP_DIVE_WIDGET_SETTINGS)
+    if not isinstance(dd, dict):
+        return
+    dd = dict(dd)
+    for key in ("difficulty_g", "retrievability_g", "added_g"):
+        entry = dd.get(key)
+        if isinstance(entry, dict) and entry.get("height") == 200:
+            entry = dict(entry)
+            entry.pop("height", None)
+            dd[key] = entry
+    normalized[Config.DEEP_DIVE_WIDGET_SETTINGS] = dd
 
 
 def _move_box_intensities_to_even_scale(saved, normalized):
@@ -281,6 +299,9 @@ class ConfigManager:
         if not normalized.get(Config.GLASS_SCALE_EVEN):
             _move_box_intensities_to_even_scale(saved, normalized)
             normalized[Config.GLASS_SCALE_EVEN] = True
+        if not normalized.get(Config.DEEP_DIVE_DEFAULT_HEIGHTS_DROPPED):
+            _drop_old_default_heights(normalized)
+            normalized[Config.DEEP_DIVE_DEFAULT_HEIGHTS_DROPPED] = True
         return normalized
 
     def _load_live_config(self) -> dict[str, Any]:

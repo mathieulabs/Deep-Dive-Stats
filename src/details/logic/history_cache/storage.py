@@ -1,9 +1,24 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+import zlib
+
 from .shared import mw, os, pickle, time
 from ....const.addon_dir import addon_removed
 from ..logger import log_swallowed
 from .exclusion import exclusion_signature
+
+# Start of a compressed cache file (a plain pickle starts with 0x80).
+_ZLIB_MAGIC = b"DDZ1"
+
+
+def _drop_zero_hours(cache):
+    """An older cache: each day kept its 24 hours, also the ones without reviews."""
+    for ctxs in cache.values():
+        for ctx in (ctxs or {}).values():
+            for day in (ctx.get("reviews") or []) if isinstance(ctx, dict) else []:
+                hours = day.get("hourly") if isinstance(day, dict) else None
+                if isinstance(hours, dict):
+                    day["hourly"] = {h: v for h, v in hours.items() if v.get("total") or v.get("correct")}
 
 
 class StorageMixin:
@@ -41,26 +56,37 @@ class StorageMixin:
             with self._lock:
                 data = {
                     "crt": crt,
-                    "cache": self.cache,
+                    "cache": dict(self.cache),  # a plain dict on disk
                     "hier_map": self.hier_map,
                     "last_max_rev_id": self.last_max_rev_id,
                     "last_max_card_id": self.last_max_card_id,
                     "last_logical_date": getattr(self, "last_logical_date", None),
-                    "version": 16,  # 16: young/mature retention counted like Anki (interval >= 1 day or review type); 15: rollover after local time
+                    "version": 17,  # 17: each day keeps only its hours with reviews, the all-decks entry once; 16: young/mature retention counted like Anki (interval >= 1 day or review type); 15: rollover after local time
                     "excluded": exclusion_signature(),
                 }
                 payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+            # Compressed on disk (about 10x smaller: the rows of the days repeat a lot), out of
+            # the lock; zlib lets the interface run meanwhile.
+            payload = _ZLIB_MAGIC + zlib.compress(payload, 6)
             if addon_removed():
                 return False
             tmp_path = cache_file + ".tmp"
-            with open(tmp_path, "wb") as f:
-                f.write(payload)
-                f.flush()
+            try:
+                with open(tmp_path, "wb") as f:
+                    f.write(payload)
+                    f.flush()
+                    try:
+                        os.fsync(f.fileno())
+                    except Exception:
+                        log_swallowed()
+                os.replace(tmp_path, cache_file)
+            except OSError:
+                # A full disk: no half-written file left behind (the old cache stays).
                 try:
-                    os.fsync(f.fileno())
-                except Exception:
-                    log_swallowed()
-            os.replace(tmp_path, cache_file)
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+                raise
             return True
 
         def on_done(future):
@@ -119,7 +145,12 @@ class StorageMixin:
         try:
             _load_start = time.time()
             with open(load_path, "rb") as f:
-                data = pickle.load(f)
+                raw = f.read()
+            plain = not raw.startswith(_ZLIB_MAGIC)
+            if not plain:
+                raw = zlib.decompress(raw[len(_ZLIB_MAGIC):])
+            data = pickle.loads(raw)  # an older file: plain pickle
+            del raw
 
             if not isinstance(data, dict) or data.get("version", 0) < 16:
                 self._log("Cache file validation failed or old version. Forcing rebuild.")
@@ -133,7 +164,9 @@ class StorageMixin:
                 self._log("Saved cache belongs to another collection (restore or import). Forcing rebuild.")
                 return False
 
-            self.cache = data.get("cache", {})
+            self.cache = data.get("cache", {})  # (an older file: its "[[TOTAL]]" copy dropped)
+            if data.get("version", 0) < 17:
+                _drop_zero_hours(self.cache)
             self.hier_map = data.get("hier_map", {})
             self.last_max_rev_id = data.get("last_max_rev_id", 0)
             self.last_max_card_id = data.get("last_max_card_id", 0)
@@ -142,6 +175,12 @@ class StorageMixin:
             self.last_logical_date = None
             elapsed = time.time() - _load_start
             self._log(f"Loaded from disk in {elapsed:.2f}s. Max rev_id: {self.last_max_rev_id}, Max card_id: {self.last_max_card_id}")
+            if plain or data.get("version", 0) < 17:
+                # A file of an older version: written again compressed, once, a little
+                # after startup (not while Anki opens).
+                from aqt.qt import QTimer
+
+                QTimer.singleShot(20000, self._save_to_disk)
             return True
         except Exception as e:
             self._log(f"Failed to load from disk: {e}")

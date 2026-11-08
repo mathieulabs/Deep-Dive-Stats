@@ -16,6 +16,54 @@ from ....const.addon_dir import addon_removed
 from ..logger import log_swallowed
 
 
+# The all-decks entry has two names: None and this one (the tables and Deep Dive use it).
+TOTAL_ALIAS = "[[TOTAL]]"
+
+
+class DeckCache(dict):
+    """{deck key: {range: context}}, the all-decks entry kept once: "[[TOTAL]]" reads and
+    writes the entry of None (they held the same data twice)."""
+
+    __slots__ = ()
+
+    @staticmethod
+    def _key(key):
+        return None if key == TOTAL_ALIAS else key
+
+    def __init__(self, data=None):
+        super().__init__()
+        if data:
+            self.update(data)
+
+    def update(self, data=(), **kw):
+        items = dict(data, **kw)
+        for key, value in items.items():
+            if key == TOTAL_ALIAS and None in items:
+                continue  # an older cache: both entries, the same data
+            dict.__setitem__(self, self._key(key), value)
+
+    def __getitem__(self, key):
+        return dict.__getitem__(self, self._key(key))
+
+    def __setitem__(self, key, value):
+        dict.__setitem__(self, self._key(key), value)
+
+    def __delitem__(self, key):
+        dict.__delitem__(self, self._key(key))
+
+    def __contains__(self, key):
+        return dict.__contains__(self, self._key(key))
+
+    def get(self, key, default=None):
+        return dict.get(self, self._key(key), default)
+
+    def setdefault(self, key, default=None):
+        return dict.setdefault(self, self._key(key), default)
+
+    def pop(self, key, *default):
+        return dict.pop(self, self._key(key), *default)
+
+
 class GlobalHistoryCacheCore:
     """Singleton cache that stores aggregated history for all decks.
     Populated once at startup and updated incrementally.
@@ -49,6 +97,8 @@ class GlobalHistoryCacheCore:
             cls._instance._last_profile = None  # Track last profile to detect real switches
             cls._instance._deferred_warmup_timer = None
             cls._instance._deferred_warmup_in_progress = False
+            # The FSRS part of a first build, still running in the background.
+            cls._instance._fsrs_pending = False
             cls._instance._deferred_warmup_priority = []
             cls._instance._hier_cache_data = None
             cls._instance._hier_cache_invalidated = False
@@ -77,6 +127,14 @@ class GlobalHistoryCacheCore:
             gui_hooks.collection_did_load.append(cls._instance._on_collection_loaded)
 
         return cls._instance
+
+    @property
+    def cache(self):
+        return self._deck_cache
+
+    @cache.setter
+    def cache(self, value):
+        self._deck_cache = value if isinstance(value, DeckCache) else DeckCache(value or {})
 
     @staticmethod
     def _get_addon_path():

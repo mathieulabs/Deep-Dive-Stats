@@ -163,6 +163,10 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
 
         masonry_container.setAcceptDrops(True)
         masonry_container.installEventFilter(self._event_filter_proxy)
+        from .. import extra_charts as _extra_spot
+
+        # "+ Add Chart" on hover over the free end of the last row.
+        _extra_spot.install_add_spot(self, masonry_container, masonry_layout)
 
         self.dialog.expanded_chart_area.addWidget(masonry_container)
         from .fill_height import install as _install_fill_height
@@ -213,6 +217,15 @@ def populate_dashboard(self, grid_container_cls, is_warmup=False):
             (lambda: self._build_retrievability_section(self.last_deck_identifier, self.last_history_range, self.last_row_data, manual_add=True), "retrievability", N_("Retrievability")),
             (lambda: self._build_added_section(self.last_deck_identifier, self._get_dd_widget_setting("added", "time_span", self.last_history_range), self.last_row_data, manual_add=True), "added", N_("Added"))
         ]
+
+        from .. import extra_charts
+
+        # The usual charts the user removed are left out; the added ones join them.
+        _hidden = set(extra_charts.hidden_types(self))
+        widget_builders = [b for b in widget_builders if b[1] not in _hidden]
+        for _extra in extra_charts.extra_types(self):
+            _label = extra_charts.BY_TYPE[_extra].label
+            widget_builders.append((lambda t=_extra: extra_charts.build_section(self, t), _extra, _label))
 
         if chart_order:
             order_map = {name: i for i, name in enumerate(chart_order)}

@@ -40,6 +40,7 @@ def draw_cached_discrete_scaffold(
         int(round(float(axis_max or 0.0))),
         None if max_cumulative is None else int(round(float(max_cumulative or 0.0))),
         bool(getattr(widget, "show_cumulative_axis", True)),
+        bool(getattr(widget, "percent_active", lambda: False)()),
         _theme_color_token(theme.get("text")),
         _theme_color_token(theme.get("text_secondary")),
         _theme_color_token(theme.get("grid")),
@@ -70,6 +71,7 @@ def draw_cached_discrete_scaffold(
                 margin_bottom,
                 axis_max,
                 max_cumulative=max_cumulative if bool(getattr(widget, "show_cumulative_axis", True)) else None,
+                value_formatter=(widget._axis_label_formatter() if hasattr(widget, "_axis_label_formatter") else None),
                 widget=widget,
             )
         finally:
@@ -294,7 +296,7 @@ def resolve_discrete_bar_draw_state(
     step_x = plot_w / count if count > 0 else plot_w
     bar_w = max(1.0, step_x * float(width_ratio or 0.0))
     slots = None
-    if widget._data_transition_active:
+    if widget._data_transition_active and getattr(widget, "_global_transition_mode", None) is None:
         old_attr, new_attr = _resolve_transition_count_attrs(transition_count_attr)
         old_count = int(getattr(widget, old_attr, 0) or 0)
         new_count = int(getattr(widget, new_attr, 0) or 0)
@@ -322,26 +324,54 @@ def resolve_discrete_bar_geometry(index, *, step_x, bar_w, slots, margin_left):
     return x, cur_w
 
 
+# Bar colours worked out once and kept (a paint asked for them bar by bar, 60 times a
+# second while animating; the same few shades come back). Copies are returned: callers may
+# change them.
+_SHADE_ENDS = {}
+_SHADES = {}
+_FINAL = {}
+
+
 def build_discrete_gradient_color(base_color, *, ratio, dark):
-    c = QColor(base_color)
+    rgba = QColor(base_color).rgba()
+    ends = _SHADE_ENDS.get((rgba, dark))
+    if ends is None:
+        c = QColor(base_color)
+        light_mul = 1.4 if dark else 1.22
+        dark_mul = 0.7 if dark else 0.68
+        ends = _SHADE_ENDS[(rgba, dark)] = (
+            min(255, int(c.lightness() * light_mul)),
+            max(0, int(c.lightness() * dark_mul)),
+        )
+    start_l, end_l = ends
     clamped_ratio = max(0.0, min(1.0, float(ratio or 0.0)))
-    light_mul = 1.4 if dark else 1.22
-    dark_mul = 0.7 if dark else 0.68
-    start_l = min(255, int(c.lightness() * light_mul))
-    end_l = max(0, int(c.lightness() * dark_mul))
     current_l = int(start_l - (start_l - end_l) * clamped_ratio)
-    c.setHsl(c.hslHue(), c.hslSaturation(), current_l)
-    return c
+    key = (rgba, current_l)
+    c = _SHADES.get(key)
+    if c is None:
+        c = QColor(base_color)
+        c.setHsl(c.hslHue(), c.hslSaturation(), current_l)
+        if len(_SHADES) > 4096:
+            _SHADES.clear()
+        _SHADES[key] = c
+    return QColor(c)
 
 
 def finalize_discrete_bar_color(color, *, dark, hovered, opacity_pct):
-    c = QColor(color)
-    if hovered:
-        c = c.lighter(130) if dark else c.darker(115)
-        c.setAlpha(255)
-    else:
-        c.setAlpha(int(float(opacity_pct or 0.0) * 2.55))
-    return c
+    alpha = int(float(opacity_pct or 0.0) * 2.55)
+    key = (QColor(color).rgba(), bool(dark), bool(hovered), alpha)
+    c = _FINAL.get(key)
+    if c is None:
+        c = QColor(color)
+        if hovered:
+            c = c.lighter(130) if dark else c.darker(115)
+            c.setAlpha(255)
+        else:
+            c.setAlpha(alpha)
+        if len(_FINAL) > 4096:
+            _FINAL.clear()
+        _FINAL[key] = c
+    return QColor(c)
 
 
 def finalize_discrete_transition_state(widget, *, t=None, count_attr="points_count"):

@@ -8,7 +8,7 @@ all update() calls land in the same tick so Qt can batch the repaints.
 
 import time
 
-from aqt.qt import QAbstractAnimation, QEasingCurve, QObject, QTimer
+from aqt.qt import QAbstractAnimation, QEasingCurve, QObject, Qt, QTimer
 from .chart_policy import (
     MIN_VISIBLE_CHART_FRACTION,
     chart_animation_force_repaint_allowed,
@@ -108,9 +108,14 @@ class _AnimProxy:
 
 # The single shared QTimer that drives all chart animations
 
+
 class _GlobalAnimDriver(QObject):
     _TICK_MS = 16
-    _QUEUE_OVERLAP_PROGRESS = 0.35
+    # A wave (a row of charts) starts once the one before is halfway through its animation:
+    # about two rows (8 charts) animate at once. Each chart takes about 2 ms to draw a
+    # frame; with 11 to 15 at once (rows starting sooner) a frame took 22 to 26 ms instead
+    # of 16 (measured), the cascade jerked.
+    _QUEUE_OVERLAP_PROGRESS = 0.5
     _QUEUE_OVERLAP_SLOTS = 1
 
     def __init__(self):
@@ -121,6 +126,12 @@ class _GlobalAnimDriver(QObject):
         self._pending = {}
         self._timer = QTimer()
         self._timer.setInterval(self._TICK_MS)
+        # Precise: the default (coarse) timer ticked every 20 to 24 ms on Windows even with
+        # little to draw (measured), about 45 frames a second instead of 60.
+        try:
+            self._timer.setTimerType(Qt.TimerType.PreciseTimer)
+        except Exception:
+            pass
         self._timer.timeout.connect(self._tick)
 
     def register(self, chart, duration_ms, easing, finished_proxy):
@@ -234,10 +245,25 @@ class _GlobalAnimDriver(QObject):
         first_batch_key, first_wave_index = wave_entries[0][0], wave_entries[0][1]
         return [item for item in wave_entries if item[0] == first_batch_key and item[1] == first_wave_index]
 
-    def _wave_group_can_start(self, root_key, batch_key, wave_index, now):
+    def _wave_group_can_start(self, root_key, batch_key, wave_index, now, exclude=None):
         has_pending_lower_wave = False
         lower_wave_progress = 1.0
         has_active_lower_wave = False
+
+        # The animations drawn apart from this driver (run_in_turn): a lower wave still
+        # waiting, or only just started, holds this one back as the driver's own do.
+        for ext in list(_external.values()):
+            if ext is exclude or ext["root"] != root_key:
+                continue
+            plan = ext["plan"]
+            if int(plan.get("batch_key", 0) or 0) != int(batch_key):
+                continue
+            if int(plan.get("wave_index", 0) or 0) >= int(wave_index):
+                continue
+            if ext["t0"] is None:
+                return False
+            if (now - ext["t0"]) * 1000.0 / max(1, ext["dur"]) < self._QUEUE_OVERLAP_PROGRESS:
+                return False
 
         for _, entry in self._pending.items():
             _, pending_root_key, _, _, _, _, queue_plan = entry
@@ -425,3 +451,67 @@ class _GlobalHoverDriver(QObject):
 
 
 _hover_driver = _GlobalHoverDriver()
+
+
+def animations_running_in_window(widget):
+    """How many chart animations run (or wait in a queue) in widget's window."""
+    try:
+        root_key = _driver._root_key(widget)
+        running = _driver._active_count_for_root(root_key)
+        waiting = sum(1 for e in _driver._pending.values() if e[1] == root_key)
+        return running + waiting
+    except Exception:
+        return 0
+
+
+_external = {}  # id: {"root", "plan", "t0" (None while waiting), "dur"}
+
+
+def run_in_turn(widget, plan, start, duration_ms=300):
+    """start() once the waves before plan's in the refresh's cascade have started (plan:
+    chart_animation_queue_plan), for an animation this driver does not run (the zoom
+    camera's, Week by Hour's cells). Known to the driver meanwhile: the charts of later
+    waves wait for it too. At most 2 s of waiting."""
+    if not plan:
+        start()
+        return
+    try:
+        root = _driver._root_key(widget)
+    except Exception:
+        start()
+        return
+    entry = {"root": root, "plan": plan, "t0": None, "dur": max(1, int(duration_ms))}
+    key = id(entry)
+    _external[key] = entry
+    batch_key = int(plan.get("batch_key", 0) or 0)
+    wave_index = int(plan.get("wave_index", 0) or 0)
+
+    def kick():
+        try:
+            _driver._try_start_pending_for_root(root)
+            if _driver._entries and not _driver._timer.isActive():
+                _driver._timer.start()
+        except Exception:
+            pass
+
+    def finish():
+        _external.pop(key, None)
+        kick()
+
+    def poll(waited=0):
+        try:
+            ready = _driver._wave_group_can_start(root, batch_key, wave_index, time.monotonic(), exclude=entry)
+        except Exception:
+            ready = True
+        if not ready and waited < 2000:
+            QTimer.singleShot(16, lambda: poll(waited + 16))
+            return
+        entry["t0"] = time.monotonic()
+        try:
+            start()
+        finally:
+            QTimer.singleShot(int(entry["dur"] * 0.36) + 1, kick)
+            QTimer.singleShot(entry["dur"], finish)
+
+    poll()
+

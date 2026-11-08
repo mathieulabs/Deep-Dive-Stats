@@ -130,6 +130,10 @@ def run_deferred_full_warmup(cache, batch_size=24, budget_ms=10, priority_deck_i
         if start_idx >= total:
             cache._deferred_warmup_in_progress = False
             return
+        if getattr(cache, "_warmup_paused", False):
+            # The quick tour plays: its animations first, the warmup goes on after it.
+            QTimer.singleShot(1000, lambda: _run_batch(start_idx))
+            return
 
         def _worker():
             processed = 0

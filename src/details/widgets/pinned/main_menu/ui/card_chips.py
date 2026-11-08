@@ -25,9 +25,11 @@ _PAD = 7
 _CHEVRON = 7
 
 # Charts whose data has no period (counts, forecasts, the calendar has its own buttons).
+from ....charts.more_charts import NO_SPAN_TYPES as _MORE_NO_SPAN
+
 NO_SPAN_TYPES = (
     "card_counts", "heatmap", "future_due", "review_intervals",
-    "stability", "difficulty", "retrievability",
+    "stability", "difficulty", "retrievability", *_MORE_NO_SPAN,
 )
 
 
@@ -154,7 +156,7 @@ def fill_span_menu(menu, manager, widget, widget_def):
     )
     if sum(1 for d in WidgetRegistry.get_all() if has_time_span(d)) > 1:
         all_act = menu.addAction(tr("Apply to all widgets"))
-        all_act.setIcon(get_svg_icon("copy", size=14))
+        all_act.setIcon(get_svg_icon("copy", size=14, context_ref=menu))
         all_act.triggered.connect(lambda _=False: apply_span_to_all(manager, widget_def))
 
 

@@ -99,6 +99,7 @@ def draw_bars_impl(widget, painter, plot_w, plot_h, margin_left, margin_top):
     )
 
     painter.setPen(Qt.PenStyle.NoPen)
+    _dark = is_night_mode(widget)  # once per paint, not per bar
     for i in range(n):
         v = draw_values[i] if i < len(draw_values) else 0.0
         if v <= 0:
@@ -116,7 +117,7 @@ def draw_bars_impl(widget, painter, plot_w, plot_h, margin_left, margin_top):
         bar_center_x = x + (cur_w / 2.0)
 
         ratio = (bar_center_x - margin_left) / max(1.0, float(plot_w))
-        dark = is_night_mode(widget)
+        dark = _dark
         c = build_discrete_gradient_color(base_color, ratio=ratio, dark=dark)
         c = finalize_discrete_bar_color(
             c,

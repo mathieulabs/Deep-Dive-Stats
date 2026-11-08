@@ -11,6 +11,17 @@ from .layout_parts.populate_runtime import populate_dashboard
 from ...widgets.pinned.widget_factory.wrapper import ResizableWrapper
 from ....qss import set_qss
 from ...logic.logger import log_swallowed
+from .responsive_grid import GRID_MIN_HEIGHT
+
+# One height for every row of the grid (a resize of any card sets it), kept under this
+# pseudo section of the Deep Dive widget settings. Every card takes it (a card left out, the
+# heatmap or the card counts, made its row taller or shorter than the others).
+GRID_HEIGHT_KEY = "_grid"
+AUTO_HEIGHT_SECTIONS = ()
+# Kept as a scale of the automatic height (see ResponsiveGridLayout._card_height), so a
+# height set by hand follows the cards' width when the number of charts per row changes.
+GRID_SCALE_KEY = "height_scale"
+
 
 class GridContainer(QWidget):
     def __init__(self, parent, manager):
@@ -136,6 +147,94 @@ class DeepDiveLayoutMixin:
         if hasattr(w, "controls_wrapper") and w.controls_wrapper:
             w.controls_wrapper.setVisible(not collapsed)
 
+    def _shared_row_height(self):
+        """Settings > "Same Height for All Rows" (on by default): one height for every row;
+        off, a resize sets the height of its own row only, as before."""
+        return bool(self.addon_config.config.get(Config.DEEP_DIVE_SHARED_ROW_HEIGHT, True))
+
+    def _grid_saved_height(self, section_key):
+        """A height in pixels saved before the scale (see GRID_SCALE_KEY), or None."""
+        if self._grid_height_scale(section_key):
+            return None
+        if self._shared_row_height():
+            h = self._get_dd_widget_setting(GRID_HEIGHT_KEY, "height")
+            if h is None:
+                h = self._get_dd_widget_setting(section_key, "height")
+        else:
+            h = self._get_dd_widget_setting(section_key, "height")
+        try:
+            return int(h) if h else None
+        except (TypeError, ValueError):
+            return None
+
+    def _grid_height_scale(self, section_key):
+        """The height set by hand, as a scale of the automatic height: the one of every row,
+        or (rows resized one by one) the card's own. None: automatic."""
+        key = GRID_HEIGHT_KEY if self._shared_row_height() else section_key
+        v = self._get_dd_widget_setting(key, GRID_SCALE_KEY)
+        try:
+            v = float(v) if v else None
+        except (TypeError, ValueError):
+            return None
+        return v if v and 0.1 < v < 10 else None
+
+    def _has_grid_height(self, section_key=None):
+        """Whether a height was set by hand. Rows resized one by one: in section_key's row."""
+        def has(k):
+            return bool(k) and (self._get_dd_widget_setting(k, "height") is not None
+                                or self._get_dd_widget_setting(k, GRID_SCALE_KEY) is not None)
+
+        if not self._shared_row_height():
+            target = (getattr(self, "section_wrappers", {}) or {}).get(section_key)
+            row = self._row_of(target) if target is not None else []
+            return any(has(k) for k in ([getattr(w, "state_key", None) for w in row] or [section_key]))
+        conf = self.addon_config.config.get(Config.DEEP_DIVE_WIDGET_SETTINGS, {}) or {}
+        return any(isinstance(v, dict) and (v.get("height") is not None or v.get(GRID_SCALE_KEY) is not None)
+                   for v in conf.values())
+
+    def _clear_grid_heights(self, sections=None):
+        """No height set by hand any more (the shared one, the per row ones), or only those
+        of sections."""
+        conf = self.addon_config.config.get(Config.DEEP_DIVE_WIDGET_SETTINGS, {}) or {}
+        if sections is None:
+            self._update_dd_widget_setting(GRID_HEIGHT_KEY, GRID_SCALE_KEY, None, refresh=False, write=False)
+        for key, v in conf.items():
+            base = key[:-2] if key.endswith("_g") else key
+            if isinstance(v, dict) and (sections is None or base in sections):
+                v.pop("height", None)
+                v.pop(GRID_SCALE_KEY, None)
+
+    def _apply_grid_scale(self, w, scale):
+        """The card w at scale times its automatic height (None: automatic)."""
+        try:
+            w._grid_height_factor = scale or None
+            w._has_saved_height = False
+            base = int(getattr(w, "_grid_base_min_h", None) or 200)
+            min_h = GRID_MIN_HEIGHT if scale else base
+            w.setMinimumHeight(min_h)
+            w.setMaximumHeight(16777215)
+            w.original_min_h = min_h
+        except RuntimeError:
+            pass
+
+    def _row_of(self, widget):
+        for row in self._get_grid_rows() or []:
+            if widget in row:
+                return list(row)
+        return [widget] if widget is not None else []
+
+    def _grid_resizable_widgets(self, emitting=None):
+        """The cards a resize of emitting sets: every shown card (one height for all rows),
+        or emitting's row (rows resized one by one)."""
+        if emitting is not None and not self._shared_row_height():
+            return self._row_of(emitting)
+        out = []
+        for row in self._get_grid_rows() or []:
+            for w in row:
+                if getattr(w, "state_key", None) not in AUTO_HEIGHT_SECTIONS:
+                    out.append(w)
+        return out
+
     def _update_grid_widget_height(self, w, h):
         """Update a widget's height visually and update session-local original_min_h."""
         w.setMinimumHeight(h)
@@ -218,14 +317,15 @@ class DeepDiveLayoutMixin:
         if not row_sets:
             return
 
+        new_h = max(GRID_MIN_HEIGHT, int(new_h))
         emitting_widget.setFixedHeight(new_h)
 
-        for row_widgets in row_sets:
-            if emitting_widget in row_widgets:
-                for wi in row_widgets:
-                    if wi != emitting_widget:
-                        wi.setFixedHeight(new_h)
-                break
+        # Every row takes the height (one height for the whole grid); the heatmap and the
+        # card counts are resized alone.
+        if getattr(emitting_widget, "state_key", None) not in AUTO_HEIGHT_SECTIONS:
+            for wi in self._grid_resizable_widgets(emitting_widget):
+                if wi != emitting_widget:
+                    wi.setFixedHeight(new_h)
 
         layout.invalidate()
         if layout.parentWidget():
@@ -243,39 +343,47 @@ class DeepDiveLayoutMixin:
         if not row_sets:
             return
 
-        self._update_grid_widget_height(emitting_widget, new_h)
+        try:
+            new_h = emitting_widget.height()  # as dragged (the value passed is rescaled)
+        except RuntimeError:
+            pass
+        new_h = max(GRID_MIN_HEIGHT, int(new_h))
+        targets = self._grid_resizable_widgets(emitting_widget)
+        # Saved as a scale of the card's automatic height at this layout: the same scale
+        # then gives each layout (charts per row) its own height. (The cards are freed from
+        # the drag's fixed height first: it would be taken for their automatic height.)
+        for wi in set(targets) | {emitting_widget}:
+            self._apply_grid_scale(wi, None)
+        auto = layout.auto_height_of(emitting_widget) if hasattr(layout, "auto_height_of") else 0
+        scale = round(new_h / float(auto), 3) if auto > 0 else None
+        if self._shared_row_height():
+            self._clear_grid_heights()
+            self._update_dd_widget_setting(GRID_HEIGHT_KEY, GRID_SCALE_KEY, scale, refresh=False, write=False)
+        else:
+            keys = [getattr(w, "state_key", None) for w in targets]
+            self._clear_grid_heights([k for k in keys if k])
+            for k in keys:
+                if k:
+                    self._update_dd_widget_setting(k, GRID_SCALE_KEY, scale, refresh=False, write=False)
+        for wi in targets:
+            self._apply_grid_scale(wi, scale)
 
-        target_row = None
-        for row_widgets in row_sets:
-            if emitting_widget in row_widgets:
-                target_row = row_widgets
-                break
+        # The card dragged then sets its own size from the height it was dragged to (after
+        # this callback, see ResizableWrapper.mouseReleaseEvent): put the scale back once it has.
+        from aqt.qt import QTimer
 
-        if target_row:
-            for wi in target_row:
-                self._update_grid_widget_height(wi, new_h)
+        def _again(w=emitting_widget, sc=scale, lay=layout):
+            self._apply_grid_scale(w, sc)
+            try:
+                lay.invalidate()
+                if lay.parentWidget():
+                    lay.parentWidget().updateGeometry()
+            except RuntimeError:
+                pass
 
-                # Persist to config WITHOUT triggering a refresh and WITHOUT writing to disk yet
-                sk = getattr(wi, "state_key", None)
-                if sk:
-                    # Normalize height: Subtract extra stats height before saving
-                    # so that saved height always reflects the BASE chart height.
-                    _text_extra = {
-                        "future_due": 90, "review_intervals": 50, "stability": 50,
-                        "difficulty": 60, "retrievability": 80,
-                        "activity": 50, "retention": 50, "added": 50,
-                    }
-                    show_bottom_stats = self.addon_config.config.get(Config.DEEP_DIVE_SHOW_BOTTOM_STATS, False)
-                    show_all_stats = self.addon_config.config.get(Config.DEEP_DIVE_SHOW_STATS, True)
-
-                    persisted_h = new_h
-                    if show_bottom_stats and show_all_stats:
-                        persisted_h -= _text_extra.get(sk, 50)
-
-                    self._update_dd_widget_setting(sk, "height", persisted_h, refresh=False, write=False)
-
-            if hasattr(self, 'addon_config'):
-                self.addon_config.write_config()
+        QTimer.singleShot(0, _again)
+        if hasattr(self, 'addon_config'):
+            self.addon_config.write_config()
 
         layout.invalidate()
         if layout.parentWidget():
@@ -405,6 +513,12 @@ class DeepDiveLayoutMixin:
         self._setup_zoom_sync()
 
     def _set_section_visible(self, key, visible):
+        deferred = getattr(self, "_dd_deferred_vis", None)
+        if deferred is not None and getattr(self, "_dd_refresh_in_progress", False):
+            # A refresh in progress: shown or hidden when its charts get their data (see
+            # refresh_runtime._run_batch), so the cards slide once that work is done.
+            deferred[key] = bool(visible)
+            return
         wrapper = self.section_wrappers.get(key)
         if wrapper:
             if wrapper.isHidden() == bool(visible):

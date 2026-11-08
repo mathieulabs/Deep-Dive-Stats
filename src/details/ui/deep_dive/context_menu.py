@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from aqt import mw
-from aqt.qt import QAction
+from aqt.qt import QAction, QTimer
 from .. import Config
 from ..shared.menu import StyledMenu
 from ..shared.heatmap_menu import add_heatmap_display_actions, apply_heatmap_display
@@ -31,15 +31,23 @@ class DeepDiveContextMenu:
         menu.addAction(fs_action)
         menu.addSeparator()
 
+        from . import extra_charts
+
         settings_action = QAction(tr("Settings"), menu)
         settings_action.setMenuRole(QAction.MenuRole.NoRole)  # macOS would otherwise move it into the app menu as Preferences/Quit
         settings_action.setIcon(get_svg_icon("settings", size=16, context_ref=menu))
         settings_action.triggered.connect(lambda: self.manager._open_dd_widget_settings(section_key, widget))
         menu.addAction(settings_action)
+        from ...widgets.common.chart_help import add_help_action
+
+        add_help_action(menu, section_key, widget)
         menu.addSeparator()
 
-        avg_sections = ["activity", "added", "retention"]
-        cumulative_sections = ["activity", "added", "hourly", "future_due", "review_intervals", "stability"]
+        from ...widgets.charts.more_charts import AVERAGE_TYPES, CUMULATIVE_TYPES, TYPES as MORE_TYPES
+
+        avg_sections = ["activity", "added", "retention", *AVERAGE_TYPES]
+        cumulative_sections = ["activity", "added", "hourly", "future_due", "review_intervals", "stability",
+                               *CUMULATIVE_TYPES]
 
         if section_key in avg_sections:
             menu.addSeparator()
@@ -141,8 +149,46 @@ class DeepDiveContextMenu:
                 self.manager._update_dd_widget_setting(section_key, "show_cumulative", checked))
             menu.addAction(total_act)
 
-        binning_charts = ["activity", "added", "retention", "future_due", "review_intervals", "stability", "difficulty", "retrievability"]
-        if section_key in binning_charts:
+        # "Series": hide parts of the bars (the charts split in parts; Future Due by type).
+        from ..shared.review_types_menu import add_series_actions
+
+        _series_chart = next((c for c in self.manager._get_dd_charts_for_section(section_key)
+                              if hasattr(c, "series_choices")), None)
+        _choices = _series_chart.series_choices() if _series_chart is not None else []
+        if section_key == "future_due":
+            from ...logic.metrics.future_due import resolve_breakdown
+
+            if resolve_breakdown(self.manager._get_dd_widget_setting("future_due", "breakdown", None),
+                                 self.manager._get_dd_widget_setting("future_due", "show_breakdown", False)) == "type":
+                _choices = [("mature", "Mature"), ("young", "Young"), ("learn", "Learning")]
+        if len(_choices) > 1:
+            add_series_actions(
+                menu, _choices, self.manager._get_dd_widget_setting(section_key, "hidden_series", None),
+                lambda hidden: self.manager._update_dd_widget_setting(section_key, "hidden_series", hidden or None),
+            )
+
+        # "Show as %": each bar as the shares of its parts (Activity: with Breakdown by Type).
+        from ...widgets.charts.more_charts import PERCENT_TYPES
+
+        fd_breakdown = None
+        if section_key == "future_due":
+            from ...logic.metrics.future_due import resolve_breakdown
+
+            fd_breakdown = resolve_breakdown(self.manager._get_dd_widget_setting("future_due", "breakdown", None),
+                                             self.manager._get_dd_widget_setting("future_due", "show_breakdown", False))
+        no_split = section_key == "card_states" and not self.manager._get_dd_widget_setting(section_key, "alt_view", False)
+        if ((section_key in PERCENT_TYPES and not no_split) or fd_breakdown == "result"
+                or (section_key == "activity" and getattr(self.manager, "last_activity_breakdown", False))):
+            pct_act = QAction(tr("Show as %"), menu)
+            pct_act.setCheckable(True)
+            pct_act.setChecked(bool(self.manager._get_dd_widget_setting(section_key, "show_percent", False)))
+            pct_act.triggered.connect(lambda checked:
+                self.manager._update_dd_widget_setting(section_key, "show_percent", checked))
+            menu.addAction(pct_act)
+
+        binning_charts = ["activity", "added", "retention", "future_due", "review_intervals", "stability", "difficulty",
+                          "retrievability", *MORE_TYPES]
+        if section_key in binning_charts and section_key not in ("due_today", "week_hours"):  # no bins
             from .. import ADAPTIVE_CHART_BINNING
             global_binning = self.manager.addon_config.config.get(ADAPTIVE_CHART_BINNING, True)
             binning_override = self.manager._get_dd_widget_setting(section_key, "binning_override", None)
@@ -155,7 +201,8 @@ class DeepDiveContextMenu:
                 self.manager._update_dd_widget_setting(section_key, "binning_override", checked))
             menu.addAction(binning_act)
 
-        if section_key in ["activity", "added", "retention", "hourly", "future_due", "review_intervals", "stability", "difficulty", "retrievability"]:
+        if section_key in ["activity", "added", "retention", "hourly", "future_due", "review_intervals", "stability",
+                           "difficulty", "retrievability", *MORE_TYPES]:
             menu.addSeparator()
             show_bottom_stats = self.manager.addon_config.config.get(Config.DEEP_DIVE_SHOW_BOTTOM_STATS, False)
             bottom_stats_act = QAction(tr("Show Bottom Stats (All Charts)"), menu)
@@ -221,22 +268,15 @@ class DeepDiveContextMenu:
 
             add_heatmap_display_actions(menu, self.manager.addon_config.config, on_display_changed)
 
-        has_h = self.manager._get_dd_widget_setting(section_key, "height") is not None
-        if not has_h and getattr(self.manager, "grid_mode", False):
-            # A saved height sizes its whole row, and Reset Size resets the whole row:
-            # offer it on every card of that row, not just the one that was resized.
-            try:
-                target = (getattr(self.manager, "section_wrappers", {}) or {}).get(section_key)
-                for row in self.manager._get_grid_rows():
-                    if target in row:
-                        has_h = any(
-                            getattr(w, "state_key", None)
-                            and self.manager._get_dd_widget_setting(w.state_key, "height") is not None
-                            for w in row
-                        )
-                        break
-            except Exception:
-                log_swallowed()
+        # One height for every row (layout.py): Reset Size on every card once it is set.
+        from .layout import AUTO_HEIGHT_SECTIONS
+
+        if section_key in AUTO_HEIGHT_SECTIONS:
+            has_h = self.manager._get_dd_widget_setting(section_key, "height") is not None
+        elif hasattr(self.manager, "_has_grid_height"):
+            has_h = self.manager._has_grid_height(section_key)
+        else:
+            has_h = self.manager._get_dd_widget_setting(section_key, "height") is not None
         has_span = int(self.manager._get_dd_widget_setting(section_key, "col_span", 1)) > 1
         if has_h or has_span:
             menu.addSeparator()
@@ -266,6 +306,20 @@ class DeepDiveContextMenu:
             zoom_act.triggered.connect(_apply_zoom_span)
             menu.addAction(zoom_act)
 
+        # Add another chart, or take this one off (any chart, with Undo).
+        if section_key in extra_charts.BY_TYPE or section_key in extra_charts.base_types():
+            menu.addSeparator()
+            add_action = QAction(tr("Add Chart..."), menu)
+            add_action.setIcon(get_svg_icon("chart-plus", size=16, context_ref=menu))
+            # After the menu is closed: what they do rebuilds the charts, the one clicked too.
+            add_action.triggered.connect(lambda: QTimer.singleShot(0, lambda: extra_charts.open_gallery(self.manager)))
+            menu.addAction(add_action)
+            remove_action = QAction(tr("Remove"), menu)
+            remove_action.setIcon(get_svg_icon("trash-2", size=16, context_ref=menu))
+            remove_action.triggered.connect(
+                lambda: QTimer.singleShot(0, lambda: extra_charts.remove_chart(self.manager, section_key)))
+            menu.addAction(remove_action)
+
         menu.exec(widget.mapToGlobal(pos))
 
     def _open_fullscreen(self, widget):
@@ -292,6 +346,10 @@ class DeepDiveContextMenu:
 
     def pin_info(self, section_key):
         """(widget type, label) of the chart a section shows, or None if it cannot be pinned."""
+        from .extra_charts import BY_TYPE
+
+        if section_key in BY_TYPE:
+            return section_key, BY_TYPE[section_key].label
         if section_key not in self._PINNABLE:
             return None
         from ..config.widgets.label_defaults import DEFAULT_LABELS

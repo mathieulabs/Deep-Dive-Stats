@@ -8,6 +8,8 @@ from .transition import (
     get_timespan_transition_meta,
     resolve_adaptive_zoom_window,
     should_use_timespan_transition,
+    timespan_transition_mode,
+    rows_on_new_days,
     update_chart_for_transition,
     widen_zoom_window,
 )
@@ -20,6 +22,8 @@ __all__ = [
     "get_timespan_transition_meta",
     "resolve_adaptive_zoom_window",
     "should_use_timespan_transition",
+    "timespan_transition_mode",
+    "rows_on_new_days",
     "update_chart_for_transition",
     "widen_zoom_window",
 ]

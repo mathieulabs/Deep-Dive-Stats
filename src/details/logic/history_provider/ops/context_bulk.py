@@ -2,7 +2,6 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from .....utils import excluded_days_clause
 from ..shared import Config, REVLOG_RESCHED, Period, get_daystart_epoch_sql, mw
-from ...logger import log_swallowed
 from ...data.core.revlog_slices import revlog_slices as _revlog_slices, sliced_all as _sliced_all
 
 def _deleted_cards_count(slices):
@@ -155,24 +154,29 @@ def fetch_all_decks_context(provider_cls, addon_config, range_type=Period.YEAR, 
     rows_counts = mw.col.db.all(query_counts)
 
     rows_future = []
+    # The cards of Future Due (counted as in Anki's graph), by Anki due day.
+    from ...metrics.future_due import due_day_sql
+
+    fd_day, fd_cond = due_day_sql()
+    fd_due = f"{int(mw.col.sched.today)} + {fd_day}"
     if is_delta and min_rev_id is not None:
         query_future = f"""
-            SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid, due, COUNT(*)
-            FROM cards
-            WHERE queue IN (2, 3)
+            SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid, {fd_due} AS fd_due, COUNT(*)
+            FROM cards AS cards
+            WHERE {fd_cond}
             AND (CASE WHEN odid > 0 THEN odid ELSE did END) IN (
                 SELECT DISTINCT COALESCE((CASE WHEN c2.odid > 0 THEN c2.odid ELSE c2.did END), -1)
                 FROM revlog rl LEFT JOIN cards c2 ON rl.cid = c2.id
                 WHERE rl.id > {min_rev_id}
             )
-            GROUP BY hdid, due
+            GROUP BY 1, 2
         """
     else:
-        query_future = """
-            SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid, due, COUNT(*)
-            FROM cards
-            WHERE queue IN (2, 3)
-            GROUP BY hdid, due
+        query_future = f"""
+            SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid, {fd_due} AS fd_due, COUNT(*)
+            FROM cards AS cards
+            WHERE {fd_cond}
+            GROUP BY 1, 2
         """
     rows_future = mw.col.db.all(query_future)
 
@@ -205,21 +209,25 @@ def fetch_all_decks_context(provider_cls, addon_config, range_type=Period.YEAR, 
     # Skipped in delta mode: a few reviews barely change the distributions and the full warmup updates them.
     rows_intervals = []
     if not is_delta:
-        query_intervals = """
+        from ...metrics.review_intervals import INTERVAL_CARDS_COND
+
+        query_intervals = f"""
             SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid, ivl, COUNT(*)
-            FROM cards
-            WHERE queue IN (2, 3) AND ivl > 0
-            GROUP BY hdid, ivl
+            FROM cards AS cards
+            WHERE {INTERVAL_CARDS_COND}
+            GROUP BY 1, 2
         """
         rows_intervals = mw.col.db.all(query_intervals)
 
     # Skipped in delta mode: the delta merge always drops fsrs from the cache, so computing it here would waste 100-300ms per review return.
     rows_fsrs = []
     if not is_delta:
-        query_fsrs = """
-            SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid, data, due, ivl, queue
-            FROM cards
-            WHERE queue IN (1, 2, 3)
+        from ...fsrs_math import FSRS_CARD_COLS, FSRS_CARD_COND
+
+        query_fsrs = f"""
+            SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid, {FSRS_CARD_COLS}
+            FROM cards AS cards
+            WHERE {FSRS_CARD_COND}
         """
         rows_fsrs = mw.col.db.all(query_fsrs)
 
@@ -369,9 +377,11 @@ def fetch_all_decks_context(provider_cls, addon_config, range_type=Period.YEAR, 
             ih["correct"] += correct
 
         if bin_idx in e["reviews"]:
-            day_hz = e["reviews"][bin_idx].setdefault("hourly", {h: {"total": 0, "correct": 0} for h in range(24)})
-            day_hz[hour_idx]["total"] += total
-            day_hz[hour_idx]["correct"] += correct
+            # Only the hours with reviews (an hour left out is 0): half the size of the cache.
+            day_hz = e["reviews"][bin_idx].setdefault("hourly", {})
+            slot = day_hz.setdefault(hour_idx, {"total": 0, "correct": 0})
+            slot["total"] += total
+            slot["correct"] += correct
 
     for did, ivl, count in rows_intervals:
         e = get_entry(did)
@@ -379,55 +389,17 @@ def fetch_all_decks_context(provider_cls, addon_config, range_type=Period.YEAR, 
         dist[ivl] = dist.get(ivl, 0) + count
         e["review_intervals"]["total"] += count
 
-    has_pb = False
-    try:
-        from anki.cards_pb2 import CardData
-        has_pb = True
-    except ImportError:
-        pass
-    import json
-    from ...fsrs_math import retrievability
+    # Same counting as the FSRS refresh (population._populate_fsrs_cache) and Anki's graphs.
+    import time as _time
+
+    from ...fsrs_math import add_memory_state, memory_state
+
     today_sched = mw.col.sched.today
-
-    for did, data, due, ivl, queue in rows_fsrs:
-        if not data: continue
-        entry = get_entry(did)
-        fsrs = entry["fsrs"]
-
-        s = 0.0; d = 0.0; decay = None
-        if isinstance(data, bytes) and has_pb:
-            try:
-                cd = CardData.FromString(data)
-                if cd.HasField("fsrs"):
-                    s = cd.fsrs.stability
-                    d = cd.fsrs.difficulty
-            except Exception: log_swallowed()
-        elif isinstance(data, str):
-            try:
-                jd = json.loads(data)
-                if "s" in jd and "d" in jd:
-                    s = float(jd["s"]); d = float(jd["d"]); decay = jd.get("decay")
-                elif "cd" in jd:
-                    cd = jd["cd"]
-                    if isinstance(cd, str): cd = json.loads(cd)
-                    if "s" in cd and "d" in cd:
-                        s = float(cd["s"]); d = float(cd["d"])
-            except Exception: log_swallowed()
-
-        # Same buckets as the FSRS refresh (population._populate_fsrs_cache), so the
-        # charts do not change when that refresh replaces this first pass.
-        if s or d:
-            s_int = min(int(s), 100)
-            fsrs["stability"][s_int] = fsrs["stability"].get(s_int, 0) + 1
-
-            diff_pct = int(((d - 1) / 9.0) * 100) if d > 0 else 0
-            diff_pct = max(0, min(100, diff_pct))
-            fsrs["difficulty"][diff_pct] = fsrs["difficulty"].get(diff_pct, 0) + 1
-
-            if queue == 2 and s > 0:
-                elapsed = max(0, today_sched - (due - ivl))
-                r_pct = max(0, min(100, int(retrievability(elapsed, s, decay) * 100)))
-                fsrs["retrievability"][r_pct] = fsrs["retrievability"].get(r_pct, 0) + 1
+    now = int(_time.time())
+    for did, data, due, odue, odid, ivl, queue, ctype in rows_fsrs:
+        mem = memory_state(data)
+        if mem is not None:
+            add_memory_state(get_entry(did)["fsrs"], mem, due, odue, odid, ivl, queue, ctype, today_sched, now)
 
     get_entry(-1)["counts"]["deleted"] = deleted_cards_count
 

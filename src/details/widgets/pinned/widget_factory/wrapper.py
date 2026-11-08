@@ -198,10 +198,14 @@ class ResizableWrapper(QFrame):
         except Exception:
             max_outer_w = 0
 
+        natural_outer_w = max(preferred_content_w, header_w) + extra_w
         if outer_width is None:
-            target_outer_w = max(preferred_content_w, header_w) + extra_w
+            target_outer_w = natural_outer_w
         else:
-            target_outer_w = max(120, int(outer_width))
+            # A saved width is a least width: a longer text (new values, more digits) widens
+            # the card instead of wrapping. The text wraps only at its own line breaks, or
+            # when the row has no more room.
+            target_outer_w = max(120, int(outer_width), natural_outer_w)
         if 0 < max_outer_w < 200:
             max_outer_w = 0  # the row is not laid out yet: a tiny width is not a real limit
         if max_outer_w > 0:
@@ -731,6 +735,21 @@ class ResizableWrapper(QFrame):
         if on_bottom: return "b"
         return None
 
+def _add_help_button(header_widget, wtype, widget_id):
+    """The "?" with what the chart shows, at the right end of the header (widgets.common.chart_help)."""
+    try:
+        from ...common.chart_help import insert_help_button
+
+        if not wtype and widget_id:
+            wtype = next((w.get("type") for w in WidgetRegistry.get_all() if w.get("id") == widget_id), None)
+        lay = header_widget.layout()
+        if not wtype or lay is None:
+            return
+        insert_help_button(header_widget, wtype)
+    except Exception:
+        log_swallowed()
+
+
 def _wrap(inner_widget, label, header_widget=None, base_color=None, wtype=None, widget_id=None, saved_w=None, saved_h=None, resizable=True, parent=None):
     """Wrap *inner_widget* in a styled card with a header label or custom header widget."""
     resize_dirs = ["r"] if wtype == "text_label" else None
@@ -767,6 +786,7 @@ def _wrap(inner_widget, label, header_widget=None, base_color=None, wtype=None, 
 
     if header_widget:
         header_widget.setCursor(Qt.CursorShape.ArrowCursor)
+        _add_help_button(header_widget, wtype, widget_id)
         if collapse_btn is not None and header_widget.layout() is not None:
             header_widget.layout().insertWidget(0, collapse_btn)
         elif collapse_btn is not None:

@@ -46,7 +46,7 @@ class DeepDiveManager(QObject, DeepDiveLayoutMixin, DeepDiveChartsMixin, DeepDiv
         self._theme_manager.subscribe(self._on_theme_changed)
         self.addon_config = dialog.addon_config
         self.grid_mode = True
-        self.grid_columns = self.addon_config.config.get(Config.DEEP_DIVE_GRID_COLUMNS, 4)
+        self.grid_columns = self.addon_config.config.get(Config.DEEP_DIVE_GRID_COLUMNS, 3)
         self.section_collapse_states = {} # Persist collapse state across view changes
         self.last_activity_breakdown = self._get_dd_widget_setting("activity", "breakdown_enabled", True)
         self.last_retention_visibility = self._get_dd_widget_setting("retention", "visibility", {"all": False, "young": True, "mature": True})

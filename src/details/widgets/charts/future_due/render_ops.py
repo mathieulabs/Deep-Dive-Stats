@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ..common.cache_dpr import cache_dpr, cache_surface, draw_cache, stale_cache
-from aqt.qt import QColor, QPainter, QPen, QRectF, Qt
+from aqt.qt import QColor, QPainter, QPen, QPointF, QRectF, Qt
 
-from ...chart_utils.drawing import chart_style, draw_bar_rect, draw_right_axis_labels
+from ...chart_utils.drawing import chart_style, draw_bar_rect, draw_right_axis_labels, get_hover_marker_outline_color
 from ...chart_utils.theme import get_theme_colors, is_night_mode
 from ..common.discrete import (
     build_discrete_gradient_color,
@@ -155,7 +155,22 @@ def paint_event_impl(widget, event):
                 widget=widget,
             )
 
+    _draw_hover_dots(widget, painter)
     finalize_discrete_transition_state(widget, t=t)
+
+
+def _draw_hover_dots(widget, painter):
+    """Breakdown by Type: a dot in the middle of each type of the hovered bar, as on
+    Activity's breakdown (collected by draw_bars_impl)."""
+    dots = getattr(widget, "_hover_type_dots", None)
+    if not dots or int(getattr(widget, "hover_index", -1)) == -1:
+        return
+    outline = get_hover_marker_outline_color(widget)
+    outline.setAlpha(230 if is_night_mode(widget) else 210)
+    painter.setPen(QPen(outline, 1.5))
+    for center, color in dots:
+        painter.setBrush(color)
+        painter.drawEllipse(center, 4, 4)
 
 
 def draw_bars_impl(widget, painter, plot_w, plot_h, margin_left, margin_top):
@@ -195,9 +210,61 @@ def draw_bars_impl(widget, painter, plot_w, plot_h, margin_left, margin_top):
         p = max(0.0, min(1.0, float(t)))
         backlog_weight = [(1.0 - p) * float(a) + p * float(b) for a, b in zip(old_f, new_f)]
 
+    # "Breakdown by Type": the bars split into mature / young / learning. During a
+    # transition the shares glide from the old bars' to the new ones', and a bar going from
+    # plain to split (or back) fades between its plain colour and the type colours.
+    transition = bool(widget._data_transition_active)
+    if transition:
+        old_sh, new_sh = getattr(widget, "_type_shares", (None, None))
+    else:
+        # Read again from the data: the bars may have been binned again since (a resize).
+        # Kept while the data and the binning stay the same (it was worked out on every
+        # paint, bar by bar).
+        from .data_ops import type_shares
+
+        old_sh = None
+        dist = widget.data_dict.get("distribution", {})
+        memo_key = (id(widget.data_dict), id(dist), id(widget.data_dict.get("breakdown")), widget.max_days,
+                    points_count, bool(widget.show_backlog))
+        memo = getattr(widget, "_type_shares_memo", None)
+        if memo is not None and memo[0] == memo_key:
+            new_sh = memo[1]
+        else:
+            new_sh = type_shares(widget, widget.data_dict, dist, widget.max_days, points_count)
+            widget._type_shares_memo = (memo_key, new_sh)
+    old_kind, old_sh = old_sh if old_sh else (None, None)
+    new_kind, new_sh = new_sh if new_sh else (None, None)
+    if old_kind is not None and new_kind is not None and old_kind != new_kind:
+        old_sh = None  # another breakdown: from plain bars (the colours fade in)
+    split_on = new_sh is not None or old_sh is not None
+    if split_on:
+        from .data_ops import breakdown_parts
+
+        type_colors = [QColor(get_chart_color(c, widget)) for _id, _label, c in breakdown_parts(new_kind or old_kind)]
+        p_t = max(0.0, min(1.0, float(t))) if transition else 1.0
+
+        def _align(lst):
+            if lst is None:
+                return [None] * points_count
+            lst = list(lst)
+            if len(lst) < points_count:
+                pad = [(0.0, 0.0, 0.0)] * (points_count - len(lst))
+                lst = (pad + lst) if getattr(widget, "_transition_align_right", False) else (lst + pad)
+            return lst
+
+        olds = _align(old_sh)
+        news = _align(new_sh)
+        # The mix of the whole chart, for a bar shrinking away that has no cards of its own.
+        mix = [0.0, 0.0, 0.0]
+        for sh in (news if any(x for x in news if x) else olds):
+            if sh:
+                for k in range(3):
+                    mix[k] += sh[k]
+        mix = tuple(v / sum(mix) for v in mix) if sum(mix) else (0.0, 0.0, 1.0)
+
+    widget._hover_type_dots = []
     painter.setPen(Qt.PenStyle.NoPen)
     for i in range(points_count):
-        day, _next_day = widget._get_bin_day_range(i, points_count)
         bucket_sum = draw_values[i] if i < len(draw_values) else 0.0
         if bucket_sum == 0:
             continue
@@ -214,6 +281,61 @@ def draw_bars_impl(widget, painter, plot_w, plot_h, margin_left, margin_top):
         y = margin_top + plot_h - bar_h
         bar_center_x = x + (cur_w / 2.0)
 
+        so = olds[i] if split_on and i < len(olds) else None
+        sn = news[i] if split_on and i < len(news) else None
+        if so is not None or sn is not None:
+            a_sh = so if so is not None and any(so) else None
+            b_sh = sn if sn is not None and any(sn) else None
+            a_sh = a_sh or b_sh or mix
+            b_sh = b_sh or a_sh
+            parts = tuple((1.0 - p_t) * a_sh[k] + p_t * b_sh[k] for k in range(3))
+            # How much the type colours show: 0 = a plain bar, 1 = split.
+            w_split = (1.0 - p_t) * (so is not None) + p_t * (sn is not None)
+            if w_split < 1.0:
+                ratio = (bar_center_x - margin_left) / max(1.0, float(plot_w))
+                plain_c = build_discrete_gradient_color(base_color, ratio=ratio, dark=dark)
+            whole = float(sum(parts)) or 1.0
+            top = max((k for k, v in enumerate(parts) if v > 1e-6), default=2)
+            # The upper parts first, each lower one reaching a little into the one above:
+            # no seam between two parts (a full overlap would show with a see-through opacity).
+            bottom = margin_top + plot_h
+            whole_rect = QRectF(x, bottom - bar_h, cur_w, bar_h)
+            tops = []
+            acc = 0.0
+            for v in parts:
+                acc += v
+                tops.append(bottom - bar_h * (acc / whole))
+            for k in range(2, -1, -1):
+                if parts[k] <= 1e-6:
+                    continue
+                tc = type_colors[k]
+                if w_split < 1.0:
+                    tc = QColor(
+                        int(round(plain_c.red() + (tc.red() - plain_c.red()) * w_split)),
+                        int(round(plain_c.green() + (tc.green() - plain_c.green()) * w_split)),
+                        int(round(plain_c.blue() + (tc.blue() - plain_c.blue()) * w_split)),
+                    )
+                c = finalize_discrete_bar_color(
+                    tc,
+                    dark=dark,
+                    hovered=(i == widget.hover_index),
+                    opacity_pct=getattr(widget, "chart_opacity_pct", 100),
+                )
+                painter.setBrush(c)
+                seg_bottom = bottom
+                for j in range(k - 1, -1, -1):
+                    if parts[j] > 1e-6:
+                        seg_bottom = tops[j]
+                        break
+                seg_top = tops[k] if k == top else tops[k] - 0.75
+                rect = QRectF(x, seg_top, cur_w, max(0.0, seg_bottom - seg_top))
+                if i == widget.hover_index and getattr(widget, "show_hover_marker", True):
+                    widget._hover_type_dots.append(
+                        (QPointF(bar_center_x, (tops[k] + seg_bottom) / 2.0), QColor(tc)))
+                # The fade of the whole bar (as a plain bar's), not one per part.
+                draw_bar_rect(painter, rect, widget=widget, fade_rect=whole_rect, rounded=(k == top))
+            continue
+
         if backlog_weight is not None and i < len(backlog_weight):
             w = backlog_weight[i]
             ratio = (bar_center_x - margin_left) / max(1.0, float(plot_w))
@@ -225,7 +347,7 @@ def draw_bars_impl(widget, painter, plot_w, plot_h, margin_left, margin_top):
                     int(round(c.blue() + (backlog_color.blue() - c.blue()) * w)),
                     int(round(c.alpha() + (backlog_color.alpha() - c.alpha()) * w)),
                 )
-        elif day < 0:
+        elif widget._get_bin_day_range(i, points_count)[0] < 0:  # only asked here (a backlog bar)
             c = QColor(backlog_color)
         else:
             ratio = (bar_center_x - margin_left) / max(1.0, float(plot_w))

@@ -9,7 +9,7 @@ from ..shared.reviews import load_added_source
 from ....charts.added_chart import AddedChartWidget
 from ....charts.common.zoom import (
     get_timespan_transition_meta,
-    should_use_timespan_transition,
+    timespan_transition_mode,
 )
 from ....common import (
     apply_chart_display_config,
@@ -134,7 +134,7 @@ def _update_added(chart, widget_def, deck_id, cache=None, fail_if_not_cached=Fal
             new_series=oldest_first,
             total_span_active=(int(span) == int(Period.TOTAL)),
         )
-        use_timespan_transition = should_use_timespan_transition(
+        use_timespan_transition = timespan_transition_mode(
             transition_meta,
             deck_policy="block",
         )
@@ -145,7 +145,7 @@ def _update_added(chart, widget_def, deck_id, cache=None, fail_if_not_cached=Fal
         chart.update_data(
             oldest_first,
             adaptive_binning=adaptive_binning,
-            transition_mode="timespan" if use_timespan_transition else None,
+            transition_mode=use_timespan_transition,
         )
         chart._last_timespan_token = span_token
         chart._last_deck_id = deck_id

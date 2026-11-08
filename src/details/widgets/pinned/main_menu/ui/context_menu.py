@@ -250,6 +250,9 @@ class PinnedContextMenu:
         settings_action.setIcon(get_svg_icon("file-text" if is_text else "settings", size=16, context_ref=menu))
         settings_action.triggered.connect(lambda: self.manager._open_widget_settings(widget, widget_def))
         menu.addAction(settings_action)
+        from ....common.chart_help import add_help_action
+
+        add_help_action(menu, widget_def.get("type"), widget)
 
         menu.addSeparator()
 
@@ -301,8 +304,10 @@ class PinnedContextMenu:
         menu.addAction(view_act)
 
         wtype = widget_def.get("type")
-        avg_sections = ["activity", "added", "retention"]
-        cumulative_sections = ["activity", "added", "future_due", "review_intervals", "stability"]
+        from ....charts.more_charts import AVERAGE_TYPES, CUMULATIVE_TYPES, TYPES as MORE_TYPES
+
+        avg_sections = ["activity", "added", "retention", *AVERAGE_TYPES]
+        cumulative_sections = ["activity", "added", "future_due", "review_intervals", "stability", *CUMULATIVE_TYPES]
 
         if wtype in set(avg_sections + cumulative_sections):
             menu.addSeparator()
@@ -395,6 +400,45 @@ class PinnedContextMenu:
                     self.manager._update_setting(wid, "show_cumulative", checked))
                 menu.addAction(total_act)
 
+            # "Series": hide parts of the bars (the charts split in parts; Future Due by type).
+            from .....ui.shared.review_types_menu import add_series_actions
+
+            _choices = []
+            _w = self.manager._active_widgets.get(widget_def["id"])
+            if _w is not None:
+                from aqt.qt import QWidget
+
+                _c = next((c for c in _w.findChildren(QWidget) if hasattr(c, "series_choices")), None)
+                _choices = _c.series_choices() if _c is not None else []
+            if wtype == "future_due":
+                from .....logic.metrics.future_due import resolve_breakdown
+
+                if resolve_breakdown(widget_def.get("breakdown"), widget_def.get("show_breakdown", False)) == "type":
+                    _choices = [("mature", "Mature"), ("young", "Young"), ("learn", "Learning")]
+            if len(_choices) > 1:
+                add_series_actions(
+                    menu, _choices, widget_def.get("hidden_series"),
+                    lambda hidden, wid=widget_def["id"]: self.manager._update_setting(wid, "hidden_series", hidden or None),
+                )
+
+            # "Show as %": each bar as the shares of its parts (Activity: with Breakdown by Type).
+            from ....charts.more_charts import PERCENT_TYPES
+
+            fd_breakdown = None
+            if wtype == "future_due":
+                from .....logic.metrics.future_due import resolve_breakdown
+
+                fd_breakdown = resolve_breakdown(widget_def.get("breakdown"), widget_def.get("show_breakdown", False))
+            no_split = wtype == "card_states" and not widget_def.get("alt_view", False)
+            if ((wtype in PERCENT_TYPES and not no_split) or fd_breakdown == "result"
+                    or (wtype == "activity" and widget_def.get("show_breakdown", True))):
+                pct_act = QAction(tr("Show as %"), menu)
+                pct_act.setCheckable(True)
+                pct_act.setChecked(bool(widget_def.get("show_percent", False)))
+                pct_act.triggered.connect(lambda checked, wid=widget_def["id"]:
+                    self.manager._update_setting(wid, "show_percent", checked))
+                menu.addAction(pct_act)
+
         if wtype == "heatmap":
             menu.addSeparator()
             multi_hue = cfg.get(Config.HEATMAP_MULTI_HUE_INTENSITY, False)
@@ -425,7 +469,8 @@ class PinnedContextMenu:
             from .....ui.shared.heatmap_menu import add_heatmap_display_actions
             add_heatmap_display_actions(menu, cfg, on_display_changed)
 
-        wtype_stats = ["activity", "added", "hourly", "future_due", "review_intervals", "stability", "difficulty", "retrievability", "retention"]
+        wtype_stats = ["activity", "added", "hourly", "future_due", "review_intervals", "stability", "difficulty",
+                       "retrievability", "retention", *MORE_TYPES]
         if wtype in wtype_stats:
             menu.addSeparator()
             global_show_bottom_stats = self.manager._config_manager.config.get(Config.DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS, False)
@@ -442,8 +487,9 @@ class PinnedContextMenu:
             all_stats_act.triggered.connect(self.manager._toggle_global_show_stats)
             menu.addAction(all_stats_act)
 
-        wtype_binning = ["activity", "added", "retention", "future_due", "review_intervals", "stability", "difficulty", "retrievability"]
-        if wtype in wtype_binning:
+        wtype_binning = ["activity", "added", "retention", "future_due", "review_intervals", "stability", "difficulty",
+                         "retrievability", *MORE_TYPES]
+        if wtype in wtype_binning and wtype not in ("due_today", "week_hours"):  # 24 bars, a grid, every day
             menu.addSeparator()
 
             from ..imports import Config as _Cfg

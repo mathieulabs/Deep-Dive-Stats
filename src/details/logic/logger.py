@@ -56,6 +56,10 @@ class DeepDiveLogger:
 
     @classmethod
     def _get_log_dir(cls):
+        # dev_tools/check_import_graph.py logs into a throwaway folder, not the user's log.
+        override = os.environ.get("DEEP_DIVE_STATS_LOG_DIR")
+        if override:
+            return override
         # src/details/logic/logger.py -> src -> addon root
         addon_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__)
