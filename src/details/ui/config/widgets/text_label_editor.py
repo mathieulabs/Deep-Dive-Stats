@@ -24,11 +24,18 @@ from aqt.qt import (
     QListWidget,
     QListWidgetItem,
     QKeySequence,
+    QMenu,
     QShortcut,
     QTimer,
+    QTextBlockFormat,
     QTextCharFormat,
     QTextCursor,
+    QTextDocument,
+    QTextDocumentFragment,
     QTextEdit,
+    QTextFormat,
+    QTextLength,
+    QTextListFormat,
     QToolButton,
     QPen,
     QSyntaxHighlighter,
@@ -49,6 +56,7 @@ from ....widgets.pinned.widget_factory.builders.text_label import (
 from .....qss import set_qss
 from ....logic.logger import log_swallowed
 from .....i18n import tr, N_, tr_name
+from .....web_ui.text_editor import VARIABLE_DESCRIPTIONS
 
 
 def extract_html_body(editor: QTextEdit) -> str:
@@ -58,7 +66,8 @@ def extract_html_body(editor: QTextEdit) -> str:
         return editor.toPlainText()
     body = _normalize_template_markup(match.group(1).strip())
     para_match = None
-    if body.lower().count("<p") == 1:
+    # one paragraph: its words only, unless it is centered / right aligned (the <p> carries that)
+    if body.lower().count("<p") == 1 and not re.search(r"<p[^>]*\balign=", body, re.IGNORECASE):
         para_match = re.match(r"^<p[^>]*>(.*)</p>\s*$", body, re.DOTALL | re.IGNORECASE)
     return para_match.group(1).strip() if para_match else body
 
@@ -88,6 +97,26 @@ def _normalize_template_markup(template: str) -> str:
         stripped = f"<p>{prefix}</p>{suffix}"
 
     return stripped
+
+
+# the help under the editor: unfolded or not, as it was last left (for the session)
+_HELP_OPEN = [True]
+
+# ---- Markdown in the text editor: typed (turned into formatting as it is typed) or pasted ----
+HEADING_SIZES = {1: 22, 2: 18, 3: 15}  # point sizes of the titles (the editor's normal text: 12)
+NORMAL_SIZE = 12
+_MD_INLINE = (
+    (re.compile(r"\*\*([^*\n]+)\*\*$"), "bold"),
+    (re.compile(r"(?<![*\w])\*([^*\s][^*\n]*)\*$"), "italic"),  # not the first star of a closing "**"
+    (re.compile(r"~~([^~\n]+)~~$"), "strike"),
+)
+_MD_BLOCK = re.compile(r"(#{1,3}|[-*+]|1[.)])")
+_MD_RULE = re.compile(r"(?:-{3,}|\*{3,}|_{3,})")
+_MD_PASTED = re.compile(r"(?m)^(?:#{1,6} |[-*+] |\d+[.)] |> |(?:-{3,}|\*{3,})\s*$)|\*\*[^*\n]+\*\*|~~[^~\n]+~~")
+
+
+def looks_like_markdown(text: str) -> bool:
+    return bool(_MD_PASTED.search(text or ""))
 
 
 def _hex_to_rgba(hex_color: str, alpha: float) -> str:
@@ -185,37 +214,7 @@ class _PlaceholderHighlighter(QSyntaxHighlighter):
 
 class TemplateTextEdit(QTextEdit):
     SEARCH_FIELD_THRESHOLD = 9
-    VARIABLE_DESCRIPTIONS = {
-        "total_time": N_("Formatted total study time"),
-        "reviews": N_("Number of reviews"),
-        "ret_all": N_("Overall retention"),
-        "ret_young": N_("Young-card retention"),
-        "ret_mat": N_("Mature-card retention"),
-        "streak": N_("Current streak"),
-        "active_days": N_("Active days count"),
-        "days_learned": N_("Share of days studied"),
-        "longest_streak": N_("Longest streak"),
-        "reviews_per_day": N_("Average reviews per day"),
-        "time_per_day": N_("Average study time per day"),
-        "ret_true": N_("True retention (young and mature)"),
-        "rev_young": N_("Young reviews"),
-        "rev_mature": N_("Mature reviews"),
-        "again": N_("Again count"),
-        "best_day": N_("Most reviews in one day"),
-        "cards_total": N_("Total cards"),
-        "cards_new": N_("New cards"),
-        "cards_learning": N_("Learning and relearning cards"),
-        "cards_young": N_("Young cards"),
-        "cards_mature": N_("Mature cards"),
-        "cards_suspended": N_("Suspended cards"),
-        "cards_buried": N_("Buried cards"),
-        "cards_deleted": N_("Deleted cards"),
-        "due_today": N_("Cards due today"),
-        "backlog": N_("Overdue cards"),
-        "avg_retrievability": N_("Average retrievability (FSRS)"),
-        "avg_stability": N_("Average stability (FSRS)"),
-        "lapses": N_("Failed review answers (young and mature)"),
-    }
+    VARIABLE_DESCRIPTIONS = VARIABLE_DESCRIPTIONS  # (web_ui/text_editor.py, shared with the web editor)
     DECK_OVERRIDE_ORDER = ("current", "all", "deleted")
 
     def __init__(self, parent=None, theme_config=None):
@@ -264,8 +263,7 @@ class TemplateTextEdit(QTextEdit):
         popup_layout.addWidget(self._completion_surface)
 
         self.setAcceptRichText(True)
-        self.setMinimumHeight(110)
-        self.setMaximumHeight(190)
+        self.setMinimumHeight(110)  # no maximum: the room the help leaves when hidden is the text's
         self.setPlaceholderText(tr("{reviews} cards in {total_time}"))
         self.setObjectName("textLabelTextEdit")
 
@@ -297,8 +295,176 @@ class TemplateTextEdit(QTextEdit):
         self.setTextCursor(cursor)
         self._show_completion("variable", "")
 
+    # ---- paragraphs: titles, lists, alignment, lines (the toolbar's second row and the Markdown typed) ----
+    def _blocks(self, cursor=None):
+        """The blocks of the selection (or the one of the cursor)."""
+        c = cursor or self.textCursor()
+        doc = self.document()
+        block, last = doc.findBlock(c.selectionStart()), doc.findBlock(c.selectionEnd())
+        out = [block]
+        while block.isValid() and block != last:
+            block = block.next()
+            out.append(block)
+        return out
+
+    @staticmethod
+    def _title_format(level: int) -> QTextCharFormat:
+        fmt = QTextCharFormat()
+        fmt.setFontWeight(QFont.Weight.Bold if level else QFont.Weight.Normal)
+        fmt.setFontPointSize(HEADING_SIZES.get(level, NORMAL_SIZE))
+        return fmt
+
+    def set_heading(self, level: int, cursor=None) -> None:
+        """Title 1 to 3 (0: normal text) for the paragraphs of the selection: bold, larger, an <hN> in the page."""
+        c = cursor or self.textCursor()
+        c.beginEditBlock()
+        for block in self._blocks(c):
+            bc = QTextCursor(block)
+            bf = block.blockFormat()
+            bf.setHeadingLevel(level)
+            bc.setBlockFormat(bf)
+            bc.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+            bc.mergeCharFormat(self._title_format(level))
+        c.endEditBlock()
+        self.mergeCurrentCharFormat(self._title_format(level))  # what is typed next is in the title's style
+
+    def toggle_list(self, style, cursor=None, force=False) -> None:
+        """A bulleted or numbered list for the paragraphs of the selection; clicked again: back to paragraphs."""
+        c = cursor or self.textCursor()
+        current = c.currentList()
+        c.beginEditBlock()
+        if current is not None and current.format().style() == style and not force:
+            for block in self._blocks(c):
+                lst = block.textList()
+                if lst is not None:
+                    lst.remove(block)
+                    bf = block.blockFormat()
+                    bf.setIndent(0)
+                    QTextCursor(block).setBlockFormat(bf)
+        elif current is not None:
+            fmt = current.format()
+            fmt.setStyle(style)
+            current.setFormat(fmt)
+        else:
+            fmt = QTextListFormat()
+            fmt.setStyle(style)
+            c.createList(fmt)
+        c.endEditBlock()
+
+    def insert_rule(self, cursor=None) -> None:
+        """A horizontal line (<hr> in the page) as its own paragraph, the cursor in a new paragraph under it."""
+        c = cursor or self.textCursor()
+        c.beginEditBlock()
+        if c.block().text().strip():
+            c.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+            c.insertBlock(QTextBlockFormat(), self._title_format(0))
+        rule = QTextBlockFormat()
+        rule.setProperty(QTextFormat.Property.BlockTrailingHorizontalRulerWidth,
+                         QTextLength(QTextLength.Type.PercentageLength, 100))
+        c.setBlockFormat(rule)
+        c.insertBlock(QTextBlockFormat(), self._title_format(0))
+        c.endEditBlock()
+        self.setTextCursor(c)
+
+    def _markdown_after_char(self, typed: str) -> bool:
+        """Markdown as it is typed: "# " to "### " a title, "- " / "* " a bulleted list, "1. " a numbered list,
+        **bold**, *italic*, ~~strike~~. Ctrl+Z gives the characters back."""
+        c = self.textCursor()
+        if c.hasSelection() or not typed or self._current_placeholder_context() is not None:
+            return False
+        block = c.block()
+        before = block.text()[: c.positionInBlock()]
+        if typed == " ":
+            m = _MD_BLOCK.fullmatch(before[:-1])
+            if not m or block.textList() is not None:
+                return False
+            token = m.group(1)
+            c.beginEditBlock()
+            c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            c.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.KeepAnchor, len(before))
+            c.removeSelectedText()
+            if token.startswith("#"):
+                self.set_heading(len(token), c)
+            elif token[0] in "-*+":
+                self.toggle_list(QTextListFormat.Style.ListDisc, c, force=True)
+            else:
+                self.toggle_list(QTextListFormat.Style.ListDecimal, c, force=True)
+            c.endEditBlock()
+            return True
+        if typed not in "*~":
+            return False
+        for rx, kind in _MD_INLINE:
+            m = rx.search(before)
+            if not m:
+                continue
+            base = QTextCharFormat(self.currentCharFormat())
+            fmt = QTextCharFormat(base)
+            if kind == "bold":
+                fmt.setFontWeight(QFont.Weight.Bold)
+            elif kind == "italic":
+                fmt.setFontItalic(True)
+            else:
+                fmt.setFontStrikeOut(True)
+            end = c.position()
+            c.beginEditBlock()
+            c.setPosition(end - len(m.group(0)))
+            c.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            c.removeSelectedText()
+            c.insertText(m.group(1), fmt)
+            c.endEditBlock()
+            self.setTextCursor(c)
+            self.setCurrentCharFormat(base)  # what follows is not bold / italic / struck
+            return True
+        return False
+
+    def _paragraph_keys(self, event) -> bool:
+        """Enter: "---" becomes a line; an empty list item leaves the list; after a title, normal text again."""
+        if event.key() not in (Qt.Key.Key_Return, Qt.Key.Key_Enter) or event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+            return False
+        c = self.textCursor()
+        if c.hasSelection():
+            return False
+        block = c.block()
+        if _MD_RULE.fullmatch(block.text().strip()) and c.atBlockEnd():
+            c.beginEditBlock()
+            c.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            c.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+            c.removeSelectedText()
+            c.endEditBlock()
+            self.insert_rule(c)
+            return True
+        if block.textList() is not None and not block.text().strip():
+            self.toggle_list(block.textList().format().style(), c)
+            return True
+        if block.blockFormat().headingLevel() and c.atBlockEnd():
+            c.beginEditBlock()
+            bf = QTextBlockFormat(block.blockFormat())
+            bf.setHeadingLevel(0)
+            c.insertBlock(bf, self._title_format(0))
+            c.endEditBlock()
+            self.setTextCursor(c)
+            self.setCurrentCharFormat(self._title_format(0))
+            return True
+        return False
+
+    def insertFromMimeData(self, source):
+        """Markdown pasted (titles, lists, **bold**...): pasted formatted, as Qt reads Markdown."""
+        try:
+            if source.hasText() and not source.hasHtml() and looks_like_markdown(source.text()):
+                doc = QTextDocument()
+                doc.setMarkdown(source.text())
+                self.textCursor().insertFragment(QTextDocumentFragment(doc))
+                self.ensureCursorVisible()
+                return
+        except Exception:
+            log_swallowed()
+        super().insertFromMimeData(source)
+
     def keyPressEvent(self, event):
         key = event.key()
+
+        if not self._completion_popup.isVisible() and self._paragraph_keys(event):
+            return
 
         if self._completion_popup.isVisible():
             if key in (Qt.Key.Key_Down, Qt.Key.Key_Up, Qt.Key.Key_PageDown, Qt.Key.Key_PageUp):
@@ -359,6 +525,11 @@ class TemplateTextEdit(QTextEdit):
             return
 
         super().keyPressEvent(event)
+        try:
+            if not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                self._markdown_after_char(event.text())
+        except Exception:
+            log_swallowed()
         self._refresh_completion_context()
 
     def contextMenuEvent(self, event):
@@ -848,19 +1019,26 @@ class TextLabelEditor(QWidget):
         frame_layout.setContentsMargins(10, 10, 10, 10)
         frame_layout.setSpacing(8)
 
-        frame_layout.addWidget(self._build_toolbar())
-        self._editor = self._build_editor()
-        frame_layout.addWidget(self._editor)
+        from aqt.qt import QSizePolicy
 
-        root.addWidget(frame)
+        toolbar = self._build_toolbar()
+        toolbar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)  # its two rows, never taller
+        frame_layout.addWidget(toolbar)
+        self._editor = self._build_editor()
+        frame_layout.addWidget(self._editor, 1)
+
+        root.addWidget(frame, 1)
         root.addWidget(self._build_hint())
 
     def _build_toolbar(self) -> QWidget:
         container = QWidget(self)
         container.setObjectName("textLabelToolbar")
-        row = QHBoxLayout(container)
-        row.setContentsMargins(8, 8, 8, 8)
+        rows = QVBoxLayout(container)
+        rows.setContentsMargins(8, 8, 8, 8)
+        rows.setSpacing(6)
+        row = QHBoxLayout()
         row.setSpacing(6)
+        rows.addLayout(row)
 
         def make_button(text="", *, checkable=True, tooltip="", object_name="textLabelToolButton"):
             button = QToolButton(container)
@@ -927,7 +1105,65 @@ class TextLabelEditor(QWidget):
         row.addWidget(self._color_btn)
         row.addWidget(self._reset_color_btn)
         row.addStretch()
+
+        # second row: the paragraphs (titles, lists, alignment, a line); Markdown typed does the same (# , - , 1. , ---)
+        row2 = QHBoxLayout()
+        row2.setSpacing(6)
+        rows.addLayout(row2)
+        self._heading_btn = QToolButton(container)
+        self._heading_btn.setObjectName("textLabelToolButton")
+        self._heading_btn.setFixedHeight(self.BUTTON_SIZE)
+        self._heading_btn.setMinimumWidth(104)
+        self._heading_btn.setToolTip(tr("Paragraph style (or type # , ## , ### then a space)"))
+        self._heading_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        heading_menu = QMenu(self._heading_btn)
+        for level, label in ((0, N_("Normal text")), (1, N_("Title 1")), (2, N_("Title 2")), (3, N_("Title 3"))):
+            act = heading_menu.addAction(tr_name(label))
+            act.triggered.connect(lambda _c=False, n=level: self._set_heading(n))
+        self._heading_btn.setMenu(heading_menu)
+        self._heading_btn.setText(tr("Normal text"))
+        row2.addWidget(self._heading_btn)
+        row2.addWidget(self._build_toolbar_separator())
+
+        self._bullets_btn = make_button(tooltip=tr("Bulleted list (or type - then a space)"), object_name="textLabelToolButton")
+        self._numbers_btn = make_button(tooltip=tr("Numbered list (or type 1. then a space)"), object_name="textLabelToolButton")
+        row2.addWidget(self._bullets_btn)
+        row2.addWidget(self._numbers_btn)
+        row2.addWidget(self._build_toolbar_separator())
+
+        self._align_btns = {}
+        for flag, tip in ((Qt.AlignmentFlag.AlignLeft, N_("Align left")), (Qt.AlignmentFlag.AlignHCenter, N_("Center")),
+                          (Qt.AlignmentFlag.AlignRight, N_("Align right"))):
+            btn = make_button(tooltip=tr_name(tip), object_name="textLabelToolButton")
+            btn.clicked.connect(lambda _c=False, f=flag: self._set_alignment(f))
+            self._align_btns[flag] = btn
+            row2.addWidget(btn)
+        row2.addWidget(self._build_toolbar_separator())
+
+        self._rule_btn = make_button(checkable=False, tooltip=tr("Horizontal line (or type --- then Enter)"),
+                                     object_name="textLabelToolButton")
+        row2.addWidget(self._rule_btn)
+        row2.addStretch()
         return container
+
+    def _set_heading(self, level: int) -> None:
+        self._editor.set_heading(level)
+        self._editor.setFocus()
+        self._sync_toolbar()
+
+    def _toggle_list(self, style) -> None:
+        self._editor.toggle_list(style)
+        self._editor.setFocus()
+        self._sync_toolbar()
+
+    def _set_alignment(self, flag) -> None:
+        self._editor.setAlignment(flag)
+        self._editor.setFocus()
+        self._sync_toolbar()
+
+    def _insert_rule(self) -> None:
+        self._editor.insert_rule()
+        self._editor.setFocus()
 
     def _build_toolbar_separator(self) -> QFrame:
         sep = QFrame(self)
@@ -950,6 +1186,9 @@ class TextLabelEditor(QWidget):
         self._placeholder_btn.clicked.connect(editor.insert_template_placeholder)
         self._color_btn.clicked.connect(self._pick_color)
         self._reset_color_btn.clicked.connect(self._reset_color)
+        self._bullets_btn.clicked.connect(lambda: self._toggle_list(QTextListFormat.Style.ListDisc))
+        self._numbers_btn.clicked.connect(lambda: self._toggle_list(QTextListFormat.Style.ListDecimal))
+        self._rule_btn.clicked.connect(self._insert_rule)
 
         editor.cursorPositionChanged.connect(self._sync_toolbar)
         editor.currentCharFormatChanged.connect(self._sync_toolbar)
@@ -959,36 +1198,65 @@ class TextLabelEditor(QWidget):
         QShortcut(QKeySequence.StandardKey.Underline, editor, activated=self._underline_btn.toggle)
         return editor
 
-    def _build_hint(self) -> QLabel:
-        vars_text = "  ".join(f"{{{token}}}" for token in AVAILABLE_VARS)
-        spans_text = "  ".join(token for token, _desc in get_available_span_tokens(self._theme_config))
+    def _build_hint(self) -> QWidget:
+        """The help under the editor (a variable, its time span and deck, the variables, a duration's unit, "~", the
+        Markdown), in a box open at first; "Hide help" folds it away, "Help" brings it back, as it was left."""
         def code(text):
             return f"<code>{text}</code>"
 
         dot = " &middot; "
-        label = QLabel(
-            tr("Type {open} to insert a variable, then use {colon} inside the placeholder for a time "
-               "span override and {at} for a deck override.",
-               open=code("{"), colon=code(":"), at=code("@"))
-            + "<br>"
-            + tr("<b>Variables</b>: {list}", list=vars_text)
-            + "<br>"
-            + tr("<b>Time spans</b>: {list}", list=spans_text)
-            + " &nbsp;&nbsp;"
-            + tr("<i>Examples</i>: {list}", list=dot.join(
-                code(t) for t in ("{reviews:year}", "{reviews@current}", "{reviews:month@My Deck}")))
-            + "<br>"
-            + tr("Use {bar} to pick the unit of a duration ({units}): {examples}",
-                 bar=code("|"), units=", ".join(code(u) for u in ("s", "min", "h", "d")),
-                 examples=dot.join(code(t) for t in ("{total_time|min}", "{avg_time|s}", "{time_per_day:month|min}")))
-            + "<br>"
-            + tr("Add {tilde} before the closing brace so the text does not fade when that value "
-                 "changes: {examples}. Right click a variable to switch it.",
-                 tilde=code("~"), examples=dot.join(code(t) for t in ("{reviews~}", "{reviews:week|min~}")))
-        )
-        label.setObjectName("textLabelHintLabel")
-        label.setWordWrap(True)
-        return label
+        box = QWidget(self)
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(2, 0, 2, 0)
+        lay.setSpacing(4)
+
+        top = QHBoxLayout()
+        top.addStretch(1)
+        toggle = QToolButton(box)
+        toggle.setObjectName("textLabelHelpButton")
+        toggle.setCheckable(True)
+        toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        top.addWidget(toggle, 0, Qt.AlignmentFlag.AlignTop)
+        lay.addLayout(top)
+
+        vars_text = " ".join(code(f"{{{token}}}") for token in AVAILABLE_VARS)
+        spans_text = dot.join(token for token, _desc in get_available_span_tokens(self._theme_config))
+
+        def part(text):
+            return f'<p style="margin:0 0 7px 0;">{text}</p>'
+
+        body = QLabel(
+            part(tr("Type {open} to insert a variable, then use {colon} inside the placeholder for a time "
+                    "span override and {at} for a deck override.", open=code("{"), colon=code(":"), at=code("@")))
+            + part(tr("<b>Variables</b>: {list}", list=vars_text))
+            + part(tr("<b>Time spans</b>: {list}", list=spans_text) + "<br>"
+                   + tr("<i>Examples</i>: {list}", list=dot.join(
+                       code(t) for t in ("{reviews:year}", "{reviews@current}", "{reviews:month@My Deck}"))))
+            + part(tr("Use {bar} to pick the unit of a duration ({units}): {examples}",
+                      bar=code("|"), units=", ".join(code(u) for u in ("s", "min", "h", "d")),
+                      examples=dot.join(code(t) for t in ("{total_time|min}", "{avg_time|s}", "{time_per_day:month|min}"))))
+            + part(tr("Add {tilde} before the closing brace so the text does not fade when that value "
+                      "changes: {examples}. Right click a variable to switch it.",
+                      tilde=code("~"), examples=dot.join(code(t) for t in ("{reviews~}", "{reviews:week|min~}"))))
+            + part(tr("<b>Markdown</b> turns into formatting as you type it (Ctrl+Z gives the characters back): {examples}",
+                      examples=dot.join(code(html.escape(t)) for t in
+                                        ("# ", "## ", "- ", "1. ", "**bold**", "*italic*", "~~strike~~", "---")))),
+            box)
+        body.setObjectName("textLabelHelpBody")
+        body.setWordWrap(True)
+        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(body)
+
+        def show(on):
+            _HELP_OPEN[0] = bool(on)
+            body.setVisible(bool(on))
+            toggle.setText(tr("Hide help") + " ▴" if on else tr("Help") + " ▾")
+
+        toggle.setChecked(_HELP_OPEN[0])
+        show(_HELP_OPEN[0])
+        toggle.toggled.connect(show)
+        return box
 
     def _merge(self, fmt: QTextCharFormat) -> None:
         self._editor.mergeCurrentCharFormat(fmt)
@@ -1091,6 +1359,13 @@ class TextLabelEditor(QWidget):
         icon_color = self._current_color or self._get_default_icon_color()
         self._color_btn.setIcon(get_svg_icon("palette", color=icon_color, size=14, context_ref=self))
         self._color_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        plain = _resolve_theme_tokens(self._theme_config)["text_primary"]
+        for btn, name in ((self._bullets_btn, "list"), (self._numbers_btn, "list-ordered"), (self._rule_btn, "separator"),
+                          (self._align_btns[Qt.AlignmentFlag.AlignLeft], "align-left"),
+                          (self._align_btns[Qt.AlignmentFlag.AlignHCenter], "align-center"),
+                          (self._align_btns[Qt.AlignmentFlag.AlignRight], "align-right")):
+            btn.setIcon(get_svg_icon(name, color=plain, size=16, context_ref=self))
+            btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self._reset_color_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
 
     def _sync_toolbar(self, *_args) -> None:
@@ -1124,6 +1399,25 @@ class TextLabelEditor(QWidget):
             self._apply_color_indicator(fg.color().name())
         else:
             self._apply_color_indicator(self._get_default_icon_color())
+
+        # the paragraph's own buttons: its title level, its list, its alignment
+        cursor = self._editor.textCursor()
+        level = cursor.blockFormat().headingLevel()
+        self._heading_btn.setText(tr_name({1: "Title 1", 2: "Title 2", 3: "Title 3"}.get(level, "Normal text")))
+        lst = cursor.currentList()
+        style = lst.format().style() if lst is not None else None
+        for btn, on in ((self._bullets_btn, style == QTextListFormat.Style.ListDisc),
+                        (self._numbers_btn, style == QTextListFormat.Style.ListDecimal)):
+            btn.blockSignals(True)
+            btn.setChecked(on)
+            btn.blockSignals(False)
+        align = self._editor.alignment()
+        current = (Qt.AlignmentFlag.AlignHCenter if align & Qt.AlignmentFlag.AlignHCenter
+                   else Qt.AlignmentFlag.AlignRight if align & Qt.AlignmentFlag.AlignRight else Qt.AlignmentFlag.AlignLeft)
+        for flag, btn in self._align_btns.items():
+            btn.blockSignals(True)
+            btn.setChecked(flag == current)
+            btn.blockSignals(False)
 
     def _apply_theme_styles(self) -> None:
         tokens = _resolve_theme_tokens(self._theme_config)
@@ -1183,6 +1477,25 @@ class TextLabelEditor(QWidget):
                 color: {tokens["text_secondary"]};
                 font-size: 11px;
                 line-height: 1.4;
+            }}
+            QLabel#textLabelHelpBody {{
+                color: {tokens["text_secondary"]};
+                font-size: 11px;
+                background: {subtle_fill};
+                border: 1px solid {tokens["border_subtle"]};
+                border-radius: 8px;
+                padding: 9px 11px 2px 11px;
+            }}
+            QToolButton#textLabelHelpButton {{
+                background: transparent;
+                border: none;
+                color: {tokens["accent"]};
+                font-size: 11px;
+                font-weight: 600;
+                padding: 0 2px;
+            }}
+            QToolButton#textLabelHelpButton:hover {{
+                text-decoration: underline;
             }}
             """
         )

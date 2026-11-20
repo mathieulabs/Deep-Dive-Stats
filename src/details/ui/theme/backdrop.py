@@ -11,7 +11,6 @@ paint.
 """
 
 import random
-import weakref
 
 from aqt.qt import (
     QColor,
@@ -196,9 +195,6 @@ class _BackdropFilter(QObject):
         self._cache = None
         self._listeners = []
 
-    def add_listener(self, widget):
-        """Widgets (e.g. the settings preview) repainted on theme changes."""
-        self._listeners.append(weakref.ref(widget))
 
     def set_theme(self, is_dark, palette, settings):
         c = _colors(is_dark, palette)
@@ -246,10 +242,6 @@ class _BackdropFilter(QObject):
         return False
 
 
-def get_backdrop_filter(dialog):
-    return getattr(dialog, _PROP, None)
-
-
 def install_backdrop(dialog, is_dark, palette):
     """Install (once) and refresh the painted backdrop on a dialog."""
     flt = getattr(dialog, _PROP, None)
@@ -265,6 +257,14 @@ def refresh_backdrop_settings(dialog):
     """Re-read the backdrop settings from config (theme unchanged)."""
     flt = getattr(dialog, _PROP, None)
     if flt is None or flt.colors is None:
+        # The web Deep Dive window (web_ui/window.py) has no painted backdrop: its page draws it from the theme it is
+        # sent (backdrop_spec). Settings > Window Background changed nothing there until saved and reopened.
+        push = getattr(dialog, "_theme_cb", None)
+        if callable(push):
+            try:
+                push()
+            except Exception:
+                log_swallowed()
         return
     conf = getattr(getattr(dialog, "addon_config", None), "config", None) or {}
     flt.settings = get_backdrop_settings(conf)

@@ -16,6 +16,8 @@ STAT_KEY_TO_COLOR_KEY = {
     'Dash_Show_Longest_Streak': 'Color_Streak',
     'Dash_Show_Reviews_Per_Day': 'Color_Reviews',
     'Dash_Show_Time_Per_Day': 'Color_Time',
+    'Dash_Show_Reviews_Per_Active_Day': 'Color_Reviews',
+    'Dash_Show_Time_Per_Active_Day': 'Color_Time',
     'Dash_Show_Ret_True': 'Color_Cram',
     'Dash_Show_Rev_Young': 'Color_Young',
     'Dash_Show_Rev_Mature': 'Color_Mature',
@@ -73,7 +75,7 @@ COLOR_DEFAULTS: DataColorsDict = {
     'Color_Bar': '#669ff7',
     'Color_Future_Due': '#4ade80',
     'Color_Backlog': '#f59e0b',
-    'Color_Deleted': '#616161',
+    'Color_Deleted': '#8d95a5',
     # Difficulty / Retrievability gradient
     'Color_Gradient_Low': '#ff3b30',
     'Color_Gradient_High': '#4cd964',

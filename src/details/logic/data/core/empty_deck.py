@@ -11,6 +11,8 @@ def did_limit_has_no_cards(did_limit):
     behind it can only return nothing. Other filters (all decks, excluded decks,
     deleted cards) are never treated as empty.
     """
+    if did_limit and "AND 1=0" in did_limit:
+        return True
     if not did_limit or " IN (" not in did_limit or "NOT IN" in did_limit or "IS NULL" in did_limit:
         return False
     try:

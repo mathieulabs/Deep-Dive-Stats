@@ -74,17 +74,6 @@ def merge_heatmap_future_values(
     return heatmap_data
 
 
-def extract_heatmap_future_values(heatmap_data):
-    future_reviews = {}
-    for date_str, entry in (heatmap_data or {}).items():
-        if not isinstance(entry, dict):
-            continue
-        future_val = entry.get("future", 0) or 0
-        if future_val > 0:
-            future_reviews[date_str] = future_val
-    return future_reviews
-
-
 def make_heatmap_entry(include_future_key=False):
     entry = {key: 0 for key in HEATMAP_BASE_KEYS}
     if include_future_key:

@@ -340,41 +340,6 @@ def num(text):
     return _EN_NUMBER.sub(_one, text)
 
 
-def percent_text(value_text):
-    """A percentage in the interface language, for a value already passed through num()."""
-    style = _number_style()
-    return (style[2] if style else "{}%").format(value_text)
-
-
-def english_number(text):
-    """The reverse of num(): shown numbers back to the English way, so they can be read."""
-    if not isinstance(text, str):
-        return text
-    style = _number_style()
-    if style is None:
-        return text
-    decimal, thousands, percent = style
-    d, t = re.escape(decimal), re.escape(thousands)
-    before, after = (re.escape(p) for p in percent.split("{}"))
-    pattern = re.compile(
-        rf"(?<![\w{d}{t}])({before})?(\d{{1,3}}(?:{t}\d{{3}})+(?!\d)|\d+)({d}\d+)?({after})?"
-    )
-
-    def _one(match):
-        pre, whole, frac, post = match.groups()
-        out = whole.replace(thousands, ",") + ("." + frac[len(decimal):] if frac else "")
-        is_percent = (pre is not None or not before) and (post is not None or not after) and (before or after)
-        return out + "%" if is_percent else (pre or "") + out + (post or "")
-
-    return pattern.sub(_one, text)
-
-
-def parse_num(text):
-    """A shown number as a float ("1 234,5", "1.234,5" or "1,234.5"). Raises ValueError."""
-    raw = english_number(str(text)).strip().strip("%").strip()
-    return float(raw.replace(",", "").replace(_NNBSP, "").replace(_NBSP, "").replace(" ", ""))
-
-
 _DECKS_TITLE = re.compile(r"(\d+) decks")
 
 
@@ -409,25 +374,17 @@ def format_date(day, time_text=None):
     return tr("{month} {day}, {year}", month=month, day=_day_text(day.day), year=day.year)
 
 
-_EN_DATE = re.compile(
-    r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}), (\d{4}|\d{1,2}:\d{2}(?::\d{2})?)\b"
-)
-_EN_MONTH_INDEX = {name: i + 1 for i, name in enumerate(_MONTHS)}
-
-
-def localize_dates(text):
-    """Translate the English dates inside a chart text ('Mar 05, 2026', 'Mar 05, 14:30').
-
-    The history cache keeps its date labels in English (they are also read back as dates);
-    the charts call this where they draw or show them."""
-    if not isinstance(text, str) or language() == ENGLISH or not _EN_DATE.search(text):
-        return text
-
-    def _one(match):
-        month = month_short(_EN_MONTH_INDEX[match.group(1)])
-        day, rest = _day_text(match.group(2)), match.group(3)
-        if ":" in rest:
-            return tr("{month} {day}, {time}", month=month, day=day, time=rest)
-        return tr("{month} {day}, {year}", month=month, day=day, year=rest)
-
-    return _EN_DATE.sub(_one, text)
+# ---- the web pages (web_ui/web/*.js) -------------------------------------------------------------------------
+# Their texts are English; the pages translate them (DD.t, and every text node of their own elements, dd-core.js
+# DD.setI18n). They get the whole catalog of the language: the scripts' own texts, and the default English names
+# Python sends them (stat cards, series, menus...), translated the way tr_name does: a text that is exactly an
+# English entry is shown translated, a text the user wrote stays as it is.
+def web_catalog():
+    """{English: translation} of the current language for the web pages ({} in English)."""
+    code = language()
+    if code == ENGLISH:
+        return {}
+    out = {k: v for k, v in _catalog().items() if not k.startswith("@") and v and isinstance(v, (str, list))}
+    out["@lang"] = code  # the plural rule (DD.tn) and the languages without capitals
+    out["@unpadded"] = code in _UNPADDED_DAY  # dates: "Mar 5" rather than "Mar 05" (DD.localizeDates)
+    return out

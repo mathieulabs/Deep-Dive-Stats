@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ..utils import _addon_config, _history
 from ..builders import Period
-from .context import get_pinned_context
+from ...context_access import get_pinned_context
 from .....logic.data.section_fetchers import fetch_section_data
 from .....logic.data.transforms.activity_series import (
     build_activity_series,

@@ -39,13 +39,6 @@ def future_due_days_to_span(days):
     return _DAYS_TO_SPAN.get(days, FD_DAYS_BASE + int(days))
 
 
-def future_due_span_max_days(span):
-    """Largest day shown for a span, or None when it follows the data (all)."""
-    if isinstance(span, int) and FD_DAYS_BASE <= span <= 9999:
-        return span - FD_DAYS_BASE
-    return {Period.MONTH: 31, Period.THREE_MONTHS: 90, Period.YEAR: 365}.get(span)
-
-
 MIN_BUTTONS, MAX_BUTTONS = 2, 8  # how many range buttons a chart can have (folded into a menu when narrow)
 
 
@@ -83,10 +76,6 @@ def clamp_future_due_idx(idx, default_idx=0, count=len(FUTURE_DUE_RANGES)):
     if resolved < 0 or resolved >= count:
         return int(default_idx)
     return resolved
-
-
-def get_future_due_range(idx, default_idx=0, ranges=FUTURE_DUE_RANGES):
-    return ranges[clamp_future_due_idx(idx, default_idx=default_idx, count=len(ranges))]
 
 
 def resolve_future_due_choice(idx=None, fallback_range=None, default_idx=0, ranges=FUTURE_DUE_RANGES):

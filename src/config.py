@@ -52,16 +52,22 @@ def set_pinned_widgets_disabled(disabled: bool) -> None:
             pass
 
 
+_DEV_BUILD = []
+
+
 def is_dev_build() -> bool:
-    """True when running from a source checkout (it has dev_tools/); the packaged add-on does not."""
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.isdir(os.path.join(root, "dev_tools"))
+    """True when running from a source checkout (it has dev_tools/); the packaged add-on does not.
+    Checked on disk once a session."""
+    if not _DEV_BUILD:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _DEV_BUILD.append(os.path.isdir(os.path.join(root, "dev_tools")))
+    return _DEV_BUILD[0]
 
 
 def dev_label(name: str) -> str:
     """The name shown in the interface, with " (dev)" added in a source checkout so it
-    can be told apart from an installed release."""
-    return f"{name} (dev)" if is_dev_build() else name
+    can be told apart from an installed release. DD_NO_DEV_LABEL=1 leaves it out (demo recordings)."""
+    return f"{name} (dev)" if is_dev_build() and not os.environ.get("DD_NO_DEV_LABEL") else name
 
 
 def clear_config_caches() -> None:
@@ -186,6 +192,10 @@ def _write_file_atomic(path: str, payload: str) -> None:
             pass
 
 
+# Called after each save of the config (the web pinned block builds itself again: web_ui/pinned.py).
+SAVE_LISTENERS = []
+
+
 class ConfigManager:
 
     """Reads and writes the add-on config, one JSON file per Anki profile."""
@@ -264,12 +274,19 @@ class ConfigManager:
         _NORMALIZED_CONFIG_CACHE.pop(self._config_path, None)
         _PEEK_CACHE.pop(self._config_path, None)
         self._sync_pins_to_live_managers(normalized)
+        for listener in list(SAVE_LISTENERS):
+            try:
+                listener(normalized)
+            except Exception:
+                pass
 
     def _sync_pins_to_live_managers(self, saved: dict[str, Any]) -> None:
         # Other open managers (Deep Dive, settings dialogs) hold their own copy of the config.
-        # If they kept an older pinned list or time span list, their next save would put it
-        # back on disk and pins or time spans would vanish.
-        for key in (Config.PINNED_WIDGETS, Config.DETAILS_TABS_DATA):
+        # If they kept an older pinned list, time span list or table column list, their next save would put it
+        # back on disk and pins, time spans or columns would vanish.
+        # Deep Dive's charts too: a chart removed from its menu (a manager of its own) came back when the gallery,
+        # holding the window's older list, saved or cancelled.
+        for key in (Config.PINNED_WIDGETS, Config.DETAILS_TABS_DATA, Config.TABLE_COLUMNS, Config.TABLE_SHOW_COUNTS):
             value = saved.get(key)
             if value is None:
                 continue
@@ -278,6 +295,18 @@ class ConfigManager:
                     continue
                 try:
                     manager.config[key] = copy.deepcopy(value)
+                except Exception:
+                    pass
+        for key in (Config.DEEP_DIVE_EXTRA_CHARTS, Config.DEEP_DIVE_HIDDEN_CHARTS, Config.DEEP_DIVE_CHART_ORDER,
+                    Config.DEEP_DIVE_TEXT_WIDGETS, Config.DEEP_DIVE_WIDGET_SETTINGS, Config.SHARED_FILTER_MODES):
+            for manager in list(_LIVE_MANAGERS):
+                if manager is self or getattr(manager, "_config_path", None) != self._config_path:
+                    continue
+                try:
+                    if key in saved:
+                        manager.config[key] = copy.deepcopy(saved[key])
+                    else:  # taken off (a reset of the order)
+                        manager.config.pop(key, None)
                 except Exception:
                     pass
 
@@ -299,6 +328,9 @@ class ConfigManager:
         if not normalized.get(Config.GLASS_SCALE_EVEN):
             _move_box_intensities_to_even_scale(saved, normalized)
             normalized[Config.GLASS_SCALE_EVEN] = True
+        # (The web block's new defaults - no border lit on hover for the pinned charts, the "Auto" glass blur - are
+        # for new profiles only: a profile that has the add-on already keeps what it had, its hover border and its
+        # blur, until the user changes them in Settings.)
         if not normalized.get(Config.DEEP_DIVE_DEFAULT_HEIGHTS_DROPPED):
             _drop_old_default_heights(normalized)
             normalized[Config.DEEP_DIVE_DEFAULT_HEIGHTS_DROPPED] = True
@@ -328,14 +360,262 @@ class ConfigManager:
                     _NORMALIZED_CONFIG_CACHE.pop(path, None)
             return normalized
 
-        # No file for this profile yet: start from the defaults.
-        normalized = self._normalize_config({})
+        # No file for this profile yet: a new profile starts from the settings of the profile used last (its look,
+        # charts, widgets, layout), without what belongs to that profile's own collection (decks, excluded dates);
+        # with no other profile, from the defaults.
+        start = {}
+        if getattr(getattr(self.mw, "pm", None), "name", None):
+            try:
+                src = _last_used_profile_config(self.mw, self._config_path)
+                if src is not None:
+                    path, data, renamed = src
+                    start = copy.deepcopy(data) if renamed else deck_free_settings(data)
+                    try:
+                        from .details.logic.logger import log_info
+
+                        log_info(f"new profile: settings copied from {os.path.basename(path)}"
+                                 f"{' (renamed profile: as they were)' if renamed else ' (decks left out)'}", tag="CONFIG")
+                    except Exception:
+                        pass
+            except Exception:
+                start = {}
+        normalized = self._normalize_config(start)
         self._save_config(normalized)
         return normalized
 
     def _read_config(self):
         return self._load_live_config()
 
+
+
+# ---- settings shared between profiles -------------------------------------------------------------------------
+# Each Anki profile keeps its own settings file. A new profile starts from the profile used last, and Settings >
+# General can copy another profile's settings: everything but what belongs to that profile's collection.
+
+def _safe_profile(name) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(name or "default")).strip("._-") or "default"
+
+
+def profile_config_files(mw, exclude_path=None):
+    """[(profile name or file name, path, still an Anki profile)] of the other profiles' settings files, the most
+    recently used first."""
+    folder = os.path.join(mw.addonManager.addonsFolder(), mw.addonManager.addonFromModule(__name__), "user_files", "config")
+    try:
+        names = [n for n in os.listdir(folder) if n.endswith(".json")]
+    except OSError:
+        return []
+    try:
+        profiles = {_safe_profile(p): p for p in (mw.pm.profiles() or [])}
+    except Exception:
+        profiles = {}
+    out = []
+    for n in names:
+        path = os.path.join(folder, n)
+        if exclude_path and os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(exclude_path)):
+            continue
+        stem = n[:-5]
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        out.append((profiles.get(stem, stem), path, stem in profiles, mtime))
+    out.sort(key=lambda x: -x[3])
+    return [(a, b, c) for a, b, c, _m in out]
+
+
+def _read_json(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _last_used_profile_config(mw, target_path):
+    """(path, settings, renamed) of the profile used last, or None. Its settings file is the one saved last among
+    the profiles Anki has. A file saved in the last minutes whose profile is no longer in Anki is this profile
+    under its former name (renamed in Anki's profile manager): its settings are for this collection, kept whole.
+    The file made before any profile was open ("default") and the files of deleted profiles are not used."""
+    files = profile_config_files(mw, target_path)
+    now = time.time()
+    for _name, path, is_profile in files:
+        if not is_profile:
+            stem = os.path.basename(path)[:-5]
+            try:
+                recent = now - os.path.getmtime(path) < 600
+            except OSError:
+                recent = False
+            if stem == "default" or not recent:
+                continue
+        data = _read_json(path)
+        if data:
+            return path, data, not is_profile
+    return None
+
+
+# what belongs to a profile's own collection: decks (their ids and names), the excluded study dates, the deck shown
+_COLLECTION_KEYS = (
+    Config.EXCLUDED_DECKS, Config.EXCLUDED_DATES, Config.DECK_COLORS,
+    Config.DETAILS_DEEP_DIVE_IDENTIFIER, Config.DETAILS_DEEP_DIVE_TITLE, Config.DETAILS_DECK_TAB_INDEX,
+    Config.DETAILS_EXPANDED_DECKS, Config.DETAILS_EXPANDED_DECKS_SET,
+)
+
+
+def deck_free_settings(data: dict) -> dict:
+    """A profile's settings without what belongs to its collection: those keys back to their defaults, the pinned
+    widgets following the deck shown (a widget shown only on some decks of that collection is left out)."""
+    out = copy.deepcopy(data)
+    for key in _COLLECTION_KEYS:
+        if key in Config.DEFAULT_CONFIG:
+            out[key] = copy.deepcopy(Config.DEFAULT_CONFIG[key])
+        else:
+            out.pop(key, None)
+    out.pop("Deep_Dive_Recent_Searches", None)
+    widgets = []
+    for w in out.get(Config.PINNED_WIDGETS) or []:
+        if not isinstance(w, dict):
+            continue
+        w = dict(w)
+        w.pop("search_query", None)
+        views = w.get("view_dids")
+        if views:
+            if "main_menu" not in views:
+                continue  # only on some decks of the other collection
+            w["view_dids"] = ["main_menu"]
+        for key in ("deck_id", "deck_ids"):
+            v = w.get(key)
+            numeric = (isinstance(v, (int, float)) and not isinstance(v, bool)) or (
+                isinstance(v, (list, tuple)) and any(isinstance(x, (int, float)) or (isinstance(x, str) and x.isdigit()) for x in v))
+            if numeric or (isinstance(v, str) and v.isdigit()):
+                w.pop(key, None)  # that collection's decks: the widget follows the deck shown
+        widgets.append(w)
+    if Config.PINNED_WIDGETS in out:
+        out[Config.PINNED_WIDGETS] = widgets
+    return out
+
+
+def copy_profile_settings(mw, source_path, target: "ConfigManager") -> bool:
+    """Settings > General > Copy settings from another profile: everything of the source but its collection's own
+    settings, which this profile keeps."""
+    data = _read_json(source_path)
+    if not data:
+        return False
+    new = deck_free_settings(data)
+    for key in _COLLECTION_KEYS:
+        if key in target.config:
+            new[key] = copy.deepcopy(target.config[key])
+    normalized = target._normalize_config(new)
+    target._save_config(normalized)
+    # every live copy of this profile's settings takes them (one writing its old copy back later undid the copy)
+    for manager in list(_LIVE_MANAGERS) + [target]:
+        if getattr(manager, "_config_path", None) == target._config_path:
+            try:
+                manager.config.clear()
+                manager.config.update(copy.deepcopy(normalized))
+            except Exception:
+                pass
+    return True
+
+
+_SHARE_STRIP_KEYS = (
+    Config.LANGUAGE,
+    Config.DETAILS_DEEP_DIVE_IDENTIFIER,
+    Config.DETAILS_DEEP_DIVE_TITLE,
+    Config.DETAILS_DEEP_DIVE_PERIOD_RANGE,
+    Config.DETAILS_DECK_TAB_INDEX,
+    Config.DETAILS_TIME_TAB_INDEX,
+    Config.DETAILS_LAYOUT_STATE,
+    Config.DETAILS_TABLE_DRAWER_SIZES,
+    Config.DETAILS_TABLE_DRAWER_OPEN,
+)
+_SHARE_PREFIX = "DDCFG1:"
+
+
+def export_settings_dict(source: dict, shareable: bool = True) -> dict:
+    """Build a portable JSON export dict (all themes, presets, layouts, widgets, animations).
+    When shareable=True, strips profile-specific decks, deck colors, excluded dates, language and transient UI state."""
+    payload = deck_free_settings(source) if shareable else copy.deepcopy(source)
+    if shareable:
+        for k in _SHARE_STRIP_KEYS:
+            payload.pop(k, None)
+    return {"deep_dive_config": 1, "shareable": bool(shareable), "settings": payload}
+
+
+def encode_share_code(source: dict) -> str:
+    """Compress a shareable config into a compact copy-pasteable string (DDCFG1:...)."""
+    import base64
+    import zlib
+
+    raw = json.dumps(export_settings_dict(source, shareable=True), separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return _SHARE_PREFIX + base64.urlsafe_b64encode(zlib.compress(raw, 9)).decode("ascii")
+
+
+def decode_imported_settings(raw: str) -> tuple[dict, bool]:
+    """Parse either a DDCFG1:... share code, a JSON export file, or a raw profile JSON.
+    Returns (settings_dict, shareable). Raises ValueError if invalid."""
+    import base64
+    import zlib
+
+    text = str(raw or "").strip()
+    if not text:
+        raise ValueError("Empty config")
+    if text.startswith(_SHARE_PREFIX):
+        try:
+            blob = base64.urlsafe_b64decode(text[len(_SHARE_PREFIX):].strip().encode("ascii"))
+            obj = json.loads(zlib.decompress(blob).decode("utf-8"))
+        except Exception as e:
+            raise ValueError("Invalid share code") from e
+    else:
+        try:
+            obj = json.loads(text)
+        except Exception as e:
+            raise ValueError("Invalid JSON") from e
+    if not isinstance(obj, dict):
+        raise ValueError("Invalid config format")
+    if "deep_dive_config" in obj and isinstance(obj.get("settings"), dict):
+        data = obj["settings"]
+        shareable = bool(obj.get("shareable", True))
+    else:
+        data = obj
+        shareable = True
+    if not any(k in Config.DEFAULT_CONFIG for k in data):
+        raise ValueError("Not a Deep Dive Stats config")
+    return data, shareable
+
+
+def apply_imported_settings(target: "ConfigManager", data: dict, shareable: bool = True) -> bool:
+    """Apply imported settings to target, preserving collection-specific keys & language when shareable=True
+    and merging custom theme presets / heatmap palettes so existing user presets are kept."""
+    if not isinstance(data, dict):
+        return False
+    new = deck_free_settings(data) if shareable else copy.deepcopy(data)
+    if shareable:
+        for key in tuple(_COLLECTION_KEYS) + _SHARE_STRIP_KEYS:
+            if key in target.config:
+                new[key] = copy.deepcopy(target.config[key])
+    # Merge custom presets & heatmap palettes so importing doesn't wipe out the user's own presets
+    for merge_key in (Config.THEME_CUSTOM_PRESETS, Config.HEATMAP_CUSTOM_PALETTES):
+        old_val = target.config.get(merge_key)
+        imp_val = new.get(merge_key)
+        if isinstance(old_val, dict) and isinstance(imp_val, dict):
+            merged = copy.deepcopy(old_val)
+            merged.update(copy.deepcopy(imp_val))
+            new[merge_key] = merged
+        elif isinstance(old_val, list) and isinstance(imp_val, list):
+            seen = {json.dumps(x, sort_keys=True) for x in imp_val}
+            merged = copy.deepcopy(imp_val) + [copy.deepcopy(x) for x in old_val if json.dumps(x, sort_keys=True) not in seen]
+            new[merge_key] = merged
+    normalized = target._normalize_config(new)
+    target._save_config(normalized)
+    for manager in list(_LIVE_MANAGERS) + [target]:
+        if getattr(manager, "_config_path", None) == target._config_path:
+            try:
+                manager.config.clear()
+                manager.config.update(copy.deepcopy(normalized))
+            except Exception:
+                pass
+    return True
 
 
 # While a settings dialog is open it edits an in-memory config that is only saved on accept.
@@ -391,3 +671,10 @@ def read_config_value(key, default=None):
         return read_config_dict().get(key, default)
     except Exception:
         return default
+
+
+def addon_config() -> ConfigManager:
+    """The add-on's settings for the open profile (Anki's main window)."""
+    from aqt import mw
+
+    return ConfigManager(mw)

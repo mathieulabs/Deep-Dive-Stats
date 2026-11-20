@@ -27,7 +27,47 @@ def _copy_debug_info(parent):
     copy_debug_info(parent=parent)
 
 
+# The pages use CSS color-mix() (Chromium 111): older engines draw them without colours.
+_MIN_CHROMIUM = 111
+
+
+def _web_engine_too_old():
+    """Name of the web engine when it is too old for the pages (a Qt 5 build, or Anki 23.10.0's
+    Chromium 108), else None. None too on Android/iOS (Kioku) and when the version can't be read: never block on a guess."""
+    try:
+        from aqt.qt import qtmajor
+
+        if qtmajor < 6:
+            return "Qt 5"
+    except Exception:
+        return None
+    import sys
+
+    if sys.platform in ("android", "ios"):
+        return None
+    try:
+        from PyQt6.QtWebEngineCore import qWebEngineChromiumVersion
+
+        major = int(str(qWebEngineChromiumVersion()).split(".")[0])
+    except Exception:
+        return None
+    return f"Chromium {major}" if major < _MIN_CHROMIUM else None
+
+
+def _warn_engine_too_old(engine):
+    from aqt.utils import showWarning
+
+    showWarning(tr("Deep Dive Stats needs Anki 23.10.1 or newer, in its standard Qt 6 version. "
+                   "This Anki uses {engine}, which is too old to show its pages: the add-on stays off.").format(engine=engine))
+
+
 def register_hooks():
+    try:
+        from . import dev_coverage
+
+        dev_coverage.start()
+    except Exception:
+        pass
     from .details.logic import log_info
     from .const import CURRENT_VERSION
     import sys, platform
@@ -47,6 +87,17 @@ def register_hooks():
         f"{platform.system()} {platform.release()} ===",
         tag="STARTUP"
     )
+    engine = _web_engine_too_old()
+    if engine:
+        log_info(f"web engine too old ({engine}): add-on not started", tag="STARTUP")
+        gui_hooks.main_window_did_init.append(lambda: _warn_engine_too_old(engine))
+        return
+    try:
+        from .web_ui import startup_probe
+
+        startup_probe.start()
+    except Exception:
+        log_swallowed()
 
     gui_hooks.webview_did_receive_js_message.append(on_webview_message)
     gui_hooks.sync_did_finish.append(on_sync_did_finish)
@@ -61,6 +112,7 @@ def register_hooks():
     gui_hooks.profile_will_close.append(_end_guided_tour_for_profile_close)
     gui_hooks.profile_will_close.append(_close_dialog_for_profile_close)
     gui_hooks.profile_will_close.append(_discard_parked_dialog)
+    gui_hooks.profile_will_close.append(_close_web_deep_dive_for_profile_close)
     # The language setting is per profile: the next profile reads its own.
     from . import i18n
 
@@ -73,6 +125,11 @@ def register_hooks():
     if not pinned_widgets_disabled():
         from .details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
         MainMenuWidgetManager.instance().register_hooks()
+
+        # Onigiri hosts the pinned widgets on its own main screen (web_ui/onigiri.py).
+        from .web_ui import onigiri as onigiri_integration
+
+        gui_hooks.profile_did_open.append(onigiri_integration.on_profile_did_open)
 
     add_toolbar_action()
     gui_hooks.profile_did_open.append(apply_shortcut)
@@ -144,19 +201,19 @@ def add_toolbar_action():
         except Exception:
             log_swallowed()
 
-        if _current_dialog is not None:
+        if _web_deep_dive is not None:
+            # the Deep Dive window open: its settings preview live there
             try:
-                if _current_dialog.isVisible():
-                    _current_dialog.open_settings(start_tab="General")
+                if _web_deep_dive.isVisible():
+                    _web_deep_dive._open_settings("General")
                     return
             except Exception:
                 log_swallowed()
 
-        # Create a lightweight host dialog for settings only: building the full Details window can cause intermittent extra windows.
+        # Create a lightweight host dialog for settings only.
         _settings_open_guard = True
         try:
             from aqt.qt import QDialog
-            from .details.ui.config import DetailedStatsConfigDialog
             from .details.logic.tabs import get_tabs_config, save_tabs_config
 
             class _SettingsHost(QDialog):
@@ -178,20 +235,12 @@ def add_toolbar_action():
 
             conf_manager = ConfigManager(mw)
             host = _SettingsHost(conf_manager, parent=mw)
-            config_dialog = DetailedStatsConfigDialog(host)
-            try:
-                for i in range(config_dialog.tabs_widget.count()):
-                    if config_dialog.tabs_widget.tabText(i).strip().lower() == tr("General").lower():
-                        config_dialog.tabs_widget.setCurrentIndex(i)
-                        break
-            except Exception:
-                log_swallowed()
+            from .web_ui.settings import open_settings_window
 
-            config_dialog.exec()
             try:
+                open_settings_window(host, "General")
+            finally:
                 host.deleteLater()
-            except Exception:
-                log_swallowed()
         except Exception:
             log_swallowed()
         finally:
@@ -206,6 +255,12 @@ def add_toolbar_action():
         from .details.logic import log_info
         log_info("User triggered Clear Cache.", tag="CACHE")
         _discard_parked_dialog()
+        try:
+            from .details.logic.metrics.fsrs_history import clear_caches
+
+            clear_caches()  # (the FSRS charts' caches: their file goes with the others below)
+        except Exception:
+            log_swallowed()
 
         def on_reinit_done():
             if _current_dialog:
@@ -221,7 +276,7 @@ def add_toolbar_action():
         from .details.ui.theme.icons import get_svg_icon
         from aqt.qt import (QDialog, QVBoxLayout, QHBoxLayout, QTextEdit,
                             QPushButton, QLabel, QApplication, QMessageBox,
-                            QSize, Qt, QTimer)
+                            QSize, Qt, QTimer, QGridLayout)
 
         DeepDiveLogger.flush()
         log_dir = DeepDiveLogger._get_log_dir()
@@ -239,7 +294,13 @@ def add_toolbar_action():
 
         dlg = QDialog(mw)
         dlg.setWindowTitle(tr("Deep Dive Troubleshooting"))
+        from .window_icon import addon_icon
+
+        addon_icon(dlg)
         dlg.resize(900, 600)
+        # a phone: the buttons on two columns, the path broken where it must
+        screen = mw.screen() or mw.app.primaryScreen()
+        narrow = screen is not None and screen.availableGeometry().width() < 600
 
         layout = QVBoxLayout(dlg)
 
@@ -247,9 +308,11 @@ def add_toolbar_action():
         path_icon = QLabel()
         path_icon.setPixmap(get_svg_icon("file-text", color="#808080", size=14).pixmap(14, 14))
         path_row.addWidget(path_icon)
-        label = QLabel(log_file)
+        label = QLabel(log_file.replace(os.sep, os.sep + "​") if narrow else log_file)
         set_qss(label, "color: gray; font-size: 11px;")
-        path_row.addWidget(label)
+        if narrow:
+            label.setWordWrap(True)
+        path_row.addWidget(label, 1 if narrow else 0)
         copy_path_btn = QPushButton()
         copy_path_btn.setIcon(get_svg_icon("copy", size=14, context_ref=dlg))
         copy_path_btn.setIconSize(QSize(14, 14))
@@ -345,7 +408,16 @@ def add_toolbar_action():
         close_btn.clicked.connect(dlg.accept)
         btn_row.addWidget(close_btn)
 
-        layout.addLayout(btn_row)
+        if narrow:
+            grid = QGridLayout()
+            for b in (report_btn, debug_btn, clear_cache_btn, clear_logs_btn, close_btn):
+                btn_row.removeWidget(b)
+            for i, b in enumerate((report_btn, debug_btn, clear_cache_btn, clear_logs_btn)):
+                grid.addWidget(b, i // 2, i % 2)
+            grid.addWidget(close_btn, 2, 0, 1, 2)
+            layout.addLayout(grid)
+        else:
+            layout.addLayout(btn_row)
         # One height for the whole row: the styled Clear Cache / Clear Logs buttons set it.
         row_btns = (report_btn, debug_btn, clear_cache_btn, clear_logs_btn, close_btn)
         for b in row_btns:
@@ -356,14 +428,55 @@ def add_toolbar_action():
         dlg.exec()
 
     def on_guided_tour():
-        from .details.widgets.common.guided_tour import start_from_menu
-        start_from_menu()
+        from .web_ui import tour
+
+        tour.start(force=True)
 
     tour_action = menu.addAction(tr("Guided Tour"))
     tour_action.triggered.connect(on_guided_tour)
 
+    def on_deep_dive_tour():
+        on_show_details()
+        tries = [0]
+
+        def kick():
+            dlg = _web_deep_dive
+            if dlg is None or not getattr(dlg, "webview", None):
+                if tries[0] < 30:
+                    tries[0] += 1
+                    QTimer.singleShot(150, kick)
+                return
+            try:
+                if getattr(dlg, "_went", False):
+                    dlg.webview.eval("window.DD && DD.startTour && DD.startTour()")
+                elif tries[0] < 40:
+                    tries[0] += 1
+                    QTimer.singleShot(150, kick)
+            except RuntimeError:
+                pass
+
+        QTimer.singleShot(180, kick)
+
+    dd_tour_action = menu.addAction(tr("Deep Dive Tour"))
+    dd_tour_action.triggered.connect(on_deep_dive_tour)
+
     troubleshooting_action = menu.addAction(tr("Troubleshooting..."))
     troubleshooting_action.triggered.connect(on_troubleshooting)
+    from .web_ui import pinned as _web_pinned
+
+    _web_pinned.install()
+    try:  # the settings dialogs show their changes live in the web pages
+        from .web_ui import live_preview
+
+        live_preview.install()
+    except Exception:
+        log_swallowed()
+    try:  # a widget's settings as a web page
+        from .web_ui import widget_settings as _web_widget_settings
+
+        _web_widget_settings.install()
+    except Exception:
+        log_swallowed()
     report_action = menu.addAction(tr("Report a Bug"))
     report_action.triggered.connect(open_bug_report)
 
@@ -392,6 +505,7 @@ def add_toolbar_action():
         open_action.setText(tr("Open Deep Dive") + (f"\t{hint}" if hint else ""))
         settings_action.setText(tr("Settings"))
         tour_action.setText(tr("Guided Tour"))
+        dd_tour_action.setText(tr("Deep Dive Tour"))
         troubleshooting_action.setText(tr("Troubleshooting..."))
         report_action.setText(tr("Report a Bug"))
         github_action.setText(tr("Star on GitHub"))
@@ -422,7 +536,6 @@ def add_toolbar_action():
             button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
 
     mw._deep_dive_action = action
-
 
 
 # Singleton reference: keeps the window alive and makes sure a single instance
@@ -490,16 +603,6 @@ def _refresh_after_rollover():
                 MainMenuWidgetManager.instance().refresh()
     except Exception:
         log_swallowed()
-    try:
-        dlg = _current_dialog
-        if dlg is not None and dlg.isVisible():
-            dlg.invalidate_view_switch_cache()
-            if dlg.view_mode == "time":
-                dlg.load_tabs()
-            else:
-                dlg.load_deck_view()
-    except Exception:
-        log_swallowed()
 
 
 # Deep Dive window kept hidden after it is closed, with the state it was closed in. Reopening shows
@@ -507,29 +610,6 @@ def _refresh_after_rollover():
 # is built.
 _parked_dialog = None
 _parked_signature = None
-
-
-def _deep_dive_reuse_signature():
-    """Everything a closed Deep Dive window shows depends on: the collection
-    (and any change to it), the scheduler day, the selected deck, the add-on
-    time spans and Anki's light/dark mode. None if it can't be computed."""
-    try:
-        from .details.widgets.chart_utils.theme import theme_config_signature
-
-        col = mw.col
-        if col is None:
-            return None
-        conf = ConfigManager(mw).config
-        theme_sig = theme_config_signature(conf)
-        if theme_sig is None:
-            return None
-        from .const import Config
-        import json
-
-        tabs_sig = json.dumps(conf.get(Config.DETAILS_TABS_DATA), sort_keys=True, default=str)
-        return (id(col), col.mod, col.sched.today, col.decks.selected(), theme_sig, tabs_sig)
-    except Exception:
-        return None
 
 
 def _on_anki_theme_change():
@@ -599,52 +679,12 @@ def _discard_parked_dialog(*_args):
         pass
 
 
-def _take_parked_dialog_if_fresh():
-    """Return the parked window if it can be shown as is, else None (and
-    the parked window, if any, is destroyed)."""
-    global _parked_dialog, _parked_signature
-    dlg = _parked_dialog
-    if dlg is None:
-        return None
-    sig = _deep_dive_reuse_signature()
-    if sig is None or sig != _parked_signature:
-        _discard_parked_dialog()
-        return None
-    try:
-        dlg.isVisible()
-    except RuntimeError:
-        _parked_dialog = None
-        _parked_signature = None
-        return None
-    _parked_dialog = None
-    _parked_signature = None
-    return dlg
-
-def _open_when_rows_ready(dialog, identifier, title, period_range, tries=40):
-    """Open the Deep Dive once the current tab's rows are loaded (tabs fill in the background)."""
-    from aqt.qt import QTimer
-
-    def attempt(left):
-        try:
-            stats = dialog.tab_stats.get(dialog.tab_widget.currentIndex()) or {}
-            if stats.get("results") or left <= 0:
-                dialog.deep_dive_manager.open_deep_dive(identifier, title, period_range=period_range)
-                return
-        except RuntimeError:
-            return
-        QTimer.singleShot(150, lambda: attempt(left - 1))
-
-    QTimer.singleShot(150, lambda: attempt(tries))
-
-
 def open_details_for(deck=None, period_range=None):
     """Open the Deep Dive on a given deck (or decks) and period.
 
     deck: a deck id, -1 for deleted cards, a list of deck ids and/or "deleted", or None for the whole collection.
     period_range: a Period value, or None to keep the one the window already uses.
     """
-    from .const import Config
-
     ids = deck
     if isinstance(ids, list):
         nums = [d for d in ids if isinstance(d, int)]
@@ -654,163 +694,15 @@ def open_details_for(deck=None, period_range=None):
             ids = nums[0]
         elif not ids:
             ids = None
-    if ids is None:
-        identifier, title = "[[TOTAL]]", "Total"
-    elif ids == -1:
-        identifier, title = "Deleted Cards", "Deleted Cards"
-    elif isinstance(ids, list):
-        identifier, title = ids, f"{len(ids)} decks"  # shown through deck_title()
-    else:
-        identifier = ids
-        try:
-            title = mw.col.decks.name(ids)
-        except Exception:
-            title = str(ids)
+    _open_web_on(ids, period_range)
 
-    on_show_details()
-    dialog = _current_dialog
-    if dialog is None:
-        return
-    try:
-        if getattr(dialog, "_pending_deep_dive_restore", False):
-            # Freshly built window: its first tab load restores the Deep Dive from these values.
-            conf = dialog.addon_config.config
-            conf[Config.DETAILS_DEEP_DIVE_IDENTIFIER] = identifier
-            conf[Config.DETAILS_DEEP_DIVE_TITLE] = title
-            dialog.target_deck_id = identifier
-            if period_range is not None:
-                conf[Config.DETAILS_DEEP_DIVE_PERIOD_RANGE] = period_range
-                dialog.target_time_span = period_range
-        else:
-            if period_range is None:
-                period_range = dialog.target_time_span
-            dialog.target_deck_id = identifier
-            dialog.target_time_span = period_range
-            if dialog.view_mode == "deck":
-                # In the deck view the deck is the tab, so go to its tab first (or to the time
-                # view for several decks) and open once that tab's rows are loaded.
-                if isinstance(identifier, list):
-                    dialog.toggle_view()
-                else:
-                    wanted = {"[[TOTAL]]": "collection", "Deleted Cards": "__deleted_cards__"}.get(identifier, identifier)
-                    for i in range(dialog.tab_widget.count()):
-                        if dialog.tab_widget.widget(i).property("deck_id") == wanted:
-                            dialog.tab_widget.setCurrentIndex(i)
-                            break
-                open_id = identifier
-                if not isinstance(identifier, list):
-                    open_id = {"Deleted Cards": "__deleted_cards__", "[[TOTAL]]": "collection"}.get(identifier, identifier)
-                _open_when_rows_ready(dialog, open_id, title, period_range)
-            else:
-                dialog.deep_dive_manager.open_deep_dive(identifier, title, period_range=period_range)
-    except Exception:
-        log_swallowed()
+
+_web_deep_dive = None
 
 
 def on_show_details():
-    """Open the main DetailedStatsDialog (Non-blocking)."""
-    global _current_dialog
-
-    if _current_dialog is not None:
-        try:
-            if _current_dialog.isVisible():
-                if _current_dialog.isMinimized():
-                    _current_dialog.showNormal()
-                _current_dialog.raise_()
-                _current_dialog.activateWindow()
-                try:
-                    from .details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
-                    if MainMenuWidgetManager.instance_exists():
-                        MainMenuWidgetManager.instance().set_external_refresh_suspended(False, reason="details_open")
-                except Exception:
-                    log_swallowed()
-                return
-        except RuntimeError:
-            _current_dialog = None
-
-    reused = _take_parked_dialog_if_fresh()
-    if reused is not None:
-        try:
-            try:
-                from .details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
-                MainMenuWidgetManager.instance().set_external_refresh_suspended(True, reason="details_open")
-            except Exception:
-                log_swallowed()
-            _current_dialog = reused
-            _show_rate_prompt(_current_dialog)
-            _current_dialog.show()
-            _current_dialog.raise_()
-            _current_dialog.activateWindow()
-            return
-        except RuntimeError:
-            _current_dialog = None
-        finally:
-            try:
-                from .details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
-                if MainMenuWidgetManager.instance_exists():
-                    MainMenuWidgetManager.instance().set_external_refresh_suspended(False, reason="details_open")
-            except Exception:
-                log_swallowed()
-
-    try:
-        try:
-            from .details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
-            MainMenuWidgetManager.instance().set_external_refresh_suspended(True, reason="details_open")
-        except Exception:
-            log_swallowed()
-        from .details import DetailedStatsDialog
-        conf_manager = ConfigManager(mw)
-        _current_dialog = DetailedStatsDialog(conf_manager, mw)
-        _current_dialog._deepdivestats_built_night_mode = _anki_night_mode()
-
-        _current_dialog.finished.connect(_on_dialog_finished)
-        _show_rate_prompt(_current_dialog)
-
-        _current_dialog.show()
-    except Exception as e:
-        try:
-            from .details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
-            MainMenuWidgetManager.instance().set_external_refresh_suspended(False, reason="details_open")
-        except Exception:
-            log_swallowed()
-        log_error(f"Error opening Deep Dive: {e}")
-    finally:
-        try:
-            from .details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
-            if MainMenuWidgetManager.instance_exists():
-                MainMenuWidgetManager.instance().set_external_refresh_suspended(False, reason="details_open")
-        except Exception:
-            log_swallowed()
-
-def _show_rate_prompt(dialog):
-    try:
-        from .details.ui.details_dialog.rate_prompt import on_open
-
-        on_open(dialog)
-    except Exception:
-        log_swallowed()
-
-
-def _on_dialog_finished(result):
-    global _current_dialog
-    try:
-        from .details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
-        if MainMenuWidgetManager.instance_exists():
-            MainMenuWidgetManager.instance().set_external_refresh_suspended(False, reason="details_open")
-    except Exception:
-        log_swallowed()
-    # Park the closed window for an instant reopen (see _parked_dialog).
-    global _parked_dialog, _parked_signature
-    closed = _current_dialog
-    _current_dialog = None
-    if closed is not None and closed is not _parked_dialog:
-        _discard_parked_dialog()
-        _parked_dialog = closed
-        _parked_signature = _deep_dive_reuse_signature()
-        if _parked_signature is None or not _closed_on_selected_deck(closed):
-            # A fresh window always opens on Anki's selected deck; only reuse
-            # this one if that is what it was showing.
-            _discard_parked_dialog()
+    """Open the Deep Dive window."""
+    open_web_deep_dive()
 
 
 def _anki_night_mode():
@@ -822,21 +714,6 @@ def _anki_night_mode():
         return None
 
 
-def _closed_on_selected_deck(dlg):
-    try:
-        # A light/dark switch while the window was open only half re-themes
-        # it; a rebuilt window is always correct.
-        if getattr(dlg, "_deepdivestats_built_night_mode", None) != _anki_night_mode():
-            return False
-        ddm = dlg.deep_dive_manager
-        panel_open = hasattr(dlg, "layout_toggle_container") and not dlg.layout_toggle_container.isHidden()
-        if not panel_open:
-            return False
-        return str(getattr(ddm, "last_deck_identifier", None)) == str(mw.col.decks.selected())
-    except Exception:
-        return False
-
-
 def on_sync_did_finish():
     """Trigger integrity check after sync."""
     from .details.logic import log_info
@@ -844,6 +721,112 @@ def on_sync_did_finish():
     from .details.logic.history_cache import GlobalHistoryCache
     from aqt.qt import QTimer
     QTimer.singleShot(1500, lambda: GlobalHistoryCache().verify_integrity())
+
+
+def _web_signature():
+    """What the parked web window was built from: the collection state, the selected deck, the theme."""
+    try:
+        return (
+            mw.col.db.scalar("select mod from col"),
+            mw.col.db.scalar("select max(id) from revlog"),
+            int(mw.col.decks.selected()),
+            _anki_night_mode(),
+            _web_files_stamp(),
+        )
+    except Exception:
+        return None
+
+
+def _web_files_stamp():
+    """The last change of the page's files (a source checkout only): an edited page is loaded again, not reused."""
+    from .config import is_dev_build
+
+    if not is_dev_build():
+        return None
+    import os
+
+    base = os.path.join(os.path.dirname(__file__), "web_ui", "web")
+    try:
+        return max(os.path.getmtime(os.path.join(r, f)) for r, _d, fs in os.walk(base) for f in fs)
+    except ValueError:
+        return None
+
+
+def _open_web_on(ids, period_range):
+    """The web window on a deck (0: the whole collection, -1: deleted cards) and a period. Several decks are not a
+    scope of the web window: it opens on the whole collection then."""
+    from .const import Config
+
+    deck = 0 if ids is None or isinstance(ids, list) else int(ids)
+    dlg = _web_deep_dive
+    try:
+        if dlg is not None and dlg.isVisible():
+            dlg.open_scope(deck, period_range)
+            dlg.raise_()
+            dlg.activateWindow()
+            return
+    except RuntimeError:
+        pass
+    # a new window opens on the scope the config holds (window._initial_scope)
+    from .details.widgets.pinned.widget_factory.utils import _addon_config
+
+    cfg = _addon_config()
+    cfg.config[Config.DETAILS_DEEP_DIVE_IDENTIFIER] = {0: "[[TOTAL]]", -1: "Deleted Cards"}.get(deck, deck)
+    if period_range is not None:
+        cfg.config[Config.DETAILS_DEEP_DIVE_PERIOD_RANGE] = period_range
+    cfg.write_config()
+    open_web_deep_dive(fresh=True)
+
+
+def _close_web_deep_dive_for_profile_close(*_args):
+    """The web Deep Dive window goes with its profile (as the native one): left open, it kept the previous
+    profile's data and took the next profile's theme half way (a light profile after a dark one: dark charts and
+    backdrop under light bars and text)."""
+    global _web_deep_dive
+    dlg, _web_deep_dive = _web_deep_dive, None
+    if dlg is None:
+        return
+    try:
+        dlg.close()
+        dlg.deleteLater()
+    except RuntimeError:
+        pass
+    except Exception:
+        log_swallowed()
+
+
+def open_web_deep_dive(fresh=False):
+    """The Deep Dive window. Closing it only hides it: reopened while nothing changed, it shows again as it was."""
+    global _web_deep_dive
+    try:
+        from .web_ui import tour
+        from .web_ui.window import WebDeepDiveDialog
+
+        tour.stop()  # the main screen's tour does not run on behind the window
+
+        dlg = _web_deep_dive
+        sig = _web_signature()
+        if dlg is not None:
+            try:
+                dlg.isVisible()
+            except RuntimeError:
+                dlg = None  # already deleted
+        if not fresh and dlg is not None and getattr(dlg, "_reuse_signature", None) == sig and sig is not None:
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+            return
+        if dlg is not None:
+            try:
+                dlg.close()
+                dlg.deleteLater()
+            except RuntimeError:
+                pass
+        _web_deep_dive = WebDeepDiveDialog(mw)
+        _web_deep_dive._reuse_signature = sig
+        _web_deep_dive.show()
+    except Exception as e:
+        log_error(f"Error opening Deep Dive: {e}")
 
 
 def on_webview_message(handled, message, context):

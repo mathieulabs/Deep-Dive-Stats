@@ -6,27 +6,6 @@ import importlib
 # at Anki startup, because main_menu.manager lives under this package. Names are imported on
 # first access instead.
 _LAZY_IMPORTS = {
-    "HTMLDelegate": (".common", "HTMLDelegate"),
-    "SparklineWidget": (".charts.common", "SparklineWidget"),
-    "SegmentedBarWidget": (".charts.segmented_bar", "SegmentedBarWidget"),
-    "BarChartWidget": (".charts.bar_chart", "BarChartWidget"),
-    "ActivityChart": (".charts.activity", "ActivityChart"),
-    "AddedChartWidget": (".charts.added_chart", "AddedChartWidget"),
-    "ActivityStackedChart": (".charts.activity_stacked", "ActivityStackedChart"),
-    "GroupedBarWidget": (".charts.grouped_bar", "GroupedBarWidget"),
-    "PieChartWidget": (".charts.pie_chart", "PieChartWidget"),
-    "RetentionChart": (".charts.retention", "RetentionChart"),
-    "HeatmapWidget": (".charts.heatmap", "HeatmapWidget"),
-    "StabilityChartWidget": (".charts.stability", "StabilityChartWidget"),
-    "DifficultyChartWidget": (".charts.difficulty", "DifficultyChartWidget"),
-    "RetrievabilityChartWidget": (".charts.retrievability", "RetrievabilityChartWidget"),
-    "StatCardWidget": (".stats_cards", "StatCardWidget"),
-    "StatCardsContainer": (".stats_cards", "StatCardsContainer"),
-    "RowGroupedStatContainer": (".stats_cards", "RowGroupedStatContainer"),
-    "HorizontalScrollTable": (".table", "HorizontalScrollTable"),
-    "HourlyBreakdownChart": (".charts.hourly", "HourlyBreakdownChart"),
-    "FutureDueChart": (".charts.future_due", "FutureDueChart"),
-    "ReviewIntervalsChart": (".charts.review_intervals", "ReviewIntervalsChart"),
 }
 
 

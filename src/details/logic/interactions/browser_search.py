@@ -211,3 +211,139 @@ def open_cards_for_hour(hour, span, deck):
 
 def open_card(cid):
     open_search(f"cid:{int(cid)}")
+
+
+# The kinds of a review, as the charts count them: Answer Buttons' groups (by the review's type) and the kinds of the
+# charts by kind (First Answer Retention, Answer Time: review_buckets._KIND, learning by its interval too)
+_BTN_KIND = {
+    "learning": "revlog.type IN (0, 2)",
+    "young": "revlog.type = 1 AND revlog.lastIvl < 21",
+    "mature": "revlog.type = 1 AND revlog.lastIvl >= 21",
+}
+_KIND = {
+    "learn": "(revlog.type IN (0, 2) OR revlog.lastIvl <= 0)",
+    "young": "(revlog.type NOT IN (0, 2) AND revlog.lastIvl > 0 AND revlog.lastIvl < 21)",
+    "mature": "(revlog.type NOT IN (0, 2) AND revlog.lastIvl >= 21)",
+    "review": "(revlog.type NOT IN (0, 2) AND revlog.lastIvl > 0)",  # young and mature (a chart's card type filter)
+}
+
+
+def _int_pair(v):
+    try:
+        a, b = v
+        return int(a), int(b)
+    except Exception:
+        return None
+
+
+def reviews_sql(spec, start_ms, end_ms, limit):
+    """The cards with an answer in [start_ms, end_ms) matching spec (a click on a chart of reviews):
+        weekday 0 Monday .. 6 Sunday, hour 0-23 (the clock of this computer, as Week by Hour and Hourly count them),
+        ease 1-4, btn_kind learning / young / mature (Answer Buttons), kind learn / young / mature / review (by interval),
+        secs [a, b) (answer time in seconds, a minute or more counted as 60), ivl [a, b) (interval before the answer),
+        first (the first answer of the card on its day: First Answer Retention), passed true / false,
+        lapse (Again on a review card: Forgotten), introduced (the card's first answer, or its first after a reset),
+        reset (a reset itself, Forget: not an answer; Reset Cards)."""
+    from ..metrics.review_buckets import MAX_INTERVAL, MAX_SECONDS, _join
+
+    local = "revlog.id / 1000, 'unixepoch', 'localtime'"
+    w = [f"revlog.id >= {int(start_ms)}", f"revlog.id < {int(end_ms)}"]
+    if spec.get("reset"):
+        w.append("revlog.type = 4 AND revlog.factor = 0 AND revlog.ivl = 0")  # (review_buckets.reset_events)
+    else:
+        w += ["revlog.type < 4", "revlog.ease BETWEEN 1 AND 4"]
+    if spec.get("hour") is not None:
+        w.append(f"CAST(strftime('%H', {local}) AS INTEGER) = {int(spec['hour'])}")
+    if spec.get("weekday") is not None:
+        # strftime('%w'): 0 is Sunday
+        w.append(f"(CAST(strftime('%w', {local}) AS INTEGER) + 6) % 7 = {int(spec['weekday'])}")
+    if spec.get("ease") is not None:
+        w.append(f"revlog.ease = {int(spec['ease'])}")
+    if spec.get("btn_kind") in _BTN_KIND:
+        w.append(_BTN_KIND[spec["btn_kind"]])
+    if spec.get("kind") in _KIND:
+        w.append(_KIND[spec["kind"]])
+    secs = _int_pair(spec.get("secs"))
+    if secs:
+        w.append(f"MIN(revlog.time / 1000, {MAX_SECONDS}) >= {secs[0]} AND MIN(revlog.time / 1000, {MAX_SECONDS}) < {secs[1]}")
+    ivl = _int_pair(spec.get("ivl"))
+    if ivl:
+        w.append(f"MIN(revlog.lastIvl, {MAX_INTERVAL}) >= {ivl[0]} AND MIN(revlog.lastIvl, {MAX_INTERVAL}) < {ivl[1]}")
+    if spec.get("passed") is not None:
+        w.append("revlog.ease > 1" if spec["passed"] else "revlog.ease = 1")
+    if spec.get("lapse"):
+        w.append("revlog.type = 1 AND revlog.ease = 1")
+    if spec.get("first"):
+        # the first answer of its card on its day of Anki (review_buckets.first_answers)
+        cutoff = int(mw.col.sched.day_cutoff)
+        base = cutoff - 86400 * 40000
+        w.append(f"""revlog.id IN (SELECT MIN(id) FROM revlog
+                     WHERE id >= {int(start_ms)} AND id < {int(end_ms)} AND type < 4 AND ease BETWEEN 1 AND 4
+                     GROUP BY cid, (id / 1000 - {base}) / 86400)""")
+    if spec.get("introduced"):
+        # no rated answer before it, unless a reset ("Forget": a manual entry without ease factor) came between
+        # (metrics.introduced)
+        w.append("""NOT EXISTS (SELECT 1 FROM revlog AS p WHERE p.cid = revlog.cid AND p.id < revlog.id
+                     AND p.type < 4 AND p.ease > 0
+                     AND NOT EXISTS (SELECT 1 FROM revlog AS z WHERE z.cid = revlog.cid AND z.type = 4
+                                     AND z.factor = 0 AND z.id > p.id AND z.id < revlog.id))""")
+    return f"SELECT DISTINCT revlog.cid FROM revlog {_join(limit) or 'LEFT JOIN cards ON revlog.cid = cards.id'} WHERE {' AND '.join(w)} {limit or ''}"
+
+
+def _span_range(span):
+    from ..data.core.time_utils import get_time_range_ms
+    from .. import Period
+
+    cfg = ConfigManager(mw)
+    start_ms, end_ms, _, _ = get_time_range_ms(span, week_start=cfg.config.get("week_start", 0))
+    if span == Period.TOTAL or end_ms <= 0:
+        end_ms = (int(mw.col.sched.day_cutoff) + 86400) * 1000
+    return max(0, int(start_ms)), int(end_ms)
+
+
+def open_reviews(spec, span, deck):
+    """A click on a chart of reviews: the cards answered as spec says (reviews_sql), in spec's range (ms: [start, end],
+    label: a bar's date, else the chart's period span)."""
+    from ..metrics.review_buckets import did_limit
+
+    if is_deleted_selection(deck):
+        _tip(tr("Deleted cards cannot be shown in the browser"))
+        return
+    rng = _int_pair(spec.get("ms"))
+    if not rng and spec.get("label"):
+        rng = label_to_range_ms(spec["label"])
+    if not rng:
+        rng = _span_range(int(span))
+
+    def work():
+        try:
+            cfg = ConfigManager(mw)
+            sql = reviews_sql(spec, rng[0], rng[1], did_limit(cfg, deck, False))
+            cids = mw.col.db.list(sql)
+            if isinstance(spec.get("searches"), list):
+                # Custom Bar: only the cards its searches find (as it counts them, metrics.custom_search; a search
+                # Anki cannot read finds none)
+                from ..metrics.custom_search import matching
+
+                sets, _cards = matching(cfg, deck, False, [str(q or "") for q in spec["searches"]])
+                found = set().union(*[s for s in sets if s])
+                cids = [c for c in cids if int(c) in found]
+            return cids
+        except Exception as e:
+            import traceback
+            log_error(f"browser_search reviews failed: {e}\n{traceback.format_exc()}")
+            return []
+
+    def _done(fut):
+        try:
+            cids = fut.result()
+        except Exception as e:
+            log_error(f"browser_search result failed: {e}")
+            return
+        if not cids:
+            _tip(tr("No cards found"))
+            return
+        clause = deck_clause(deck)
+        open_search(" ".join(p for p in ("cid:" + ",".join(str(c) for c in cids), clause) if p))
+
+    mw.taskman.run_in_background(work, on_done=_done)

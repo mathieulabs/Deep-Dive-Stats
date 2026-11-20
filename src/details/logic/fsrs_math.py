@@ -4,6 +4,80 @@
 
 # Decay used by FSRS 4.5 and 5. FSRS 6 stores the preset's own decay on each card.
 DEFAULT_DECAY = 0.5
+FSRS6_DEFAULT_DECAY = 0.1542  # a preset never optimized, with FSRS-6
+
+# The FSRS versions whose formulas this add-on knows (4: FSRS-4.5). With another one (FSRS-7 has
+# another forgetting curve) the charts that work out a recall show a note instead of numbers.
+KNOWN_VERSIONS = (4, 5, 6)
+# The charts that work out a recall themselves (the others read the memory states Anki stores).
+CURVE_CHARTS = frozenset((
+    "retrievability", "sxr_heatmap", "bw_matrix", "memorised", "fsrs_calibration", "forgetting_curve",
+    "fsrs_fatigue", "leech_detector", "stability_increase",
+))
+_VERSION = []
+
+
+def fsrs_version():
+    """The FSRS version Anki runs, 4 to 6 (4: FSRS-4.5), or None when it cannot be told."""
+    if not _VERSION:
+        _VERSION.append(_read_version())
+    return _VERSION[0]
+
+
+def _read_version():
+    # The newest preset parameter field Anki has: fsrs_params_4 / _5 / _6 (Anki 24.11 on), else
+    # fsrs_weights: FSRS-4.5 from Anki 23.12 (23.10's version is not known for sure).
+    try:
+        from anki.deck_config_pb2 import DeckConfig
+
+        names = DeckConfig.Config.DESCRIPTOR.fields_by_name
+    except Exception:
+        return None
+    return version_of_fields(names, _point_version())
+
+
+def version_of_fields(names, point_version):
+    nums = [int(n[12:]) for n in names if n.startswith("fsrs_params_") and n[12:].isdigit()]
+    if nums:
+        return max(nums)
+    if "fsrs_weights" in names and point_version >= 231200:
+        return 4
+    return None
+
+
+def _point_version():
+    try:
+        from anki.utils import point_version
+
+        return int(point_version())
+    except Exception:
+        return 0
+
+
+def curve_known(version=None):
+    """True when the forgetting curve of the FSRS version Anki runs is known here."""
+    return (fsrs_version() if version is None else version) in KNOWN_VERSIONS
+
+
+def preset_decay(params, version=None):
+    """The decay of the forgetting curve for a preset's parameters, as Anki runs them, or None when
+    unknown. FSRS-6: the last of its 21; 17 or 19 (FSRS-4.5, 5, run that way by FSRS-6 too): 0.5;
+    none (never optimized): the default of the version Anki runs."""
+    version = fsrs_version() if version is None else version
+    if version not in KNOWN_VERSIONS:
+        return None
+    n = len(params or ())
+    if n == 0:
+        return FSRS6_DEFAULT_DECAY if version >= 6 else DEFAULT_DECAY
+    if n in (17, 19):
+        return DEFAULT_DECAY
+    if n == 21 and version >= 6:
+        try:
+            decay = float(params[20])
+        except (TypeError, ValueError):
+            return None
+        return decay if decay > 0 else None
+    return None
 
 
 def retrievability(elapsed_days, stability, decay=None):
@@ -90,6 +164,8 @@ def add_memory_state(buckets, mem, due, odue, odid, ivl, queue, ctype, today, no
     d_b = _percent_bin((d - 1.0) / 9.0 * 100.0)
     buckets["difficulty"][d_b] = buckets["difficulty"].get(d_b, 0) + 1
 
+    if not curve_known():
+        return  # no retrievability: an unknown curve would give wrong ones
     elapsed = seconds_since_last_review(lrt, due, odue, odid, ivl, queue, ctype, today, now)
     r = retrievability(elapsed / 86400.0, s, decay)
     r_b = _percent_bin(r * 100.0)

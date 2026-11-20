@@ -19,10 +19,7 @@ from aqt.qt import (
     QSizePolicy,
 )
 from aqt import mw
-from aqt.theme import theme_manager
 from ... import ConfigManager, Config
-from ...theme import get_settings_dialog_style
-from ..shared import apply_standard_dialog_sizing, clamp_dialog_height, show_when_painted
 from .....qss import set_qss
 from ...theme.icons import get_svg_icon
 from .....i18n import tr, tr_n
@@ -45,16 +42,41 @@ class _DeckNameLabel(QLabel):
         self.setToolTip(self._full if shown != self._full else "")
 
 
-class DeckSettingsDialog(QDialog):
-    def __init__(self, addon_config: ConfigManager, parent=None):
-        super().__init__(parent or mw)
-        self.setWindowTitle(tr("Deck Options"))
+def clear_stat_caches():
+    """The all-decks aggregates of the caches depend on the excluded decks and dates."""
+    try:
+        from ....logic.history_cache import GlobalHistoryCache
+        from ....widgets.pinned.widget_factory.utils import PinnedDataManager
 
-        apply_standard_dialog_sizing(self, min_width=500)
-        show_when_painted(self)
+        GlobalHistoryCache.clear_all_cache()
+        PinnedDataManager.clear()
+    except Exception:
+        pass
+
+
+def apply_deck_options(conf, values):
+    """Puts a DeckOptionsPanel's values in the config (not written). True when the excluded decks or dates changed
+    (the caches are cleared then)."""
+    excluded, colors, dates = values
+    before = (sorted(conf.get(Config.EXCLUDED_DECKS, []) or [], key=str), list(conf.get(Config.EXCLUDED_DATES, []) or []))
+    conf[Config.EXCLUDED_DATES] = dates
+    conf[Config.EXCLUDED_DECKS] = excluded
+    conf[Config.DECK_COLORS] = colors
+    changed = before != (sorted(excluded, key=str), list(dates))
+    if changed:
+        clear_stat_caches()
+    return changed
+
+
+class DeckOptionsPanel(QWidget):
+    """The decks left out of the stats, the decks' colors and the excluded dates: the Settings' Decks tab (and the
+    native window's Deck Options dialog). values() gives what is set; nothing is saved here."""
+
+    def __init__(self, addon_config: ConfigManager, parent=None):
+        super().__init__(parent)
         self.addon_config = addon_config
         self.excluded_dids = set(self.addon_config.config.get(Config.EXCLUDED_DECKS, []))
-        self.deck_colors = self.addon_config.config.get(Config.DECK_COLORS, {})
+        self.deck_colors = dict(self.addon_config.config.get(Config.DECK_COLORS, {}) or {})
 
         layout = QVBoxLayout(self)
 
@@ -97,30 +119,6 @@ class DeckSettingsDialog(QDialog):
 
         self.deck_rows = []
         self.populate_decks()
-
-        self.bottom_area = QWidget(self)
-        btns = QHBoxLayout(self.bottom_area)
-        btns.setContentsMargins(0, 10, 0, 10)
-        btns.addStretch()
-        cancel = QPushButton(tr("Cancel"))
-        cancel.clicked.connect(self.reject)
-        save = QPushButton(tr("Save"))
-        save.clicked.connect(self.save)
-        btns.addWidget(cancel)
-        btns.addWidget(save)
-        layout.addWidget(self.bottom_area)
-
-        self.refresh_styles()
-
-        from aqt.qt import QCoreApplication
-        QCoreApplication.processEvents()
-
-        content_h = self.scroll_content.sizeHint().height()
-        # ScrollArea itself has a bit of overhead
-        total_h = content_h + self.bottom_area.sizeHint().height() + 100
-
-        final_h = clamp_dialog_height(self.maximumHeight(), total_h)
-        self.resize(500, final_h)
 
     def populate_decks(self):
         for i in reversed(range(self.scroll_layout.count())):
@@ -256,6 +254,8 @@ class DeckSettingsDialog(QDialog):
         decks = list(entry.get("decks") or []) if isinstance(entry, dict) else []
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Excluded date"))
+        from .....window_icon import addon_icon
+        addon_icon(dlg)
         lay = QVBoxLayout(dlg)
         lay.addWidget(QLabel(tr("Day (YYYY-MM-DD) or range (YYYY-MM-DD..YYYY-MM-DD):")))
         edit = QLineEdit(dates, dlg)
@@ -314,23 +314,10 @@ class DeckSettingsDialog(QDialog):
         if row >= 0:
             self.dates_list.takeItem(row)
 
-    def save(self):
-        new_dates = [
-            self.dates_list.item(i).data(Qt.ItemDataRole.UserRole)
-            for i in range(self.dates_list.count())
-        ]
-        self.addon_config.config[Config.EXCLUDED_DATES] = new_dates
-        new_excluded = []
-        for row in self.deck_rows:
-            if not row['check'].isChecked():
-                new_excluded.append(row['did'])
+    def values(self):
+        """(excluded deck ids, deck colors, excluded dates)"""
+        dates = [self.dates_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.dates_list.count())]
+        excluded = [row['did'] for row in self.deck_rows if not row['check'].isChecked()]
+        return excluded, dict(self.deck_colors), dates
 
-        self.addon_config.config[Config.EXCLUDED_DECKS] = new_excluded
-        self.addon_config.config[Config.DECK_COLORS] = self.deck_colors
-        self.addon_config.write_config()
-        self.accept()
-
-    def refresh_styles(self):
-        is_dark = theme_manager.get_night_mode()
-        set_qss(self, get_settings_dialog_style(is_dark, self.addon_config.config))
 

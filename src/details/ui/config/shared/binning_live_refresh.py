@@ -2,16 +2,12 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 
 from ... import ADAPTIVE_CHART_BINNING
 from ....logic.logger import log_swallowed
 
-if TYPE_CHECKING:
-    from ..dialogs.tabs_config_dialog import DetailedStatsConfigDialog
 
-
-def refresh_binning_live(dialog: "DetailedStatsConfigDialog") -> None:
+def refresh_binning_live(dialog) -> None:
     """Apply binning changes immediately to visible charts (details + pinned)."""
     try:
         from ....widgets.chart_utils.binning import invalidate_binning_level_cache
@@ -80,7 +76,6 @@ def refresh_binning_live(dialog: "DetailedStatsConfigDialog") -> None:
 
         if MainMenuWidgetManager.instance_exists():
             mgr = MainMenuWidgetManager.instance()
-            mgr._widget_update_signatures.clear()
             mgr.refresh(clear_cache=False)
     except Exception:
         log_swallowed()

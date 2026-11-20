@@ -25,6 +25,10 @@ class ThemePalettes:
     ONE_DARK = "one_dark"
     AYU_DARK = "ayu_dark"
     ROSE_PINE = "rose_pine"
+    GRAPHITE = "graphite"
+    EVERFOREST_DARK = "everforest_dark"
+    KANAGAWA = "kanagawa"
+    SOLARIZED_DARK = "solarized_dark"
     AURORA = "aurora"
     EMBER = "ember"
     DEEP_SPACE = "deep_space"
@@ -915,6 +919,70 @@ class ThemePalettes:
         "info": "#0ea5e9"
     }
 
+    GRAPHITE_PALETTE = {
+        "bg_root": "#1b1c1f",
+        "bg_surface": "#23252a",
+        "bg_element": "#2e3138",
+        "text_primary": "#e4e6eb",
+        "text_secondary": "#9da3ae",
+        "accent": "#6b9eff",
+        "accent_hover": "#8ab4ff",
+        "border_subtle": "#2c2f36",
+        "border_strong": "#3c404a",
+        "success": "#5fbf8a",
+        "warning": "#e0a958",
+        "error": "#e06c75",
+        "info": "#6b9eff",
+    }
+
+    EVERFOREST_DARK_PALETTE = {
+        "bg_root": "#272e33",
+        "bg_surface": "#2e383c",
+        "bg_element": "#374145",
+        "text_primary": "#d3c6aa",
+        "text_secondary": "#9da9a0",
+        "accent": "#a7c080",
+        "accent_hover": "#83c092",
+        "border_subtle": "#384b55",
+        "border_strong": "#495156",
+        "success": "#a7c080",
+        "warning": "#dbbc7f",
+        "error": "#e67e80",
+        "info": "#7fbbb3",
+    }
+
+    KANAGAWA_PALETTE = {
+        "bg_root": "#1f1f28",
+        "bg_surface": "#2a2a37",
+        "bg_element": "#363646",
+        "text_primary": "#dcd7ba",
+        "text_secondary": "#9e9b8a",
+        "accent": "#7e9cd8",
+        "accent_hover": "#957fb8",
+        "border_subtle": "#323241",
+        "border_strong": "#46465c",
+        "success": "#98bb6c",
+        "warning": "#e6c384",
+        "error": "#e46876",
+        "info": "#7fb4ca",
+    }
+
+    SOLARIZED_DARK_PALETTE = {
+        "bg_root": "#002b36",
+        "bg_surface": "#073642",
+        "bg_element": "#134654",
+        "text_primary": "#eee8d5",
+        "text_secondary": "#93a1a1",
+        "accent": "#268bd2",
+        "accent_hover": "#2aa198",
+        "border_subtle": "#0d414f",
+        "border_strong": "#1b5565",
+        "success": "#859900",
+        "warning": "#b58900",
+        "error": "#dc322f",
+        "info": "#2aa198",
+    }
+
     ALL = {
         CHARCOAL: CHARCOAL_PALETTE,
         DEEP_OCEAN: DEEP_OCEAN_PALETTE,
@@ -933,6 +1001,10 @@ class ThemePalettes:
         ONE_DARK: ONE_DARK_PALETTE,
         AYU_DARK: AYU_DARK_PALETTE,
         ROSE_PINE: ROSE_PINE_PALETTE,
+        GRAPHITE: GRAPHITE_PALETTE,
+        EVERFOREST_DARK: EVERFOREST_DARK_PALETTE,
+        KANAGAWA: KANAGAWA_PALETTE,
+        SOLARIZED_DARK: SOLARIZED_DARK_PALETTE,
         AURORA: AURORA_PALETTE,
         EMBER: EMBER_PALETTE,
         DEEP_SPACE: DEEP_SPACE_PALETTE,
@@ -989,6 +1061,10 @@ class ThemePalettes:
         ONE_DARK: MODE_DARK,
         AYU_DARK: MODE_DARK,
         ROSE_PINE: MODE_DARK,
+        GRAPHITE: MODE_DARK,
+        EVERFOREST_DARK: MODE_DARK,
+        KANAGAWA: MODE_DARK,
+        SOLARIZED_DARK: MODE_DARK,
         AURORA: MODE_DARK,
         EMBER: MODE_DARK,
         DEEP_SPACE: MODE_DARK,
@@ -1751,6 +1827,62 @@ class ThemePalettes:
             "Color_Active_Days": "#70508a", "Color_Cram": "#70508a",
             "Color_Future_Due": "#4a7830", "Color_Backlog": "#9a7010",
             "Color_Avg_Time": "#409cb0",
+        },
+        "graphite": {
+            "Color_Bar": "#6b9eff", "Heatmap_Color": "#6b9eff",
+            "Color_Good": "#5fbf8a", "Color_Again": "#e06c75",
+            "Color_Gradient_High": "#5fbf8a", "Color_Gradient_Low": "#e06c75",
+            "Color_Mature": "#5fbf8a", "Color_Young": "#79c79b",
+            "Color_Relearn": "#e06c75", "Color_Learn": "#e0a958",
+            "Color_Hard": "#e0a958", "Color_Easy": "#6b9eff",
+            "Color_Retention": "#7aa2f7", "Color_Time": "#63b3c4",
+            "Color_Reviews": "#e0a958", "Color_New": "#6b9eff",
+            "Color_Suspended": "#d4b46a", "Color_Streak": "#e0876a",
+            "Color_Active_Days": "#a48be0", "Color_Cram": "#a48be0",
+            "Color_Future_Due": "#5fbf8a", "Color_Backlog": "#e0a958",
+            "Color_Avg_Time": "#63b3c4",
+        },
+        "everforest_dark": {
+            "Color_Bar": "#a7c080", "Heatmap_Color": "#a7c080",
+            "Color_Good": "#a7c080", "Color_Again": "#e67e80",
+            "Color_Gradient_High": "#a7c080", "Color_Gradient_Low": "#e67e80",
+            "Color_Mature": "#a7c080", "Color_Young": "#83c092",
+            "Color_Relearn": "#e67e80", "Color_Learn": "#e69875",
+            "Color_Hard": "#dbbc7f", "Color_Easy": "#7fbbb3",
+            "Color_Retention": "#7fbbb3", "Color_Time": "#7fbbb3",
+            "Color_Reviews": "#dbbc7f", "Color_New": "#7fbbb3",
+            "Color_Suspended": "#dbbc7f", "Color_Streak": "#e69875",
+            "Color_Active_Days": "#d699b6", "Color_Cram": "#d699b6",
+            "Color_Future_Due": "#a7c080", "Color_Backlog": "#e69875",
+            "Color_Avg_Time": "#83c092",
+        },
+        "kanagawa": {
+            "Color_Bar": "#7e9cd8", "Heatmap_Color": "#98bb6c",
+            "Color_Good": "#98bb6c", "Color_Again": "#e46876",
+            "Color_Gradient_High": "#98bb6c", "Color_Gradient_Low": "#e46876",
+            "Color_Mature": "#76946a", "Color_Young": "#98bb6c",
+            "Color_Relearn": "#e46876", "Color_Learn": "#ffa066",
+            "Color_Hard": "#e6c384", "Color_Easy": "#7fb4ca",
+            "Color_Retention": "#7e9cd8", "Color_Time": "#7fb4ca",
+            "Color_Reviews": "#e6c384", "Color_New": "#7e9cd8",
+            "Color_Suspended": "#dca561", "Color_Streak": "#ffa066",
+            "Color_Active_Days": "#957fb8", "Color_Cram": "#957fb8",
+            "Color_Future_Due": "#98bb6c", "Color_Backlog": "#ffa066",
+            "Color_Avg_Time": "#7aa89f",
+        },
+        "solarized_dark": {
+            "Color_Bar": "#268bd2", "Heatmap_Color": "#2aa198",
+            "Color_Good": "#859900", "Color_Again": "#dc322f",
+            "Color_Gradient_High": "#859900", "Color_Gradient_Low": "#dc322f",
+            "Color_Mature": "#859900", "Color_Young": "#2aa198",
+            "Color_Relearn": "#dc322f", "Color_Learn": "#cb4b16",
+            "Color_Hard": "#b58900", "Color_Easy": "#268bd2",
+            "Color_Retention": "#268bd2", "Color_Time": "#2aa198",
+            "Color_Reviews": "#b58900", "Color_New": "#268bd2",
+            "Color_Suspended": "#b58900", "Color_Streak": "#cb4b16",
+            "Color_Active_Days": "#6c71c4", "Color_Cram": "#d33682",
+            "Color_Future_Due": "#859900", "Color_Backlog": "#cb4b16",
+            "Color_Avg_Time": "#2aa198",
         },
     }
 

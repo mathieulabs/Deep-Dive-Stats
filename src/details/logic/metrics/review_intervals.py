@@ -11,9 +11,9 @@ INTERVAL_CARDS_COND = "cards.type IN (2, 3) AND cards.ivl > 0"
 
 class ReviewIntervalsDataProvider:
     @staticmethod
-    def fetch_data(addon_config, deck_id=None, is_deleted=False, time_span=Period.TOTAL):
+    def fetch_data(addon_config, deck_id=None, is_deleted=False, time_span=Period.TOTAL, suspended=True):
         """
-        Fetches distribution of card review intervals.
+        Fetches distribution of card review intervals (suspended=False: the suspended cards left out).
         """
         if is_deleted:
             # The cards are gone: use the interval of each one's last review.
@@ -25,6 +25,8 @@ class ReviewIntervalsDataProvider:
             did_limit = "AND (CASE WHEN cards.odid > 0 THEN cards.odid ELSE cards.did END) IS NULL"
         else:
             did_limit = HistoryProvider._get_did_limit(addon_config, deck_id)
+            if not suspended:
+                did_limit += " AND cards.queue != -1"
 
         query = f"""
             SELECT cards.ivl

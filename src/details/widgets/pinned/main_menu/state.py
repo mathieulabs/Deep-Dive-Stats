@@ -39,13 +39,3 @@ class RuntimeState:
     is_deck_browser: bool = True
 
 
-@dataclass
-class OverlayState:
-    last_geom: tuple[int, int, int, int, float] | None = None
-    last_resize_signature: Any = None
-    last_drag_move_time: float = 0.0
-    last_h: float = -1.0
-    last_zoom: float | None = None
-    last_placeholder_css_rect: tuple[float, float, float, float] | None = None
-
-

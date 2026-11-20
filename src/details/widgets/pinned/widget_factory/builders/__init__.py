@@ -19,12 +19,3 @@ __all__ = [
 ]
 
 
-def pinned_title(widget_def, default):
-    """Title of a pinned chart. An emptied label means no title at all.
-
-    default is the English name (marked with N_), shown in capitals and translated; a
-    saved label goes through tr_name() (default names are saved in English)."""
-    label = widget_def.get("label")
-    if label is None:
-        return upper(tr_name(default))
-    return tr_name(label) if str(label).strip() else ""

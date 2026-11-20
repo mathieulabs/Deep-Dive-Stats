@@ -9,6 +9,12 @@ def _write_box_style(conf, *, show_key, intensity_key, border_key, dialog):
     conf[show_key] = dialog.glass_cb.isChecked()
     conf[intensity_key] = dialog.int_slider.value()
     conf[border_key] = dialog.border_slider.value()
+    from .web_glass import write_web_glass
+
+    if show_key == Config.TEXT_WIDGET_SHOW_GLASS:
+        write_web_glass(dialog, conf, "", Config.TEXT_WIDGET_GLASS_BLUR, Config.TEXT_WIDGET_GLASS_SHADOW)
+    else:
+        write_web_glass(dialog, conf, "", Config.PINNED_GLASS_BLUR, Config.PINNED_GLASS_SHADOW)
     if hasattr(dialog, "hover_border_cb"):
         hover_key = (
             Config.TEXT_WIDGET_HOVER_BORDER if show_key == Config.TEXT_WIDGET_SHOW_GLASS else Config.PINNED_HOVER_BORDER
@@ -26,6 +32,10 @@ def apply_stat_card_live_changes(dialog, conf):
         conf[dialog._get_key(Config.FACECARDS_SHOW_GLASS, Config.DASHBOARD_SHOW_GLASS)] = dialog.glass_cb.isChecked()
     conf[dialog._get_key(Config.FACECARDS_GLASS_INTENSITY, Config.DASHBOARD_GLASS_INTENSITY)] = dialog.face_int_slider.value()
     conf[dialog._get_key(Config.FACECARDS_GLASS_BORDER, Config.DASHBOARD_GLASS_BORDER)] = dialog.face_border_slider.value()
+    if not dialog.is_dashboard_context:
+        from .web_glass import write_web_glass
+
+        write_web_glass(dialog, conf, "face_", Config.FACECARDS_GLASS_BLUR, Config.FACECARDS_GLASS_SHADOW)
     if hasattr(dialog, "hover_effect_cb"):
         conf[dialog._get_key(Config.FACECARDS_HOVER_EFFECT, Config.DASHBOARD_HOVER_EFFECT)] = dialog.hover_effect_cb.isChecked()
     if hasattr(dialog, "inline_stats_cb"):
@@ -78,6 +88,13 @@ def apply_heatmap_live_changes(dialog, conf):
         conf[Config.HEATMAP_INTENSITY_CURVE] = dialog.intensity_curve_slider.value()
     if hasattr(dialog, "hm_levels_slider"):
         conf[Config.HEATMAP_COLOR_LEVELS] = dialog.hm_levels_slider.value()
+    if hasattr(dialog, "invert_intensity_cb"):
+        conf[Config.HEATMAP_INVERT_INTENSITY] = dialog.invert_intensity_cb.isChecked()
+    if hasattr(dialog, "multi_hue_cb"):
+        conf[Config.HEATMAP_MULTI_HUE_INTENSITY] = dialog.multi_hue_cb.isChecked()
+    if hasattr(dialog, "hm_palette_combo"):
+        conf[Config.HEATMAP_PALETTE] = dialog.hm_palette_combo.currentData() or ""
+        conf[Config.HEATMAP_CUSTOM_PALETTES] = [dict(p, colors=list(p["colors"])) for p in dialog.hm_customs]
     if hasattr(dialog, "click_browser_cb"):
         conf[Config.HEATMAP_CLICK_BROWSER] = dialog.click_browser_cb.isChecked()
     if hasattr(dialog, "hm_glass_cb"):
@@ -86,6 +103,9 @@ def apply_heatmap_live_changes(dialog, conf):
         conf[Config.HEATMAP_GLASS_INTENSITY] = dialog.hm_int_slider.value()
     if hasattr(dialog, "hm_border_slider"):
         conf[Config.HEATMAP_GLASS_BORDER] = dialog.hm_border_slider.value()
+    from .web_glass import write_web_glass
+
+    write_web_glass(dialog, conf, "hm_", Config.HEATMAP_GLASS_BLUR, Config.HEATMAP_GLASS_SHADOW)
     if hasattr(dialog, "show_cont_cb"):
         conf[Config.HEATMAP_SHOW_CONTINUOUS_MODE] = dialog.show_cont_cb.isChecked()
     if hasattr(dialog, "show_365_cb"):
@@ -120,6 +140,11 @@ def apply_activity_live_changes(dialog, conf):
 
 
 def apply_generic_chart_live_changes(dialog, conf):
+    # the average / total line boxes of the other charts (Added, Future Due...) are seen at once too, as Activity's
+    if hasattr(dialog, "avg_cb"):
+        dialog.widget_def["show_average"] = dialog.avg_cb.isChecked()
+    if hasattr(dialog, "cum_cb"):
+        dialog.widget_def["show_cumulative"] = dialog.cum_cb.isChecked()
     _write_box_style(
         conf,
         show_key=Config.PINNED_GLASS,
@@ -204,6 +229,16 @@ def apply_chart_opacity_live_change(dialog):
         else:
             dialog.widget_def[_key] = _value
             dialog.local_config[_key] = _value
+    _total = getattr(dialog, "total_line_slider", None)
+    if _total is not None:  # the Total Line of its own, only kept when it differs from Chart Style's
+        from .chart_section import total_line_global
+
+        if _total.value() == total_line_global(dialog):
+            dialog.widget_def.pop("total_line", None)
+            dialog.local_config.pop("total_line", None)
+        else:
+            dialog.widget_def["total_line"] = _total.value()
+            dialog.local_config["total_line"] = _total.value()
     for _attr, _key, _conf_key in (
         ("show_grid_cb", "show_grid", Config.CHART_SHOW_GRID),
     ):

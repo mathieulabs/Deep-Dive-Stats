@@ -96,6 +96,31 @@ class DeepDiveLogger:
         except Exception:
             pass
 
+    PREVIOUS_BYTES = 2_000_000
+
+    @classmethod
+    def _keep_previous_session(cls):
+        """The end of the last session's log (debug.log.1 then debug.log, its last PREVIOUS_BYTES) copied to
+        debug.previous.log: when Anki crashed, what led to it is still there after the restart, whatever the
+        rotation of debug.log does meanwhile (the traces fill its 1 MB in about an hour)."""
+        log_file = cls._get_log_file()
+        try:
+            parts = [f for f in (log_file + ".1", log_file) if os.path.exists(f)]
+            if not parts:
+                return
+            data = b""
+            for f in parts:
+                with open(f, "rb") as fh:
+                    data += fh.read()
+            data = data[-cls.PREVIOUS_BYTES:]
+            cut = data.find(b"\n")
+            if len(data) == cls.PREVIOUS_BYTES and cut >= 0:
+                data = data[cut + 1:]  # from a whole line
+            with open(os.path.join(cls._get_log_dir(), "debug.previous.log"), "wb") as fh:
+                fh.write(data)
+        except Exception:
+            pass
+
     @classmethod
     def clear_logs(cls):
         """Truncate the log file."""
@@ -104,9 +129,9 @@ class DeepDiveLogger:
             with open(log_file, "w", encoding="utf-8") as f:
                 f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [INFO] [CLEANUP] User cleared logs.\n")
             # Also drop the rotated copy so "clear" really clears everything.
-            old_file = log_file + ".1"
-            if os.path.exists(old_file):
-                os.remove(old_file)
+            for old_file in (log_file + ".1", os.path.join(cls._get_log_dir(), "debug.previous.log")):
+                if os.path.exists(old_file):
+                    os.remove(old_file)
         except Exception:
             pass
 
@@ -124,6 +149,7 @@ class DeepDiveLogger:
     def _setup_logger(cls):
         log_file = cls._get_log_file()
 
+        cls._keep_previous_session()
         cls._trim_old_logs()
 
         cls._logger = logging.getLogger("DeepDiveStats")
@@ -240,6 +266,38 @@ def log_info(message, tag="INFO"):
 
 def log_warn(message, tag="WARN"):
     DeepDiveLogger.log(message, level="WARNING", tag=tag)
+
+
+_batch_depth = 0
+
+
+class log_batch:
+    """The lines logged inside `with log_batch():` reach debug.log in one write at its end.
+
+    A WARNING is written at once (open, write, close the file): a page's batch of traces, a hundred lines at
+    a time while its charts animate, cost one write per line on Anki's UI thread (about 60 ms a batch)."""
+
+    def __enter__(self):
+        global _batch_depth
+        h = DeepDiveLogger._memory_handler
+        if h is not None:
+            if _batch_depth == 0:
+                h.flushLevel = logging.CRITICAL + 1
+            _batch_depth += 1
+        return self
+
+    def __exit__(self, *exc):
+        global _batch_depth
+        h = DeepDiveLogger._memory_handler
+        if h is not None and _batch_depth > 0:
+            _batch_depth -= 1
+            if _batch_depth == 0:
+                h.flushLevel = logging.WARNING
+                try:
+                    h.flush()
+                except Exception:
+                    pass
+        return False
 
 def _with_traceback(message):
     """When called from an except block, append the last frames of the exception

@@ -1,0 +1,38 @@
+name: Translation fix
+description: A wrong or awkward translation in the add-on. No GitHub knowledge needed, just fill in the three boxes.
+title: "[Translation] "
+labels: ["translation"]
+body:
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - Français (fr)
+        - Deutsch (de)
+        - Español (es)
+        - Italiano (it)
+        - 日本語 (ja)
+        - 한국어 (ko)
+        - Polski (pl)
+        - Português do Brasil (pt_BR)
+        - Русский (ru)
+        - Türkçe (tr)
+        - 简体中文 (zh_CN)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current text
+      description: The text as the add-on shows it now. Copy it, or type it as you see it.
+    validations:
+      required: true
+  - type: textarea
+    id: correction
+    attributes:
+      label: Correction
+      description: The text as it should be.
+    validations:
+      required: true

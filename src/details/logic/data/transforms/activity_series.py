@@ -85,22 +85,6 @@ def build_activity_series(rows, date_key="pretty_date", value_key="reviews", sca
     return out
 
 
-def build_activity_series_from_breakdown(
-    rows,
-    date_key="pretty_date",
-    count_key_style="plain",
-    breakdown_keys=BREAKDOWN_BASE_KEYS,
-):
-    out = []
-    resolved_keys = [_resolve_count_key(key, count_key_style) for key in (breakdown_keys or BREAKDOWN_BASE_KEYS)]
-    for row in rows or []:
-        if not isinstance(row, dict):
-            continue
-        total = sum(float(row.get(key, 0) or 0.0) for key in resolved_keys)
-        out.append((row.get(date_key, ""), total))
-    return out
-
-
 def build_breakdown_rows(
     rows,
     date_key="pretty_date",
@@ -154,45 +138,6 @@ def attach_breakdown_totals(
         for key in total_keys or ():
             row[key] = float(src.get(key, 0) or 0.0)
     return out_rows
-
-
-def convert_breakdown_metric_rows(
-    rows,
-    mode,
-    date_key="pretty_date",
-    count_key_style="plain",
-    breakdown_keys=BREAKDOWN_BASE_KEYS,
-    preserve_source_fields=False,
-):
-    mode_str = str(mode or "reviews").strip().lower()
-    if mode_str != "time":
-        return [dict(row or {}) for row in (rows or [])]
-
-    resolved_keys = [_resolve_count_key(key, count_key_style) for key in (breakdown_keys or BREAKDOWN_BASE_KEYS)]
-    out = []
-    for row in rows or []:
-        src = dict(row or {})
-        reviews = float(src.get("reviews", 0) or 0.0)
-        time_ms = float(src.get("time_ms", 0) or 0.0)
-        total_minutes = max(0.0, time_ms / 60000.0)
-        dst = dict(src) if preserve_source_fields else {date_key: src.get(date_key, "")}
-
-        has_exact = any(src.get(f"{key}_time_ms", None) is not None for key in (breakdown_keys or BREAKDOWN_BASE_KEYS))
-        if has_exact:
-            for base_key, resolved_key in zip((breakdown_keys or BREAKDOWN_BASE_KEYS), resolved_keys):
-                dst[resolved_key] = max(0.0, float(src.get(f"{base_key}_time_ms", 0) or 0.0) / 60000.0)
-        elif reviews > 0.0 and total_minutes > 0.0:
-            ratio = total_minutes / reviews
-            for resolved_key in resolved_keys:
-                dst[resolved_key] = max(0.0, float(src.get(resolved_key, 0) or 0.0) * ratio)
-        else:
-            for resolved_key in resolved_keys:
-                dst[resolved_key] = 0.0
-
-        dst["reviews"] = reviews
-        dst["time_ms"] = time_ms
-        out.append(dst)
-    return out
 
 
 def _resolve_count_key(base_key, count_key_style):

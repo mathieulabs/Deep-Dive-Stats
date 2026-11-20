@@ -5,7 +5,7 @@ from .. import Period
 from ..theme.icons import get_svg_icon
 from ....i18n import N_, tr, tr_name
 
-def populate_span_menu(menu, current_span, current_days, on_update_callback, addon_config, on_manage_callback=None, on_zoom_callback=None):
+def populate_span_menu(menu, current_span, current_days, on_update_callback, addon_config, on_manage_callback=None):
     """Fill a 'Time Span' menu with mutually exclusive items and custom tab ranges.
 
     menu: the QMenu or StyledMenu to fill.
@@ -13,7 +13,6 @@ def populate_span_menu(menu, current_span, current_days, on_update_callback, add
     on_update_callback(range_val, custom_days): called when an item is picked.
     addon_config: used to read the tabs.
     on_manage_callback: optional, opens the Time Span settings.
-    on_zoom_callback: optional, turns the zoomed chart range into a time span.
     """
     group = QActionGroup(menu)
 
@@ -52,16 +51,8 @@ def populate_span_menu(menu, current_span, current_days, on_update_callback, add
         act.triggered.connect(lambda _, v=val, d=days: on_update_callback(v, d))
         menu.addAction(act)
 
-    if callable(on_zoom_callback):
-        menu.addSeparator()
-        zoom_act = QAction(tr("Set zoom as time span"), menu)
-        zoom_act.setIcon(get_svg_icon("zoom-in", size=14, context_ref=menu))
-        zoom_act.triggered.connect(lambda _=False: on_zoom_callback())
-        menu.addAction(zoom_act)
-
     if callable(on_manage_callback):
-        if not callable(on_zoom_callback):
-            menu.addSeparator()
+        menu.addSeparator()
         add_new_act = QAction(tr("Add New Time Span"), menu)
         add_new_act.setIcon(get_svg_icon("plus", size=14, context_ref=menu))
         add_new_act.triggered.connect(on_manage_callback)

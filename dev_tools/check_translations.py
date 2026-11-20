@@ -105,7 +105,42 @@ def scan_sources():
                             value = node.args[pos].value.strip()
                             if re.search(r"[A-Za-z]{2,}", value) and value not in NOT_TEXT:
                                 warnings.append(f"{where}: not translated: {value[:60]!r}")
+    _scan_web(texts, plurals)
     return texts, plurals, errors, warnings
+
+
+# The web pages (src/web_ui/web/*.js) are translated with the catalog too (i18n.web_catalog): DD.t('...') and
+# DD.tn('...', '...', n) are their tr() / tr_n(); any other quoted text of the scripts, or text in their HTML, that
+# has an entry is used as it is (the pages translate their own elements' exact texts).
+WEB_USED = set()
+_JS_SQ = re.compile(r"'((?:[^'\\\n]|\\.){0,200})'")
+_JS_DQ = re.compile(r'"((?:[^"\\\n]|\\.){2,200})"')
+_JS_HTML = re.compile(r">([^<>'\"\n+]{2,120})<|(?:title|placeholder)=\\?[\"']([^\"'<>\n]{2,160})\\?[\"']")
+_JS_T = re.compile(r"DD\.t\(\s*'((?:[^'\\]|\\.)+)'\s*[,)]")
+_JS_TN = re.compile(r"DD\.tn\(\s*'((?:[^'\\]|\\.)+)'\s*,\s*'((?:[^'\\]|\\.)+)'\s*,")
+
+
+def _scan_web(texts, plurals):
+    web = os.path.join(SRC, "web_ui", "web")
+    for base, _dirs, names in os.walk(web):
+        for name in sorted(names):
+            if not name.endswith(".js"):
+                continue
+            path = os.path.join(base, name)
+            rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            for m in _JS_SQ.finditer(text):
+                WEB_USED.add(m.group(1).replace("\\'", "'").strip())
+            for m in _JS_DQ.finditer(_JS_SQ.sub(" ", text)):
+                WEB_USED.add(m.group(1).strip())
+            for m in _JS_HTML.finditer(text):
+                WEB_USED.add((m.group(1) or m.group(2) or "").strip())
+            for m in _JS_TN.finditer(text):
+                texts.setdefault(m.group(1), []).append(rel)
+                plurals[m.group(1)] = m.group(2)
+            for m in _JS_T.finditer(text):
+                texts.setdefault(m.group(1), []).append(rel)
 
 
 def placeholders(text):
@@ -156,7 +191,7 @@ def check_catalog(code, texts, plurals):
             continue
         if placeholders(value) != placeholders(english):
             errors.append(f"{code}: placeholders differ: {english!r} -> {value!r}")
-    for english in sorted(set(entries) - set(texts)):
+    for english in sorted(set(entries) - set(texts) - WEB_USED):
         warnings.append(f"{code}: no longer used: {english!r}")
     return errors, warnings
 

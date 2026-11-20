@@ -9,7 +9,6 @@ keeps it in Config.DASH_STAT_COLORS, {stat key: hex}: an entry means own colors 
 from aqt.qt import QColor
 
 from ....ui import Config
-from .....const.theme.color_resolver import own_color_for
 
 
 def valid_color(value):
@@ -24,12 +23,6 @@ def card_color_key(widget):
     from .....const.theme.data_colors import STAT_KEY_TO_COLOR_KEY
 
     return STAT_KEY_TO_COLOR_KEY.get(str(getattr(widget, "config_key", "") or ""))
-
-
-def own_card_color(widget):
-    """The card's own color, or None (then the shared one)."""
-    key = card_color_key(widget)
-    return own_color_for(widget, key) if key else None
 
 
 def dashboard_card_color(conf, stat_key):

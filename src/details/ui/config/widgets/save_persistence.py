@@ -13,7 +13,6 @@ from .persistence_keys import (
     PINNED_UNLINK_STYLE_KEYS,
     WIDGET_BEHAVIOR_KEYS,
 )
-from ....logic.logger import log_swallowed
 
 if TYPE_CHECKING:
     from ..dialogs.widget_settings import WidgetSettingsDialog
@@ -41,21 +40,10 @@ def _persist_pinned_widget_settings(dialog: "WidgetSettingsDialog") -> None:
             cfg[key] = value
 
     pinned = cfg.get(Config.PINNED_WIDGETS, [])
-    found = False
-    title_toggled = False
     for i, widget in enumerate(pinned):
         if widget.get("id") != dialog.widget_id:
             continue
-        found = True
-
-        old_ranges = (widget.get("radio_ranges"), widget.get("filter_modes"))
-        old_label = widget.get("label")
         widget["label"] = dialog.local_config.get("label", widget.get("label"))
-        # A chart title emptied (or filled back in) changes the header layout:
-        # the widget is rebuilt instead of updated in place.
-        title_toggled = widget.get("type") not in ("stat_card", "text_label") and (
-            bool(str(old_label or "").strip()) != bool(str(widget.get("label") or "").strip())
-        )
         if "stat_key" in dialog.local_config:
             widget["stat_key"] = dialog.local_config["stat_key"]
         if "time_unit" in dialog.local_config:
@@ -68,11 +56,8 @@ def _persist_pinned_widget_settings(dialog: "WidgetSettingsDialog") -> None:
         for behavior_key in WIDGET_BEHAVIOR_KEYS:
             if behavior_key in dialog.widget_def:
                 widget[behavior_key] = dialog.widget_def[behavior_key]
-            elif behavior_key in ("line_opacity", "bar_gradient", "show_grid", "legend_mode", "radio_ranges", "filter_modes", "own_colors", "tooltip_hidden"):
+            elif behavior_key in ("line_opacity", "total_line", "bar_gradient", "show_grid", "legend_mode", "radio_ranges", "filter_modes", "own_colors", "tooltip_hidden"):
                 widget.pop(behavior_key, None)  # back to the global value
-
-        if (widget.get("radio_ranges"), widget.get("filter_modes")) != old_ranges:
-            title_toggled = True  # range buttons changed: rebuild the widget
 
         if dialog.is_unlinked:
             for key in PINNED_UNLINK_STYLE_KEYS:
@@ -94,16 +79,6 @@ def _persist_pinned_widget_settings(dialog: "WidgetSettingsDialog") -> None:
             mgr._mark_config_dirty()
         if hasattr(mgr, "_get_config_manager"):
             mgr._get_config_manager(force_refresh=True)
-        if found and title_toggled:
-            try:
-                old_widget = mgr._active_widgets.pop(dialog.widget_id, None)
-                if old_widget is not None:
-                    mgr._remove_widget_from_chart_rows(old_widget)
-                    old_widget.deleteLater()
-                mgr._widget_update_signatures.pop(dialog.widget_id, None)
-                mgr._last_state = None
-            except Exception:
-                log_swallowed()
         mgr.refresh(clear_cache=False)
 
     mw.reset()

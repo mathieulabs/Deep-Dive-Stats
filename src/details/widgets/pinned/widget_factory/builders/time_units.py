@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Show a duration in the unit the user picked (seconds, minutes, hours, days)."""
-from ....chart_utils.formatting import fmt_num
+from .....logic.formatting import fmt_num
 from ......i18n import tr, N_
 
 UNIT_TOKENS: dict = {
@@ -17,6 +17,7 @@ _UNIT_SECONDS = {"s": 1.0, "min": 60.0, "h": 3600.0, "d": 86400.0}
 TIME_RAW: dict = {
     "total_time": ("_raw_total_time_h", "h"),
     "time_per_day": ("_raw_time_per_day_h", "h"),
+    "time_per_active_day": ("_raw_time_per_active_day_h", "h"),
     "avg_time": ("_raw_avg_time_s", "s"),
 }
 

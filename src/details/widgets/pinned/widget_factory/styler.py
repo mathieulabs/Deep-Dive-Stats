@@ -55,7 +55,7 @@ def apply_style(card, base_color=None, config_manager=None, inner_widget=None):
         use_glass = cfg.config.get(Config.PINNED_GLASS, True)
         intensity = cfg.config.get(Config.PINNED_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.PINNED_GLASS_INTENSITY])
         border_alpha_pct = cfg.config.get(Config.PINNED_GLASS_BORDER, 50)
-        hover_border = cfg.config.get(Config.PINNED_HOVER_BORDER, True)
+        hover_border = cfg.config.get(Config.PINNED_HOVER_BORDER, False)
 
     tv = _theme_vars(card)
     if not use_glass:

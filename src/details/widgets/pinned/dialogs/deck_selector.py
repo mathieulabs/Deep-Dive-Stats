@@ -10,6 +10,8 @@ class DeckSelectorDialog(QDialog):
     def __init__(self, current_deck_id, parent=None, show_adaptive=True, is_deep_dive=False):
         super().__init__(parent)
         self.setWindowTitle(tr("Select Deck") if is_deep_dive else tr("Select Widget Deck Binding"))
+        from .....window_icon import addon_icon
+        addon_icon(self)
         self.resize(350, 450)
         self.selected_deck_id = current_deck_id
 

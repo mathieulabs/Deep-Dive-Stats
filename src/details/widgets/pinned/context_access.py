@@ -30,51 +30,6 @@ def get_pinned_context(
     return ctx if isinstance(ctx, dict) else None
 
 
-def fetch_pinned_context_data(
-    deck_id,
-    range_type,
-    cfg=None,
-    custom_days=7,
-    custom_type="relative",
-    start_date_str="",
-    end_date_str="",
-    widget_settings=None,
-):
-    from .widget_factory.utils import _addon_config
-    from ...logic.history_provider import HistoryProvider
-
-    config = cfg or _addon_config()
-    ctx = HistoryProvider.fetch_pinned_context(
-        config,
-        deck_id,
-        range_type=range_type,
-        custom_days=custom_days,
-        custom_type=custom_type,
-        start_date_str=start_date_str,
-        end_date_str=end_date_str,
-        widget_settings=widget_settings,
-    )
-    return ctx if isinstance(ctx, dict) else {}
-
-
-def get_pinned_contexts(
-    deck_id,
-    range_types,
-    cfg=None,
-    *,
-    allow_slow_ops=False,
-):
-    return {
-        range_type: get_pinned_context(
-            deck_id,
-            range_type,
-            cfg=cfg,
-            allow_slow_ops=allow_slow_ops,
-        )
-        for range_type in range_types
-    }
-
-
 def get_pinned_context_value(
     deck_id,
     range_type,

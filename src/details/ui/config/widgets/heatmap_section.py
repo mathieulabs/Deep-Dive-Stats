@@ -137,6 +137,10 @@ def setup_heatmap_settings(dialog) -> None:
     )
     layout_colors.addWidget(dialog.intensity_curve_slider)
 
+    dialog.invert_intensity_cb = QCheckBox(tr("Invert Intensity"))
+    dialog.invert_intensity_cb.setChecked(bool(dialog.addon_config.get(Config.HEATMAP_INVERT_INTENSITY, False)))
+    layout_colors.addWidget(dialog.invert_intensity_cb)
+
     dialog.hm_levels_slider = SettingsSlider(
         tr("Color Levels"),
         dialog.addon_config.get(Config.HEATMAP_COLOR_LEVELS, 20),
@@ -160,8 +164,10 @@ def setup_heatmap_settings(dialog) -> None:
     dialog.hm_glass_cb.stateChanged.connect(update_hm_glass)
     layout_glass.addWidget(dialog.hm_glass_cb)
 
+    from .web_glass import web_preview_on
+
     dialog.hm_int_slider = SettingsSlider(
-        tr("Intensity"),
+        tr("Background Opacity") if web_preview_on(dialog) else tr("Intensity"),
         dialog.addon_config.get(Config.HEATMAP_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.HEATMAP_GLASS_INTENSITY]),
         0,
         100,
@@ -177,6 +183,9 @@ def setup_heatmap_settings(dialog) -> None:
         suffix="%",
     )
     layout_glass.addWidget(dialog.hm_border_slider)
+    from .web_glass import add_web_glass
+
+    add_web_glass(dialog, layout_glass, "hm_", Config.HEATMAP_GLASS_BLUR, Config.HEATMAP_GLASS_SHADOW)
 
     update_hm_glass(dialog.hm_glass_cb.isChecked())
     dialog.content_layout.addWidget(group_glass)

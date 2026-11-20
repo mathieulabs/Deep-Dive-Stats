@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-import inspect
 from datetime import datetime, timedelta
-from .....logic.logger import log_swallowed
 
 
 DAY_MS = 86400000
@@ -108,44 +106,6 @@ def build_adaptive_fetch_bounds(first_dt, last_dt, offset_seconds=0):
     return start_ms, end_ms
 
 
-def extract_series_date_bounds(series, date_keys=("pretty_date", "date", "logical_date")):
-    if not series:
-        return None
-
-    first = _normalize_series_label(_get_series_label(series[0], date_keys), boundary="first")
-    last = _normalize_series_label(_get_series_label(series[-1], date_keys), boundary="last")
-    if not first and not last:
-        return None
-    return (first, last)
-
-
-def get_timespan_transition_meta(
-    prev_span_token,
-    current_span_token,
-    prev_deck_id=None,
-    current_deck_id=None,
-    old_series=None,
-    new_series=None,
-    total_span_active=False,
-    date_keys=("pretty_date", "date", "logical_date"),
-):
-    old_bounds = extract_series_date_bounds(old_series, date_keys=date_keys)
-    new_bounds = extract_series_date_bounds(new_series, date_keys=date_keys)
-    deck_changed = False
-    if (prev_deck_id is not None) and (current_deck_id is not None):
-        deck_changed = prev_deck_id != current_deck_id
-
-    return {
-        "span_changed": prev_span_token != current_span_token,
-        "deck_changed": deck_changed,
-        "old_bounds": old_bounds,
-        "new_bounds": new_bounds,
-        "total_bounds_changed": bool(
-            total_span_active and old_bounds and new_bounds and old_bounds != new_bounds
-        ),
-    }
-
-
 def should_use_timespan_transition(
     meta,
     deck_policy="ignore",
@@ -231,72 +191,6 @@ def rows_on_new_days(old_rows, new_rows):
     return out if shared else None
 
 
-def update_chart_for_transition(
-    chart,
-    data,
-    adaptive_binning=None,
-    transition_mode=None,
-    transition_align_right=None,
-    transition=False,
-    transition_duration_ms=None,
-):
-    """Best-effort cross-chart update helper for activity/stacked/added/retention widgets."""
-    if not (chart and hasattr(chart, "update_data")):
-        return False
-    from ....chart_utils import zoom_camera
-
-    zoom_camera.touch(chart)
-
-    kwargs = {}
-    if adaptive_binning is not None and hasattr(chart, "adaptive_binning"):
-        kwargs["adaptive_binning"] = adaptive_binning
-
-    if hasattr(chart, "_full_retention_data"):
-        kwargs["transition"] = bool(transition)
-        if transition_duration_ms is not None:
-            kwargs["transition_duration_ms"] = int(transition_duration_ms)
-    else:
-        kwargs["transition_mode"] = transition_mode
-        if transition_align_right is not None:
-            kwargs["transition_align_right"] = bool(transition_align_right)
-
-    # Pass only the options this chart's update_data accepts.
-    try:
-        params = inspect.signature(chart.update_data).parameters
-        if not any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
-            kwargs = {k: v for k, v in kwargs.items() if k in params}
-    except (TypeError, ValueError):
-        pass
-    chart.update_data(data, **kwargs)
-    return True
-
-
-def freeze_chart_transition_state(chart):
-    if chart is None:
-        return
-
-    try:
-        if hasattr(chart, "animation"):
-            chart.animation.stop()
-    except Exception:
-        log_swallowed()
-
-    if hasattr(chart, "set_progress"):
-        chart.set_progress(1.0)
-    else:
-        setattr(chart, "_progress", 1.0)
-
-    if hasattr(chart, "_initial_animation_done"):
-        chart._initial_animation_done = True
-
-    for attr, value in _TRANSITION_RESET_ATTRS:
-        if hasattr(chart, attr):
-            setattr(chart, attr, list(value) if isinstance(value, list) else value)
-
-    if hasattr(chart, "update"):
-        chart.update()
-
-
 def _get_date_label(item, date_keys):
     if not isinstance(item, dict):
         return ""
@@ -307,20 +201,3 @@ def _get_date_label(item, date_keys):
     return ""
 
 
-def _get_series_label(item, date_keys):
-    if isinstance(item, (tuple, list)):
-        return str(item[0]) if item else ""
-    if isinstance(item, dict):
-        return _get_date_label(item, date_keys)
-    return ""
-
-
-def _normalize_series_label(label, boundary="first"):
-    value = str(label or "").strip()
-    if " - " in value:
-        parts = value.split(" - ")
-        if str(boundary or "first") == "last":
-            value = parts[-1].strip()
-        else:
-            value = parts[0].strip()
-    return value

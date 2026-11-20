@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-"""The reviews of a period counted by answer time or by interval, with their rating (the
-charts Answer Time and Rating by Interval, charts.daily_metrics), or by weekday and hour
-(Week by Hour, charts.week_hours).
+"""The reviews of a period counted by answer time, by interval or by their place in the day,
+with their rating (the charts Answer Time, Rating by Interval and Rating Fatigue,
+charts.daily_metrics), or by weekday and hour (Week by Hour, charts.week_hours), and the
+time spent on each rating day by day (Ratings' Time view).
 
 The period comes from the day rows the chart already has (the same as its other charts);
 each count is one grouped query, kept until the review history changes."""
@@ -20,6 +21,7 @@ _MAX = 24
 
 MAX_SECONDS = 60  # answers of a minute or more in the last bar (Anki caps them at 60 s by default)
 MAX_INTERVAL = 3650
+MAX_POSITION = 1000  # the 1000th review of a day and the ones after it in the last bar
 
 
 def did_limit(addon_config, deck_id, is_deleted):
@@ -43,7 +45,9 @@ def range_from_days(days):
 
 def _memo(key, compute):
     try:
-        stamp = tuple(mw.col.db.first("SELECT max(id), count() FROM revlog") or ())
+        from .revlog_stamp import revlog_stamp
+
+        stamp = revlog_stamp()  # (kept: one read of the history for all the charts)
     except Exception:
         stamp = None
     full = (key, stamp, id(mw.col))
@@ -67,6 +71,17 @@ def _join(limit):
 # Learning (and relearning) / young / mature, by the review's type and its interval before it.
 _KIND = ("CASE WHEN revlog.type IN (0, 2) OR revlog.lastIvl <= 0 THEN 0 "
          "WHEN revlog.lastIvl >= 21 THEN 2 ELSE 1 END")
+# A chart's card type filter: the kinds of _KIND it keeps (None: all).
+_KIND_SETS = {"all": None, "learn": (0,), "young": (1,), "mature": (2,), "review": (1, 2)}
+
+
+def kinds_of(card_type):
+    """The card kinds (0 learning, 1 young, 2 mature) a card type filter keeps; None: all."""
+    return _KIND_SETS.get(card_type or "all")
+
+
+def _kinds_sql(kinds, kind=_KIND):
+    return f" AND {kind} IN ({', '.join(str(int(k)) for k in kinds)})" if kinds else ""
 
 
 def answer_time_counts(limit, start_ms, end_ms):
@@ -84,20 +99,64 @@ def answer_time_counts(limit, start_ms, end_ms):
     return _memo(("time", limit, start_ms, end_ms), compute)
 
 
-def interval_rating_counts(limit, start_ms, end_ms):
+def interval_rating_counts(limit, start_ms, end_ms, kinds=None):
     """{(interval in days before the answer, rating 1-4): reviews} of review cards (the
-    answers in learning steps, without an interval in days, are left out)."""
+    answers in learning steps, without an interval in days, are left out); kinds: only those
+    card kinds (kinds_of)."""
     def compute():
         rows = mw.col.db.all(f"""
             SELECT MIN(revlog.lastIvl, {MAX_INTERVAL}) AS i, revlog.ease, COUNT(*)
             FROM revlog {_join(limit)}
             WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
-              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 AND revlog.lastIvl >= 1 {limit}
+              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 AND revlog.lastIvl >= 1{_kinds_sql(kinds)} {limit}
             GROUP BY i, revlog.ease
         """)
         return {(int(i), int(e)): int(n) for i, e, n in rows}
 
-    return _memo(("ivl", limit, start_ms, end_ms), compute)
+    return _memo(("ivl", limit, start_ms, end_ms, tuple(kinds or ())), compute)
+
+
+def fatigue_counts(limit, start_ms, end_ms, kinds=None):
+    """Rating Fatigue: {(place of the review in its day, rating 1-4): reviews}.
+    The place counts every review of the day (Anki's day), whatever its deck: the 50th review of
+    a day is as tiring in any deck; the deck (and kinds: the card kinds, kinds_of) only picks which
+    reviews are counted."""
+    cutoff = int(mw.col.sched.day_cutoff)
+    base = cutoff - 86400 * 40000  # days counted from far back: the division stays on positive numbers
+
+    def compute():
+        cards = "LEFT JOIN cards ON r.cid = cards.id" if (limit or "").strip() else ""
+        rows = mw.col.db.all(f"""
+            SELECT MIN(r.n, {MAX_POSITION}) AS p, r.ease, COUNT(*)
+            FROM (SELECT cid, ease, {_KIND} AS k,
+                         ROW_NUMBER() OVER (PARTITION BY (id / 1000 - {base}) / 86400 ORDER BY id) AS n
+                  FROM revlog
+                  WHERE id >= {int(start_ms)} AND id < {int(end_ms)} AND type < 4 AND ease BETWEEN 1 AND 4) AS r
+            {cards}
+            WHERE 1 = 1{_kinds_sql(kinds, "r.k")} {limit}
+            GROUP BY p, r.ease
+        """)
+        return {(int(p), int(e)): int(n) for p, e, n in rows}
+
+    return _memo(("fatigue", limit, int(start_ms), int(end_ms), cutoff, tuple(kinds or ())), compute)
+
+
+def reset_events(limit, start_ms, end_ms):
+    """Reset Cards: the resets (Forget: a manual entry without
+    interval or ease factor, as card_states._manual_state) of the period, [(id in ms, kind 0
+    learning / 1 young / 2 mature)]: the card before it, by the interval of its entry before (none
+    or not in days: learning)."""
+    def compute():
+        rows = mw.col.db.all(f"""
+            SELECT revlog.id, (SELECT p.ivl FROM revlog AS p WHERE p.cid = revlog.cid AND p.id < revlog.id
+                               ORDER BY p.id DESC LIMIT 1)
+            FROM revlog {_join(limit)}
+            WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
+              AND revlog.type = 4 AND revlog.factor = 0 AND revlog.ivl = 0 {limit}
+        """)
+        return [(int(rid), 2 if (ivl or 0) >= 21 else (1 if (ivl or 0) > 0 else 0)) for rid, ivl in rows]
+
+    return _memo(("reset", limit, int(start_ms), int(end_ms)), compute)
 
 
 def week_hour_counts(limit, start_ms, end_ms):
@@ -117,3 +176,76 @@ def week_hour_counts(limit, start_ms, end_ms):
         return {((int(wd) + 6) % 7, int(h)): int(n) for wd, h, n in rows}
 
     return _memo(("week", limit, start_ms, end_ms), compute)
+
+
+def day_hour_counts(limit, start_ms, end_ms):
+    """{(day 'YYYY-MM-DD', hour 0-23): reviews} (Week by Hour's By Day view). The day is Anki's (it
+    starts at the rollover hour), the hour the clock's: a review at 1:00 is in the evening before."""
+    from .. import rollover_hour
+
+    roll = int(rollover_hour() or 0) * 3600
+
+    def compute():
+        rows = mw.col.db.all(f"""
+            SELECT strftime('%Y-%m-%d', revlog.id / 1000 - {roll}, 'unixepoch', 'localtime') AS d,
+                   CAST(strftime('%H', revlog.id / 1000, 'unixepoch', 'localtime') AS INTEGER) AS h,
+                   COUNT(*)
+            FROM revlog {_join(limit)}
+            WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
+              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 {limit}
+            GROUP BY d, h
+        """)
+        return {(str(d), int(h)): int(n) for d, h, n in rows}
+
+    return _memo(("dayhour", limit, start_ms, end_ms, roll), compute)
+
+
+def rating_times(limit, start_ms, end_ms, minutes=False, kinds=None):
+    """Ratings by Duration: the time spent on the answers of each rating,
+    {(day 'YYYY-MM-DD' of Anki (it starts at the rollover hour), rating 1-4): ms}; minutes=True
+    (Today / Yesterday, rows of minutes): {(minute since 1970, rating 1-4): ms}. kinds: only those
+    card kinds (kinds_of)."""
+    from .. import rollover_hour
+
+    roll = int(rollover_hour() or 0) * 3600
+    if minutes:
+        key = "revlog.id / 60000"
+    else:
+        key = f"strftime('%Y-%m-%d', revlog.id / 1000 - {roll}, 'unixepoch', 'localtime')"
+
+    def compute():
+        rows = mw.col.db.all(f"""
+            SELECT {key} AS d, revlog.ease, SUM(revlog.time)
+            FROM revlog {_join(limit)}
+            WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
+              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4{_kinds_sql(kinds)} {limit}
+            GROUP BY d, revlog.ease
+        """)
+        return {(int(d) if minutes else str(d), int(e)): int(ms or 0) for d, e, ms in rows}
+
+    return _memo(("ratingtime", limit, start_ms, end_ms, roll, bool(minutes), tuple(kinds or ())), compute)
+
+
+def first_answers(limit, start_ms, end_ms):
+    """Today's Retention, over any period: the first answer of each card on
+    each day of Anki (a card answered on 3 days counts 3 times, its other answers of a day not at all),
+    {(kind 0 learning / 1 young / 2 mature, passed 0/1): answers}."""
+    cutoff = int(mw.col.sched.day_cutoff)
+    base = cutoff - 86400 * 40000  # days counted from far back: the division stays on positive numbers
+
+    def compute():
+        rows = mw.col.db.all(f"""
+            SELECT {_KIND} AS k, revlog.ease > 1 AS ok, COUNT(*)
+            FROM revlog {_join(limit)}
+            JOIN (SELECT MIN(id) AS mid FROM revlog
+                  WHERE id >= {int(start_ms)} AND id < {int(end_ms)} AND type < 4 AND ease BETWEEN 1 AND 4
+                  GROUP BY cid, (id / 1000 - {base}) / 86400) AS f
+              ON revlog.id = f.mid
+            WHERE 1 = 1 {limit}
+            GROUP BY k, ok
+        """)
+        return {(int(k), int(ok)): int(n) for k, ok, n in rows}
+
+    return _memo(("first", limit, int(start_ms), int(end_ms), cutoff), compute)
+
+

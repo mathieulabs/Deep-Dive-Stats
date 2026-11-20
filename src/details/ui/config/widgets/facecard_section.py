@@ -112,6 +112,10 @@ def setup_facecard_settings(dialog) -> None:
         suffix="%",
     )
     glass_layout.addWidget(dialog.face_border_slider)
+    if not getattr(dialog, "is_dashboard_context", False):
+        from .web_glass import add_web_glass
+
+        add_web_glass(dialog, glass_layout, "face_", Config.FACECARDS_GLASS_BLUR, Config.FACECARDS_GLASS_SHADOW)
 
     update_glass_state(dialog.glass_cb.isChecked())
     dialog.content_layout.addWidget(glass_group)
@@ -149,3 +153,41 @@ def setup_facecard_settings(dialog) -> None:
 
     dialog.content_layout.addWidget(shadow_group)
 
+
+
+def reset_facecard_settings(dialog) -> None:
+    """The stat card settings back to their defaults (the shared or the dashboard keys this dialog edits)."""
+    D = Config.DEFAULT_CONFIG
+
+    def dv(fk, dk, fallback):
+        return D.get(dialog._get_key(fk, dk), fallback)
+
+    if hasattr(dialog, "scale_spin"):
+        dialog.scale_spin.setValue(int(dv(Config.FACECARDS_SCALE, Config.DASHBOARD_SCALE, 100)))
+    if hasattr(dialog, "title_size_slider"):
+        dialog.title_size_slider.setValue(int(dv(Config.FACECARDS_TITLE_SIZE, Config.DASHBOARD_TITLE_SIZE, 100)))
+    dialog.title_color = ""
+    if hasattr(dialog, "hover_effect_cb"):
+        dialog.hover_effect_cb.setChecked(bool(dv(Config.FACECARDS_HOVER_EFFECT, Config.DASHBOARD_HOVER_EFFECT, True)))
+    if hasattr(dialog, "inline_stats_cb"):
+        dialog.inline_stats_cb.setChecked(bool(dv(Config.FACECARDS_INLINE_STATS, Config.DASHBOARD_INLINE_STATS, False)))
+    if hasattr(dialog, "glass_cb"):
+        dialog.glass_cb.setChecked(bool(dv(Config.FACECARDS_SHOW_GLASS, Config.DASHBOARD_SHOW_GLASS, True)))
+    if hasattr(dialog, "face_int_slider"):
+        dialog.face_int_slider.setValue(int(dv(Config.FACECARDS_GLASS_INTENSITY, Config.DASHBOARD_GLASS_INTENSITY, 5)))
+    if hasattr(dialog, "face_border_slider"):
+        dialog.face_border_slider.setValue(int(dv(Config.FACECARDS_GLASS_BORDER, Config.DASHBOARD_GLASS_BORDER, 50)))
+    from .web_glass import reset_web_glass
+
+    reset_web_glass(dialog, "face_")
+    if hasattr(dialog, "tshad_slider"):
+        dialog.tshad_slider.setValue(int(dv(Config.FACECARDS_TITLE_SHADOW_INTENSITY, Config.DASHBOARD_TITLE_SHADOW_INTENSITY, 0)))
+    if hasattr(dialog, "sshad_slider"):
+        dialog.sshad_slider.setValue(int(dv(Config.FACECARDS_STAT_SHADOW_INTENSITY, Config.DASHBOARD_STAT_SHADOW_INTENSITY, 0)))
+    paint = getattr(dialog, "_paint_title_btn", None)
+    if callable(paint):
+        try:
+            paint()
+        except Exception:
+            pass
+    dialog.apply_live_changes()

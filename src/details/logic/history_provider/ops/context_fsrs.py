@@ -46,12 +46,34 @@ def _empty():
     return {"stability": {}, "difficulty": {}, "retrievability": {}}
 
 
+_KINDS = ("learn", "young", "mature")
+
+
+def _kind(ctype, ivl):
+    """A card's type for the breakdown: learning (or relearning), young, mature (an interval of 21 days or more)."""
+    if ctype == 2:
+        return "mature" if (ivl or 0) >= 21 else "young"
+    return "learn"
+
+
+def _merge(by_kind):
+    """The distributions of all the cards: the sum of each type's (each card counted once, in its type)."""
+    res = _empty()
+    for part in by_kind.values():
+        for name, bins in part.items():
+            out = res[name]
+            for b, n in bins.items():
+                out[b] = out.get(b, 0) + n
+    res["by_kind"] = by_kind
+    return res
+
+
 def _fetch_sql(did_limit, today_sched):
     """The memory states read by SQLite (json_extract); counted as in Anki's graphs."""
     import time
 
     now = int(time.time())
-    res = _empty()
+    by_kind = {k: _empty() for k in _KINDS}
     rows = mw.col.db.all(
         f"""
         SELECT {_S_EXPR}, {_D_EXPR}, {_DECAY_EXPR}, {_LRT_EXPR},
@@ -68,8 +90,8 @@ def _fetch_sql(did_limit, today_sched):
             mem = (float(s), float(d), decay, lrt)
         except (TypeError, ValueError):
             continue
-        add_memory_state(res, mem, due, odue, odid, ivl, queue, ctype, today_sched, now)
-    return res
+        add_memory_state(by_kind[_kind(ctype, ivl)], mem, due, odue, odid, ivl, queue, ctype, today_sched, now)
+    return _merge(by_kind)
 
 
 def _fetch_python(did_limit, today_sched):
@@ -77,17 +99,18 @@ def _fetch_python(did_limit, today_sched):
     import time
 
     now = int(time.time())
-    res = _empty()
+    by_kind = {k: _empty() for k in _KINDS}
     rows = mw.col.db.all(f"SELECT {FSRS_CARD_COLS} FROM cards AS cards WHERE {FSRS_CARD_COND} {did_limit}")
     for data, due, odue, odid, ivl, queue, ctype in rows:
         mem = memory_state(data)
         if mem is not None:
-            add_memory_state(res, mem, due, odue, odid, ivl, queue, ctype, today_sched, now)
-    return res
+            add_memory_state(by_kind[_kind(ctype, ivl)], mem, due, odue, odid, ivl, queue, ctype, today_sched, now)
+    return _merge(by_kind)
 
 
 def _copy_result(res):
-    return {k: dict(v) for k, v in res.items()}
+    # (by_kind: the same, one level deeper; the memoized result is never handed out)
+    return {k: (_copy_result(v) if k == "by_kind" else dict(v)) for k, v in res.items()}
 
 
 def fetch_fsrs_stats(provider_cls, addon_config, deck_id=None, is_deleted=False, did_limit=None):

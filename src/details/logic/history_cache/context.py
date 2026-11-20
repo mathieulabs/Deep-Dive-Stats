@@ -32,9 +32,40 @@ def _hourly_from_days(days):
     return out
 
 
+def _ends_before_today(ctx, range_type, cfg, custom_days, custom_type, start_date_str, end_date_str):
+    """A cached range context whose days end before the current logical day (its rows end on
+    another day than the range asked for now). Fixed-date custom ranges are left alone."""
+    try:
+        if custom_type == "absolute" or end_date_str:
+            return False
+        revs = ctx.get("reviews") or []
+        if not revs or not isinstance(revs[0], dict):
+            return False
+        ends = {revs[0].get("logical_date"), revs[-1].get("logical_date")}
+        ends.discard(None)
+        if not ends:
+            return False
+        from ..data.core.time_utils import get_time_range_ms
+        from ....utils import rollover_hour
+
+        week_start = (cfg.config.get(Config.WEEK_START, 0) if cfg is not None else 0)
+        start_ms, end_ms, _, _ = get_time_range_ms(
+            range_type, week_start=week_start, custom_days=custom_days,
+            custom_type=custom_type, start_date_str=start_date_str, end_date_str=end_date_str,
+        )
+        _, ub_date = compute_slice_bounds(start_ms, end_ms, rollover_hour())
+        return ub_date not in ends and max(ends) < ub_date
+    except Exception:
+        log_swallowed()
+        return False
+
+
 class ContextMixin:
     @staticmethod
     def get_context(deck_id, range_type, cfg=None, custom_days=7, custom_type="relative", start_date_str="", end_date_str="", allow_sync_check=True, allow_slow_ops=True):
+        from ..search_filter import has_active_search
+        if has_active_search():
+            return None
         from .global_cache import GlobalHistoryCache
         if deck_id in [0, "0"]:
             deck_id = None
@@ -65,6 +96,13 @@ class ContextMixin:
         )
 
         ctx = deck_cache.get(cache_key)
+        if ctx and range_type != Period.TOTAL and _ends_before_today(ctx, range_type, cfg, custom_days, custom_type,
+                                                                     start_date_str, end_date_str):
+            # Built on an earlier day (before the rollover, or loaded from disk): its window ends a
+            # day (or more) ago, so a deck read from it showed another range than a deck sliced
+            # today. It is sliced again from TOTAL below.
+            deck_cache.pop(cache_key, None)
+            ctx = None
         # Charts need the TOTAL context dense to draw gaps; a sparse cached one is not reused.
         if ctx and ctx.get("is_dense", True):
             return ctx

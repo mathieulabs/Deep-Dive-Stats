@@ -10,7 +10,7 @@ the first time the pinned widgets are built with such a box (nothing changes on 
 """
 
 from .imports import Config
-from .block_order import (
+from ....logic.pinned_layout import (
     charts_section_key, normalize_block_order, stats_section_key, texts_section_key,
 )
 from ....logic.logger import log_swallowed
@@ -106,7 +106,7 @@ def split_config(cfg):
 def split_lines_into_boxes():
     """Apply split_config to the saved settings, once (a no-op when already done)."""
     try:
-        from ..store.registry import WidgetRegistry
+        from ....logic.widget_registry import WidgetRegistry
 
         cfg = WidgetRegistry._config()
         if split_config(cfg):

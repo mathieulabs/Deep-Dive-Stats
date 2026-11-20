@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from ....widgets.stats_cards.logic.model import STAT_CARD_INFO_MAP, get_stat_card_default_title
+from ....logic.stat_cards import STAT_CARD_INFO_MAP, get_stat_card_default_title
 from .....i18n import tr, N_, tr_name, upper
 
 

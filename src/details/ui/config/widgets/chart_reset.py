@@ -24,8 +24,15 @@ def reset_chart_settings(dialog) -> None:
         dialog.int_slider.setValue(int(intensity))
     if hasattr(dialog, "border_slider"):
         dialog.border_slider.setValue(int(border))
+    from .web_glass import reset_web_glass
+
+    reset_web_glass(dialog, "")
     if hasattr(dialog, "hover_border_cb"):
-        dialog.hover_border_cb.setChecked(True)
+        from ... import Config as _C
+        from .chart_section import _hover_border_key
+
+        # the default of the box edited: off for the charts, on for the text widget (Config.DEFAULT_CONFIG)
+        dialog.hover_border_cb.setChecked(bool(_C.DEFAULT_CONFIG.get(_hover_border_key(dialog), False)))
     if hasattr(dialog, "avg_cb"):
         dialog.avg_cb.setChecked(True)
     if hasattr(dialog, "cum_cb"):
@@ -44,6 +51,10 @@ def reset_chart_settings(dialog) -> None:
         dialog.line_opacity_slider.setValue(int(dialog.addon_config.get("Chart_Line_Opacity", 80)))
     if hasattr(dialog, "bar_gradient_slider"):
         dialog.bar_gradient_slider.setValue(int(dialog.addon_config.get("Chart_Bar_Gradient", 43)))
+    if hasattr(dialog, "total_line_slider"):
+        from .chart_section import total_line_global
+
+        dialog.total_line_slider.setValue(total_line_global(dialog))
     if getattr(dialog, "range_btn_combos", None) is not None and callable(getattr(dialog, "range_btn_set_values", None)):
         if getattr(dialog, "range_btn_key", "") == "filter_modes":
             from ....widgets.common.fsrs_filters import FSRS_FILTER_MODES as _DEFAULT

@@ -11,8 +11,13 @@ from aqt.qt import QObject, QTimer, Qt, QWidget
 from ....ui import Config, Period, ThemePalettes, ConfigManager, get_color
 from ....logic.history_cache import GlobalHistoryCache
 from ....logic import log_debug, log_info
-from ....animations.layout_animation import animate_widget_geometry
-from ....animations.motion import animations_enabled
+def animate_widget_geometry(widget, target_rect, *_args, **_kwargs):
+    if widget is not None and target_rect is not None:
+        widget.setGeometry(target_rect)
+
+
+def animations_enabled(*_args, **_kwargs):
+    return False
 from ...chart_utils.theme import (
     ThemeContext,
     apply_theme_context,

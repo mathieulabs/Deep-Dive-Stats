@@ -81,8 +81,7 @@ def fetch_deck_stats(deck_id, tabs_config, excluded_dids, show_trends, week_star
             remaining_new = 0
             max_days = None
 
-    # Disable cache for folders (multi-DID) for now to make sure correct aggregation,
-    # as the cache is indexed by individual leaf DIDs.
+    # No cache for a deck with subdecks: the cache is indexed by single deck ids.
     _cacheable = {Period.TOTAL, Period.YEAR, Period.MONTH, Period.WEEK, Period.TWO_WEEKS, Period.TODAY, Period.YESTERDAY, LAST_YEAR}
     if deck_id is not None and not is_collection and not child_ids:
         from ...history_cache import GlobalHistoryCache

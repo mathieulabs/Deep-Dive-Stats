@@ -68,15 +68,6 @@ CHART_TOOLTIP_FIELDS = {
 }
 
 
-def filter_tooltip_lines(widget, lines):
-    """Drop the lines whose id the chart hides. Headers are always kept."""
-    hidden = getattr(widget, "tooltip_hidden", None)
-    if not hidden or not lines:
-        return lines
-    hidden = set(hidden)
-    return [ln for ln in lines if ln.get("header") or ln.get("id") not in hidden]
-
-
 def build_tooltip_group(parent_layout, fields, hidden, title=None):
     """Add a group of checkboxes (checked = shown). Returns {id: QCheckBox}."""
     from aqt.qt import QCheckBox, QGroupBox, QVBoxLayout

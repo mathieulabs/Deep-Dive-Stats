@@ -4,306 +4,118 @@
 the widget gallery's tile tooltips. Settings > General can hide the "?"
 (Config.SHOW_CHART_HELP)."""
 
-from aqt.qt import QEvent, QLabel, QObject, QSize, Qt, QTimer, QWidget
+from aqt.qt import QEvent, QObject, QTimer
 
-from ....i18n import N_, tr_name
+from ....i18n import N_, tr, tr_name
 
 HELP = {
     "activity": N_(
-        "Reviews done each day. Breakdown by Type splits them:\n"
-        "• Learning: new cards in their learning steps.\n"
-        "• Relearning: forgotten cards in their relearning steps.\n"
-        "• Young: reviews of cards with an interval under 21 days.\n"
-        "• Mature: reviews of cards with an interval of 21 days or more.\n"
-        "• Filtered: reviews in filtered decks that leave the schedule as it was."
+        "How many reviews you did each day. Breakdown by Type splits each bar into:\n"
+        "• Learning: new cards still in their learning steps\n"
+        "• Relearning: forgotten cards going through relearning\n"
+        "• Young: cards with an interval under 21 days\n"
+        "• Mature: cards with an interval of 21 days or more\n"
+        "• Filtered: reviews in filtered decks that don't change the schedule"
     ),
     "retention": N_(
-        "Share of answers other than Again, each day:\n"
-        "• All: every answer, learning steps included.\n"
-        "• Young: answers on cards whose interval was 1 to 20 days.\n"
-        "• Mature: answers on cards whose interval was 21 days or more.\n"
-        "• True: young and mature together, learning steps left out (Anki's True Retention)."
+        "How often you didn't press Again, day by day.\n"
+        "• All: every answer, learning steps included\n"
+        "• Young: cards with an interval of 1 to 20 days\n"
+        "• Mature: cards with an interval of 21 days or more\n"
+        "• True: young and mature together, without learning steps. It's the same as Anki's True Retention."
     ),
     "distribution": N_(
-        "Answer buttons pressed in the period:\n"
-        "• Learning: cards in their learning or relearning steps.\n"
-        "• Young: cards with an interval under 21 days.\n"
-        "• Mature: cards with an interval of 21 days or more."
+        "Which answer buttons you pressed in the period.\n"
+        "• Learning: cards in learning or relearning\n"
+        "• Young: cards with an interval under 21 days\n"
+        "• Mature: cards with an interval of 21 days or more"
     ),
-    "card_counts": N_("Your cards by state: new, learning, relearning, young, mature, suspended and buried."),
-    "hourly": N_("Reviews by hour of the day, with the success rate at each hour."),
-    "future_due": N_("Cards due on each coming day. Backlog: overdue cards.\nBreakdown by Type: learning, young (interval under 21 days) and mature cards.\nBreakdown by Result: the reviews FSRS expects you to pass or fail."),
-    "review_intervals": N_("Cards by their current interval: the days between their last review and the next one."),
-    "stability": N_("Cards by FSRS stability: the number of days after which the chance of recalling them "
-                    "falls to 90%."),
-    "difficulty": N_("Cards by FSRS difficulty: how hard each card is to remember, from easiest to hardest."),
-    "retrievability": N_("Cards by FSRS retrievability: the chance of recalling each card right now."),
-    "ratings": N_("Answer buttons pressed each day. Show as % gives each button's share."),
-    "answer_time": N_("Reviews by time taken to answer, one bar per second (the last bar: 60 s or more), split by rating. By Card Type: learning, young and mature cards."),
-    "interval_ratings": N_("Reviews by the card's interval at the time of the answer, split by rating. Learning steps are left out."),
-    "forgotten": N_("Young and mature cards answered Again each day."),
-    "introduced": N_("New cards seen for the first time each day. Re-introduced: cards seen again after a reset. By First Rating: the answer given that first time."),
-    "interval_load": N_("Average reviews per day caused by the cards of each interval: a card with a 10-day interval adds 0.1 review a day."),
-    "lapse_distribution": N_("Cards by the number of times they were forgotten (lapses)."),
-    "card_states": N_("Your cards by state on each past day, rebuilt from your review history. Deleted cards are not counted."),
-    "week_hours": N_("Reviews by day of the week and hour: the darker the cell, the more reviews."),
-    "learning_steps": N_("Learning answers each card needed before it first became a review card. Cards still in learning are left out; cards that skipped learning are counted apart."),
-    "due_today": N_("Learning cards due today, by the hour they come due. Due now includes Anki's learn ahead limit."),
+    "card_counts": N_("How your cards are split between new, learning, relearning, young, mature, suspended and buried."),
+    "hourly": N_("Your reviews by hour of the day, and how often you passed at each hour."),
+    "future_due": N_("How many cards come due on each of the next days. Backlog shows the cards that are overdue.\n"
+                     "Breakdown by Type splits them into learning, young and mature cards.\n"
+                     "Breakdown by Result shows how many FSRS expects you to pass or fail."),
+    "review_intervals": N_("Your cards by their current interval, the number of days until their next review."),
+    "stability": N_("Your cards by FSRS stability, the number of days until your chance of remembering them drops to 90%."),
+    "difficulty": N_("Your cards by FSRS difficulty, from easiest to hardest to remember."),
+    "retrievability": N_("Your cards by FSRS retrievability, your chance of remembering each one right now."),
+    "ratings": N_("Which answer buttons you pressed each day. Show as % gives each button's share of the day. Time shows the time spent on each button instead of the number of reviews."),
+    "answer_time": N_("Your reviews by how long you took to answer, one bar per second up to 60 seconds, split by rating. By Card Type splits them into learning, young and mature cards instead."),
+    "interval_ratings": N_("Your reviews by the card's interval when you answered, split by rating. Learning steps aren't counted."),
+    "fsrs_calibration": N_("Your review answers by the recall FSRS predicted just before them (from the memory state after the previous review), passed or failed. With Show as %, the share passed in each bar should fall inside its range when the predictions are right. The memory states are Anki's own, with your presets' current parameters; only reviews a day or more apart count, and nothing with FSRS off."),
+    "forgetting_curve": N_("Your review answers by the days since the card's previous review divided by its stability then, passed or failed; the mark on each bar is where FSRS expected the failed part to end. With Show as %, the share passed is the forgetting curve seen in all your reviews: at 1, FSRS expects 90%; past 1, the cards reviewed late. Unlike the First Forgetting Curves, every review counts, not only the first after a card's first rating. The memory states are Anki's own, with your presets' current parameters; only reviews a day or more apart count, and nothing with FSRS off."),
+    "fsrs_fatigue": N_("How far FSRS's predictions are off by the place of the answer in its day: the 1st review of the day, the 2nd, and so on. Each bar is the gap between the share of answers passed and the recall FSRS predicted (over several places, their RMSE). Every review of the day counts for the place, whatever its deck; only reviews a day or more apart count, and nothing with FSRS off. A gap that grows late in the day hints at a daily review limit."),
+    "stability_increase": N_("Your cards by how much their stability would grow if you answered Good on their due day (x2: it doubles), with the FSRS parameters and desired retention of their preset. A click on a bar opens its cards in the browser. The cards as they are now, whatever the period; nothing with FSRS off."),
+    "leech_detector": N_("Your cards by how unlikely their lapses are, given the recall FSRS predicted before each review (two days or more apart). Cards on the right failed far more often than FSRS expected: leeches in the making. A click on a bar opens its cards in the browser. The whole history of the cards counts, whatever the period; nothing with FSRS off."),
+    "first_forgetting": N_("How your cards were recalled at their first review on a later day, by the rating of their very first answer. Each dot is the share passed at that interval (its size: the cards in it); the line is the FSRS forgetting curve that fits them best, with its stability. The whole history of the deck's cards counts, whatever the period; a card reset starts over. Under the plot: the longest interval shown and the most dots per rating."),
+    "first_forgetting_short": N_("How your cards were recalled at their next answer within a day of their very first one, by its rating (Easy left out): the learning steps. Each dot is the share passed after that many minutes (its size: the cards in it); the line is the FSRS forgetting curve that fits them best, with its stability in minutes. The whole history of the deck's cards counts, whatever the period."),
+    "future_retention": N_("The cards due each day ahead, split by the recall FSRS expects when they come due: shown as a percentage, the retention to expect each day. A day with a low share passed is a day of many lapses ahead. Overdue cards are left out; nothing with FSRS off. The period chosen does not change it: today and up to a year ahead."),
+    "rating_fatigue": N_("Your reviews by their place in the day: the 1st review of the day, the 2nd, and so on, split by rating. Every review of the day counts for the place, whatever its deck. Show as % shows whether you press Again more often as the day's reviews add up."),
+    "sibling_ratings": N_("Reviews of mature cards by the days since a sibling (another card of the same note) was last answered, split by rating. 0 d is the same day. Only counted when that sibling was mature too; young cards and learning steps aren't counted. Show as % shows whether a sibling seen lately makes the answer easier."),
+    "resets": N_("The cards you reset to new each day (Forget in the browser), split by what they were before: learning, young or mature."),
+    "forgotten": N_("Young and mature cards you answered Again, each day."),
+    "todays_retention": N_("How the first answer of each card went on each day of the period: passed (Hard, Good, Easy) or failed (Again). Its later answers that day are not counted. Pick a kind of cards in the header. The stats give the period before too (Show Change from Period Before puts the change in points in the ring); the mark on the ring is the desired retention of FSRS (Show FSRS Target shows or hides it)."),
+    "introduced_load": N_("The reviews a day that the cards introduced each day bring now (1 / interval of each card). Shows which days of new cards still cost you reviews."),
+    "memorised": N_("How many cards you knew on each past day: the sum of each card's probability of recall then (a card you were sure to recall counts 1, one you would recall half the time counts 0.5). The memory states are Anki's own, with your presets' current parameters; cards count once they have a memory state, and nothing with FSRS off. Deleted cards aren't counted."),
+    "stability_trend": N_("The average stability of your cards on each past day: how many days it takes their recall to fall to 90%. The memory states are Anki's own, after each review, with your presets' current parameters. Cards count once they have a memory state; with FSRS off the chart is empty. Deleted cards aren't counted."),
+    "load_trend": N_("The reviews a day your cards asked for on each past day (1 / interval of each review card), worked out from your review history. Shows how your daily workload grew. Deleted cards aren't counted."),
+    "introduced": N_("New cards you saw for the first time each day. Re-introduced counts cards seen again after a reset. By First Rating shows the answer you gave that first time."),
+    "interval_load": N_("How many reviews a day the cards of each interval add on average. A card with a 10-day interval adds 0.1 reviews a day."),
+    "lapse_distribution": N_("Your cards by how many times you forgot them. Total Lapses counts their lapses, Load the reviews a day they bring now (1 / interval)."),
+    "card_states": N_("How your cards were split between states on each past day, worked out from your review history. Deleted cards aren't counted."),
+    "custom_pie": N_("Your own searches, as typed in the browser: a slice each, with the cards of the deck it finds, or their load, lapses or reviews (Value). Edit Searches... in the chart's options. A click on a slice opens its search in the browser. The cards as they are now, whatever the period."),
+    "custom_bar": N_("Your own searches, as typed in the browser: the reviews of the cards each one finds in the deck, day by day, or their time (Value). Edit Searches... in the chart's options. A card found by two searches counts in both."),
+    "bw_matrix": N_("How well FSRS predicts your recall, by the card's stability (rows) and difficulty (columns) before the answer: the share of answers passed minus the recall FSRS predicted. In the Easy colour: you remember more than predicted; in the Again colour: less. Cells with too few reviews stay empty. The whole history, whatever the period; nothing with FSRS off."),
+    "sxr_heatmap": N_("Your review cards now, by their FSRS stability (rows) and retrievability (columns). The darker the cell, the more cards. A click on a cell opens its cards in the browser."),
+    "week_hours": N_("Your reviews by day of the week and hour. The darker the cell, the more reviews. By Day shows each day of the period instead."),
+    "stability_history": N_("Your cards by the stability FSRS gave them on a day in the past (the first day of the period chosen; today for all time), as Card Stability shows them today. The memory states are Anki's own, with your presets' current parameters; cards with no memory state yet that day aren't counted, nor are cards deleted since."),
+    "difficulty_history": N_("Your cards by the difficulty FSRS gave them on a day in the past (the first day of the period chosen; today for all time), as Card Difficulty shows them today. The memory states are Anki's own, with your presets' current parameters; cards with no memory state yet that day aren't counted, nor are cards deleted since."),
+    "interval_history": N_("Your review cards by the interval they had on a day in the past (the first day of the period chosen; today for all time), as Review Intervals shows them today. Cards in learning or relearning that day aren't counted, nor are cards whose history was deleted."),
+    "time_distribution": N_("Your cards by the time you spent on each one over all its reviews, one bar per second (an hour or more in the last bar). Total Time shows the time those cards took instead of how many they are."),
+    "learning_steps": N_("How many learning answers each card needed before it became a review card, counted since its last reset if it had one. Cards still in learning aren't counted, and cards that skipped learning are counted separately."),
+    "heatmap": N_("Your reviews on each day of the calendar. The darker the cell, the more reviews, and future days show the cards due.\n"
+                  "YRS shows every year one under the other, \u221e the months in a row, 365 the last 365 days and Y one calendar year.\n"
+                  "Click a level in the legend to hide it, or click a day to see its cards in the Browser."),
+    "added": N_("New cards added to your collection each day."),
+    "review_speed": N_("How many seconds a review took on average, each day."),
+    "review_distribution": N_("Your cards by how many times you reviewed them. Total Reviews counts their reviews, Load the reviews a day they bring now (1 / interval)."),
+    "due_today": N_("Learning cards due today, by the hour they come due. \"Due now\" in the stats: the cards due at this moment, plus the ones Anki lets you learn ahead."),
 }
+
+
+# Charts whose explanation ends with a credit to the add-on they are based on (README, Credits).
+SSE_BASED = frozenset((
+    "custom_bar", "custom_pie", "first_forgetting", "first_forgetting_short", "fsrs_calibration",
+    "fsrs_fatigue", "future_retention", "interval_history", "introduced", "introduced_load",
+    "lapse_distribution", "leech_detector", "learning_steps", "load_trend", "memorised", "rating_fatigue",
+    "resets", "review_distribution", "sibling_ratings", "stability_increase", "stability_trend",
+    "sxr_heatmap", "bw_matrix", "time_distribution", "todays_retention",
+))
+
+
+# Charts easy to misread: a word of caution after their explanation.
+CAVEATS = {
+    "leech_detector": N_("Experimental."),
+    "sibling_ratings": N_("Read it with Rating by Interval: a card's interval also changes its ratings, and siblings seen lately often have short intervals."),
+    "rating_fatigue": N_("The order in which your cards are shown changes it: if new or hard cards come last, the Again of late places may come from them, not from fatigue."),
+    "fsrs_fatigue": N_("A hint, not a measure: the late places have few reviews, so a single heavy day can weigh a lot."),
+}
+
+
+def sse_credit():
+    return tr("Based on {addon} by {author}.", addon="Search Stats Extended", author="Luc McGrady")
 
 
 def help_text(chart_type):
     """The explanation of a chart type, translated ("" when there is none)."""
-    text = HELP.get(str(chart_type or ""))
-    return tr_name(text) if text else ""
-
-
-def help_enabled():
-    try:
-        from aqt import mw
-        from ...ui import Config, ConfigManager
-
-        return bool(ConfigManager(mw).config.get(Config.SHOW_CHART_HELP, True))
-    except Exception:
-        return True
-
-
-class _HelpIcon(QLabel):
-    """The "?": its text in the add-on's own tooltip (as the charts'), shown at once on hover.
-
-    Shown only while the mouse is over its chart (the card), so the headers stay as they were
-    at rest; its place stays reserved (see-through, not hidden) so the title never moves."""
-
-    _REST, _SHOWN = 0.0, 0.55
-
-    def __init__(self, parent, text):
-        super().__init__(parent)
-        self._card = None
-        import textwrap
-
-        # One line per paragraph (a "\n" in the text), long ones wrapped.
-        self._lines = [{"text": line} for para in text.split("\n") for line in (textwrap.wrap(para, 64) or [""])]
-        self._tip = None
-
-    def enterEvent(self, event):
-        super().enterEvent(event)
-        try:
-            from ..chart_utils.tooltip import TooltipWindow, show_tooltip_near
-
-            if self._tip is None:
-                self._tip = TooltipWindow(self)
-            show_tooltip_near(self, self._tip, self.rect().bottomRight(), lines=self._lines,
-                              x_offset=6, y_offset=6, show_only_if_hidden=False)
-        except Exception:
-            from ...logic.logger import log_swallowed
-
-            log_swallowed()
-
-    def leaveEvent(self, event):
-        super().leaveEvent(event)
-        if self._tip is not None:
-            self._tip.hide()
-
-    def hideEvent(self, event):
-        if self._tip is not None:
-            self._tip.hide()
-        super().hideEvent(event)
-
-    def refresh_icon(self):
-        """Drawn in the theme of where it is now (a pinned chart in the pinned theme): made
-        before its header was put in its card, it took the Deep Dive theme."""
-        try:
-            from ...ui.theme.icons import get_svg_icon
-
-            icon = get_svg_icon("help-circle", size=14, context_ref=self)
-            self.setPixmap(icon.pixmap(QSize(14, 14)))
-        except RuntimeError:
-            pass
-
-    def changeEvent(self, event):
-        from aqt.qt import QEvent
-
-        if event.type() == QEvent.Type.ParentChange:
-            self.refresh_icon()
-        super().changeEvent(event)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        self.refresh_icon()
-        if self._card is None:
-            # The chart's card: the first parent that is a card (main screen or Deep Dive).
-            w = self.parentWidget()
-            card = None
-            while w is not None:
-                if w.objectName() == "pinned_widget_card" or type(w).__name__ == "ResizableWrapper":
-                    card = w
-                    break
-                w = w.parentWidget()
-            self._card = card or self.parentWidget()
-            if self._card is not None:
-                self._card.installEventFilter(self)
-        self._set_shown(self._mouse_on_card())
-
-    def _mouse_on_card(self):
-        from aqt.qt import QCursor
-
-        card = self._card
-        try:
-            return bool(card is not None and card.isVisible()
-                        and card.rect().contains(card.mapFromGlobal(QCursor.pos())))
-        except RuntimeError:
-            return False
-
-    def _set_shown(self, on):
-        if getattr(self, "_muted", False):
-            on = False
-        effect_opacity(self, self._SHOWN if on else self._REST)
-
-    def eventFilter(self, obj, event):
-        from aqt.qt import QEvent
-
-        if obj is self._card:
-            if event.type() == QEvent.Type.Enter:
-                self._set_shown(True)
-            elif event.type() == QEvent.Type.Leave:
-                self._set_shown(self._mouse_on_card())
-        return False
-
-
-class _RoomWatcher(QObject):
-    """Places the "?" in its header without taking any room: it floats at the start of the
-    header's free space (the stretch after the title, stats and labels), so no button ever
-    moves for it. When that free space is too short (a narrow card), it hides: it is the
-    first thing to go, before the title elides or the buttons gather."""
-
-    GAP = 4
-
-    def __init__(self, header, btn):
-        super().__init__(header)
-        self._header = header
-        self._btn = btn
-        self._queued = False
-        header.installEventFilter(self)
-
-    def eventFilter(self, obj, event):
-        if event.type() in (QEvent.Type.Resize, QEvent.Type.LayoutRequest, QEvent.Type.Show):
-            self.queue()
-        return False
-
-    def queue(self):
-        # After the layout has placed its items (their geometry is not final yet here).
-        if self._queued:
-            return
-        self._queued = True
-        QTimer.singleShot(0, self.check)
-
-    def _gap(self, lay, owner):
-        """(x, width) in the header of the first stretch at least as wide as the "?"."""
-        need = self._btn.width() + 2 * self.GAP
-        for i in range(lay.count()):
-            item = lay.itemAt(i)
-            sp = item.spacerItem()
-            if sp is not None:
-                g = sp.geometry()
-                if g.width() >= need and sp.expandingDirections() & Qt.Orientation.Horizontal:
-                    x = owner.mapTo(self._header, g.topLeft()).x() if owner is not self._header else g.x()
-                    return x, g.width()
-                continue
-            w = item.widget()
-            # QWidget.layout(w): some widgets keep their layout in an attribute named layout.
-            sub = item.layout() if w is None else (QWidget.layout(w) if w.isVisible() else None)
-            if sub is not None:
-                found = self._gap(sub, owner if w is None else w)
-                if found:
-                    return found
-        return None
-
-    def check(self):
-        self._queued = False
-        try:
-            lay = self._header.layout()
-            btn = self._btn
-            if lay is None or btn is None:
-                return
-            found = self._gap(lay, self._header)
-            if not found:
-                btn.hide()
-                return
-            x, _w = found
-            btn.move(int(x + self.GAP), int((self._header.height() - btn.height()) / 2))
-            btn.show()
-            btn.raise_()
-        except RuntimeError:
-            pass
-        except Exception:
-            from ...logic.logger import log_swallowed
-
-            log_swallowed()  # never an error dialog for the "?"
-
-
-def insert_help_button(header, chart_type):
-    """Put the "?" in a chart header, right after its left part (title, labels, stats), at the
-    same place on every chart, pinned or in Deep Dive. It floats over the header's free space
-    and takes no room: no button moves for it (see _RoomWatcher)."""
-    lay = header.layout() if header is not None else None
-    if lay is None:
-        return None
-    btn = make_help_button(header, chart_type)
-    if btn is None:
-        return None
-    btn.hide()
-    header._help_room = _RoomWatcher(header, btn)
-    header._help_room.queue()
-    return btn
-
-
-def make_help_button(parent, chart_type):
-    """The small "?" next to a chart's title: its explanation shows on hover. None when the
-    chart has none or the "?" are hidden in the settings."""
-    text = help_text(chart_type)
-    if not text or not help_enabled():
-        return None
-    from ...ui.theme.icons import get_svg_icon
-
-    label = _HelpIcon(parent, text)
-    label.setObjectName("chart_help")
-    icon = get_svg_icon("help-circle", size=14, context_ref=parent)
-    label.setPixmap(icon.pixmap(QSize(14, 14)))
-    label.setFixedSize(16, 16)
-    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    label.setCursor(Qt.CursorShape.WhatsThisCursor)
-    label.setMouseTracking(True)
-    effect_opacity(label, 0.0)  # shown while the mouse is over the chart (see _HelpIcon)
-    return label
-
-
-def effect_opacity(widget, value):
-    """Quiet, as the other header icons (one effect, its opacity changed)."""
-    try:
-        from aqt.qt import QGraphicsOpacityEffect
-
-        eff = widget.graphicsEffect()
-        if not isinstance(eff, QGraphicsOpacityEffect):
-            eff = QGraphicsOpacityEffect(widget)
-            widget.setGraphicsEffect(eff)
-        eff.setOpacity(value)
-    except Exception:
-        pass
-
-
-def set_help_muted(icon, muted):
-    """Hide the "?" (see more_button: "⋯" goes first when both want the same spot)."""
-    try:
-        icon._muted = bool(muted)
-        if muted:
-            effect_opacity(icon, 0.0)
-            tip = getattr(icon, "_tip", None)
-            if tip is not None:
-                tip.hide()
-        else:
-            icon._set_shown(icon._mouse_on_card())
-    except (RuntimeError, AttributeError):
-        pass
+    key = str(chart_type or "")
+    text = HELP.get(key)
+    if not text:
+        return ""
+    text = tr_name(text)
+    if key in CAVEATS:
+        text += "\n\n" + tr_name(CAVEATS[key])
+    return text + "\n\n" + sse_credit() if key in SSE_BASED else text
 
 
 class _HelpPopup(QObject):
@@ -314,16 +126,7 @@ class _HelpPopup(QObject):
 
     def __init__(self, anchor, text):
         super().__init__(anchor)
-        import textwrap
-
-        from aqt.qt import QApplication, QCursor
-        from ..chart_utils.tooltip import TooltipWindow, show_tooltip_near
-
-        lines = [{"text": line} for para in text.split("\n") for line in (textwrap.wrap(para, 64) or [""])]
-        self._tip = TooltipWindow(anchor)
-        pos = anchor.mapFromGlobal(QCursor.pos())
-        show_tooltip_near(anchor, self._tip, pos, lines=lines, x_offset=10, y_offset=10, show_only_if_hidden=False)
-        QApplication.instance().installEventFilter(self)
+        self._tip = None
         _HelpPopup._current = self
 
     def eventFilter(self, _obj, event):

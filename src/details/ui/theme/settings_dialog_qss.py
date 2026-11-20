@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from .. import ThemePalettes
 from .color_utils import hex_to_rgba
-from .palette import get_theme_palette
+from ...logic.theme.palette import get_theme_palette
 from .scrollbar_qss import get_scrollbar_style
 from .theme_mode import get_theme_effective_is_dark
 

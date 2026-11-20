@@ -16,7 +16,8 @@ _STREAK_CACHE_TTL = 5  # seconds
 
 
 def _cache_key(deck_id, start_ms, end_ms, excluded_dids):
-    return (deck_id, start_ms, end_ms, tuple(excluded_dids) if excluded_dids else ())
+    from ...search_filter import active_search_query
+    return (deck_id, start_ms, end_ms, tuple(excluded_dids) if excluded_dids else (), active_search_query())
 
 
 def logical_today():
@@ -105,6 +106,10 @@ def get_deck_streaks(deck_id, start_ms=0, end_ms=None, excluded_dids=None):
     else:
         from .....utils import excluded_not_in_clause
         did_limit = excluded_not_in_clause(excluded_dids)
+    from ...search_filter import active_card_clause
+    sf = active_card_clause("cards")
+    if sf:
+        did_limit = f"{did_limit} {sf}".strip() if did_limit else sf
 
     if did_limit_has_no_cards(did_limit):
         days = []

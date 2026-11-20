@@ -13,6 +13,8 @@ def ask_number(title, label, value=0, minimum=0, maximum=100000, parent=None):
     """Return the number the user typed, or None if they cancelled."""
     dlg = QDialog(parent or mw)
     dlg.setWindowTitle(title)
+    from ....window_icon import addon_icon
+    addon_icon(dlg)
     dlg.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
     dlg.setMinimumWidth(340)
     try:

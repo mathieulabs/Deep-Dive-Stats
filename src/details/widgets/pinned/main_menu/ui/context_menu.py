@@ -2,100 +2,29 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 
 from aqt import mw
-from aqt.qt import QAction, Qt, QTimer, QWidget, QWidgetAction, QSizePolicy, QHBoxLayout, QPushButton
+from aqt.qt import QAction, QActionGroup, Qt, QTimer
 
 from ..imports import Config, Period
 from ..imports import ConfigManager
-from ..block_order import (
-    BLOCK_CHARTS,
-    BLOCK_STATS,
-    BLOCK_TEXTS,
-    block_for_widget,
-    charts_section_key,
-    normalize_block_order,
-    parse_section_key,
-    section_label,
-    stats_section_key,
-    texts_section_key,
-)
 from ... import PinnedViewSelectorDialog, WidgetRegistry
 from .....ui import get_svg_icon
-from ......qss import set_qss
 from .....logic.logger import log_swallowed
-from ......i18n import tr
-
-# Edit layout (move buttons on every widget) is off: dragging now does all it did
-# (another line, a new line, a new box, a spot on a line). True brings the menu entry back.
-SHOW_EDIT_LAYOUT = False
-# Same for the Position submenu (its moves are done by dragging).
-SHOW_POSITION_MENU = False
-# "Move this box up / down" in the menu: off, a whole box moves by its handle (shown in the
-# guided tour). True brings them back.
-SHOW_BOX_MOVE_ENTRIES = False
+from ......i18n import tr, tr_name
 
 
 class PinnedContextMenu:
     def __init__(self, manager):
         self.manager = manager
 
-    def _add_persistent_action(self, menu, text, callback):
-        row = QWidget(menu)
-        row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        row.setMinimumWidth(max(220, menu.sizeHint().width()))
-        lay = QHBoxLayout(row)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-
-        btn = QPushButton(text, row)
-        btn.setFlat(True)
-        btn.setText(text)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        btn.setMinimumHeight(30)
-        set_qss(btn,
-            "QPushButton {"
-            " text-align: left;"
-            " padding: 4px 8px 4px 24px;"
-            " border: none;"
-            " background: transparent;"
-            "}"
-            "QPushButton:hover { background: rgba(255,255,255,0.08); }"
-            "QPushButton:pressed { background: rgba(255,255,255,0.14); }"
-        )
-        btn.clicked.connect(callback)
-        lay.addWidget(btn)
-
-        wa = QWidgetAction(menu)
-        wa.setDefaultWidget(row)
-        menu.addAction(wa)
-
     def _open_fullscreen(self, widget):
-        from ....common.fullscreen import open_fullscreen
+        """Replaced by the web block while its menu is open (web_ui/pinned.py: the page's card fullscreen)."""
+        return
 
-        manager = self.manager
-
-        def _on_closed(card, placed):
-            try:
-                if not placed and card is not None:
-                    # Its row was rebuilt meanwhile: let a rebuild attach it again.
-                    manager._last_state = None
-                    manager.refresh(clear_cache=False)
-                manager.sync_overlay()
-            except Exception:
-                log_swallowed()
-
-        open_fullscreen(widget, on_closed=_on_closed)
-
-    def _get_widget_def_by_id(self, wid):
-        for d in WidgetRegistry.get_all():
-            if d.get("id") == wid:
-                return d
-        return None
 
     def _open_details_for_widget(self, widget_def):
         """Open the Deep Dive on the deck(s) and period this widget shows."""
         try:
-            from ...widget_factory.factory import _resolve_deck_ids
+            from ...widget_factory.utils import _resolve_deck_ids
 
             context_deck = getattr(self.manager, "_current_deck_id", None)
             if "deck_ids" in widget_def:
@@ -122,46 +51,6 @@ class PinnedContextMenu:
                 break
         cfg = (self.manager._config_manager.config or {}) if getattr(self.manager, "_config_manager", None) else {}
 
-        def _nonneg_int(value, default=0):
-            try:
-                return max(0, int(value or 0))
-            except Exception:
-                return int(default)
-
-        def _collect_boxes_from_defs(defs):
-            stat_boxes = sorted(
-                {
-                    _nonneg_int(d.get("stat_box", 0), 0)
-                    for d in defs
-                    if d.get("type") == "stat_card"
-                }
-            )
-            chart_boxes = sorted(
-                {
-                    _nonneg_int(d.get("chart_box", 0), 0)
-                    for d in defs
-                    if d.get("type") not in ("stat_card", "text_label")
-                }
-            )
-            text_boxes = sorted(
-                {
-                    _nonneg_int(d.get("text_box", d.get("chart_box", 0)), 0)
-                    for d in defs
-                    if d.get("type") == "text_label"
-                }
-            )
-            return stat_boxes, chart_boxes, text_boxes
-
-        def _live_section_order(defs):
-            live_cfg = (self.manager._config_manager.config or {})
-            stat_boxes, chart_boxes, text_boxes = _collect_boxes_from_defs(defs)
-            return normalize_block_order(
-                live_cfg.get(Config.PINNED_BLOCK_ORDER, None),
-                stats_boxes=stat_boxes,
-                chart_boxes=chart_boxes,
-                text_boxes=text_boxes,
-            )
-
         def _write_config_value(key, value):
             cm = getattr(self.manager, "_config_manager", None)
             if cm is not None and hasattr(cm, "set_value"):
@@ -174,35 +63,6 @@ class PinnedContextMenu:
         menu = themed_menu(widget, self.manager)
         global_pos = fixed_global_pos if fixed_global_pos is not None else widget.mapToGlobal(pos)
 
-        def _refresh_and_reopen_menu(reopen_position=False):
-            self.manager._last_state = None
-            self.manager._last_widget_set = None
-            self.manager.refresh(clear_cache=False)
-
-            def _reopen():
-                try:
-                    if widget is None:
-                        return
-                    latest = self._get_widget_def_by_id(widget_def.get("id")) or widget_def
-                    local_pos = widget.mapFromGlobal(global_pos)
-                    self.show(
-                        widget,
-                        latest,
-                        local_pos,
-                        fixed_global_pos=global_pos,
-                        reopen_position_menu=bool(reopen_position),
-                    )
-                except Exception:
-                    log_swallowed()
-
-            try:
-                menu.close()
-            except Exception:
-                log_swallowed()
-            QTimer.singleShot(0, _reopen)
-
-        position_menu = None
-
         details_action = QAction(tr("Open Details Window"), menu)
         details_action.setIcon(get_svg_icon("external-link", size=16, context_ref=menu))
         # Open once the menu has closed: a window shown from inside the menu's loop stays white
@@ -213,26 +73,11 @@ class PinnedContextMenu:
         menu.addAction(details_action)
 
         if widget_def.get("type") not in ("stat_card", "text_label"):
-            from ....common.fullscreen import close_fullscreen, is_fullscreen
-
-            if is_fullscreen(widget):
-                fs_action = QAction(tr("Exit Fullscreen"), menu)
-                fs_action.setMenuRole(QAction.MenuRole.NoRole)  # macOS would otherwise move it into the app menu as Preferences/Quit
-                fs_action.triggered.connect(lambda _=False, w=widget: close_fullscreen(w))
-            else:
-                fs_action = QAction(tr("Fullscreen"), menu)
-                fs_action.triggered.connect(lambda _=False, w=widget: self._open_fullscreen(w))
+            fs_action = QAction(tr("Fullscreen"), menu)
+            fs_action.triggered.connect(lambda _=False, w=widget: self._open_fullscreen(w))
             fs_action.setIcon(get_svg_icon("maximize", size=16, context_ref=menu))
             menu.addAction(fs_action)
 
-        if SHOW_EDIT_LAYOUT:
-            from .edit_mode import is_edit_mode, set_edit_mode
-
-            _edit_act = QAction(tr("Edit layout"), menu)
-            _edit_act.setCheckable(True)
-            _edit_act.setChecked(is_edit_mode(self.manager))
-            _edit_act.triggered.connect(lambda checked: set_edit_mode(self.manager, bool(checked)))
-            menu.addAction(_edit_act)
         from .add_widget_menu import add_widget_actions
 
         add_widget_actions(
@@ -303,11 +148,146 @@ class PinnedContextMenu:
         view_act.triggered.connect(on_view_select)
         menu.addAction(view_act)
 
+        # Reviews/Day and Time/Day: the same over the days studied only (the card becomes Reviews/Active Day)
+        if widget_def.get("type") == "stat_card":
+            from .....logic.stat_cards import active_day_twin
+
+            twin = active_day_twin(widget_def.get("stat_key"))
+            if twin:
+                act_days = QAction(tr("Active days only"), menu)
+                act_days.setCheckable(True)
+                act_days.setChecked(twin[1])
+
+                # the menu stays open on a check: each click follows the box (checked: the active-days card), not
+                # the card the menu was opened on (otherwise a second click puts the same card back)
+                every_day, active = (widget_def.get("stat_key"), twin[0]) if not twin[1] else (twin[0], widget_def.get("stat_key"))
+
+                def _swap_twin(checked=False, wid=widget_def["id"], every_day=every_day, active=active):
+                    WidgetRegistry.update_setting(wid, "stat_key", active if checked else every_day)
+                    self.manager.refresh(clear_cache=False)
+
+                act_days.triggered.connect(_swap_twin)
+                menu.addAction(act_days)
+
+            # how the stat cards' numbers change (Stat_Num_Anim, one setting for every stat card, here and in Deep
+            # Dive; also in Settings > General > Animations)
+            na_menu = menu.addMenu(tr("Number Animation"))
+            na_now = "roll" if self.manager._config_manager.config.get(Config.STAT_NUM_ANIM) == "roll" else "count"
+            for na_key, na_label in (("count", tr("Numbers count")), ("roll", tr("Digits roll"))):
+                na_act = QAction(na_label, na_menu)
+                na_act.setCheckable(True)
+                na_act.setChecked(na_key == na_now)
+
+                def _set_num_anim(_=False, value=na_key):
+                    _write_config_value(Config.STAT_NUM_ANIM, value)
+                    self.manager.refresh(clear_cache=False)
+
+                na_act.triggered.connect(_set_num_anim)
+                na_menu.addAction(na_act)
+
+            # Icon style & position (per-card when unlinked, else global)
+            ico_menu = menu.addMenu(tr("Icon"))
+            ico_group = QActionGroup(ico_menu)
+            ico_group.setExclusive(True)
+            own_style = bool(widget_def.get("use_custom_style", False))
+            conf_now = self.manager._config_manager.config
+            raw_ico = widget_def.get(Config.FACECARDS_SHOW_ICONS) if (own_style and Config.FACECARDS_SHOW_ICONS in widget_def) else conf_now.get(Config.FACECARDS_SHOW_ICONS, "inline")
+            ico_now = "off" if raw_ico in (False, "", "off", None) else ("watermark" if raw_ico == "watermark" else "inline")
+            for ico_key, ico_label in (("off", tr("Off")), ("inline", tr("Next to title")), ("watermark", tr("Watermark"))):
+                ico_act = QAction(ico_label, ico_menu)
+                ico_act.setCheckable(True)
+                ico_act.setChecked(ico_key == ico_now)
+                ico_group.addAction(ico_act)
+
+                def _set_ico(_=False, value=ico_key, wid=widget_def["id"], own=own_style):
+                    if own:
+                        WidgetRegistry.update_setting(wid, Config.FACECARDS_SHOW_ICONS, value)
+                    else:
+                        _write_config_value(Config.FACECARDS_SHOW_ICONS, value)
+                    self.manager.refresh(clear_cache=False)
+
+                ico_act.triggered.connect(_set_ico)
+                ico_menu.addAction(ico_act)
+
+            ico_menu.addSeparator()
+            pos_menu = ico_menu.addMenu(tr("Position"))
+            pos_menu.setEnabled(ico_now == "watermark")
+            pos_group = QActionGroup(pos_menu)
+            pos_group.setExclusive(True)
+            raw_pos = widget_def.get(Config.FACECARDS_ICON_POS) if (own_style and Config.FACECARDS_ICON_POS in widget_def) else conf_now.get(Config.FACECARDS_ICON_POS, "tl")
+            pos_now = raw_pos if raw_pos in ("tl", "tr", "bl", "br") else "tl"
+            for p_key, p_label in (("tl", tr("Top Left")), ("tr", tr("Top Right")), ("bl", tr("Bottom Left")), ("br", tr("Bottom Right"))):
+                p_act = QAction(p_label, pos_menu)
+                p_act.setCheckable(True)
+                p_act.setChecked(p_key == pos_now)
+                pos_group.addAction(p_act)
+
+                def _set_pos(_=False, value=p_key, wid=widget_def["id"], own=own_style):
+                    if own:
+                        WidgetRegistry.update_setting(wid, Config.FACECARDS_ICON_POS, value)
+                    else:
+                        _write_config_value(Config.FACECARDS_ICON_POS, value)
+                    self.manager.refresh(clear_cache=False)
+
+                p_act.triggered.connect(_set_pos)
+                pos_menu.addAction(p_act)
+
         wtype = widget_def.get("type")
         from ....charts.more_charts import AVERAGE_TYPES, CUMULATIVE_TYPES, TYPES as MORE_TYPES
 
         avg_sections = ["activity", "added", "retention", *AVERAGE_TYPES]
         cumulative_sections = ["activity", "added", "future_due", "review_intervals", "stability", *CUMULATIVE_TYPES]
+
+        if wtype in ("card_counts", "todays_retention"):
+            # the ring charts' Legend Layout (Settings has the same choice; the Deep Dive's right-click too)
+            menu.addSeparator()
+            lg_menu = menu.addMenu(tr("Legend Layout"))
+            lg_now = widget_def.get("legend_mode") or "auto"
+            # one choice (the menu stays open on a checked entry: without the group each one was ticked on its own)
+            lg_group = QActionGroup(lg_menu)
+            lg_group.setExclusive(True)
+            for lg_key, lg_name in (("auto", "Auto"), ("always", "Always next to the donut"), ("hover", "On hover")):
+                lg_act = QAction(tr_name(lg_name), lg_menu)
+                lg_act.setCheckable(True)
+                lg_act.setChecked(lg_key == lg_now)
+                lg_act.triggered.connect(lambda _=False, wid=widget_def["id"], v=lg_key:
+                    self.manager._update_setting(wid, "legend_mode", v))
+                lg_group.addAction(lg_act)
+                lg_menu.addAction(lg_act)
+
+        if wtype == "todays_retention":
+            # First Answer Retention: the kind of cards, the change from the period before, FSRS's target (the
+            # page's pill menu and the Deep Dive's right-click have the same)
+            menu.addSeparator()
+            kind_menu = menu.addMenu(tr("Cards"))
+            kind_now = widget_def.get("card_type") or "all"
+            kind_group = QActionGroup(kind_menu)
+            kind_group.setExclusive(True)
+            for kind_key, kind_name in (("all", "All"), ("learn", "Learning"), ("young", "Young"), ("mature", "Mature")):
+                kind_act = QAction(tr_name(kind_name), kind_menu)
+                kind_act.setCheckable(True)
+                kind_act.setChecked(kind_key == kind_now)
+                kind_act.triggered.connect(lambda _=False, wid=widget_def["id"], v=kind_key:
+                    self.manager._update_setting(wid, "card_type", v))
+                kind_group.addAction(kind_act)
+                kind_menu.addAction(kind_act)
+            chg_act = QAction(tr("Show Change from Period Before"), menu)
+            chg_act.setCheckable(True)
+            chg_act.setChecked(widget_def.get("show_change", True) is not False)
+            chg_act.triggered.connect(lambda checked, wid=widget_def["id"]:
+                self.manager._update_setting(wid, "show_change", checked))
+            menu.addAction(chg_act)
+            try:
+                fsrs = bool(mw.col.get_config("fsrs", False))
+            except Exception:
+                fsrs = False
+            if fsrs:
+                tgt_act = QAction(tr("Show FSRS Target"), menu)
+                tgt_act.setCheckable(True)
+                tgt_act.setChecked(widget_def.get("show_target", True) is not False)
+                tgt_act.triggered.connect(lambda checked, wid=widget_def["id"]:
+                    self.manager._update_setting(wid, "show_target", checked))
+                menu.addAction(tgt_act)
 
         if wtype in set(avg_sections + cumulative_sections):
             menu.addSeparator()
@@ -404,12 +384,6 @@ class PinnedContextMenu:
             from .....ui.shared.review_types_menu import add_series_actions
 
             _choices = []
-            _w = self.manager._active_widgets.get(widget_def["id"])
-            if _w is not None:
-                from aqt.qt import QWidget
-
-                _c = next((c for c in _w.findChildren(QWidget) if hasattr(c, "series_choices")), None)
-                _choices = _c.series_choices() if _c is not None else []
             if wtype == "future_due":
                 from .....logic.metrics.future_due import resolve_breakdown
 
@@ -429,7 +403,7 @@ class PinnedContextMenu:
                 from .....logic.metrics.future_due import resolve_breakdown
 
                 fd_breakdown = resolve_breakdown(widget_def.get("breakdown"), widget_def.get("show_breakdown", False))
-            no_split = wtype == "card_states" and not widget_def.get("alt_view", False)
+            no_split = wtype == "card_states" and not widget_def.get("alt_view", True)
             if ((wtype in PERCENT_TYPES and not no_split) or fd_breakdown == "result"
                     or (wtype == "activity" and widget_def.get("show_breakdown", True))):
                 pct_act = QAction(tr("Show as %"), menu)
@@ -438,6 +412,16 @@ class PinnedContextMenu:
                 pct_act.triggered.connect(lambda checked, wid=widget_def["id"]:
                     self.manager._update_setting(wid, "show_percent", checked))
                 menu.addAction(pct_act)
+            # Show Trend: a line through the bars, its slope in the header (web: extras.js TREND_UNIT)
+            if wtype in ("activity", "added", "ratings", "review_speed", "forgotten", "resets", "introduced", "introduced_load", "load_trend",
+                         "stability_trend", "memorised", "card_states", "future_retention", "answer_time",
+                         "interval_ratings", "rating_fatigue", "fsrs_fatigue", "sibling_ratings"):
+                trend_act = QAction(tr("Show Trend"), menu)
+                trend_act.setCheckable(True)
+                trend_act.setChecked(bool(widget_def.get("show_trend", wtype not in ("activity", "added"))))
+                trend_act.triggered.connect(lambda checked, wid=widget_def["id"]:
+                    self.manager._update_setting(wid, "show_trend", checked))
+                menu.addAction(trend_act)
 
         if wtype == "heatmap":
             menu.addSeparator()
@@ -457,6 +441,98 @@ class PinnedContextMenu:
                 self.manager.refresh(clear_cache=False)
 
             multi_hue_act.triggered.connect(on_multi_hue_toggled)
+
+            # the levels' palette (heatmap/palettes.py); the custom gradient's colors are in the heatmap's Settings
+            from ....charts.heatmap.palettes import CUSTOM, PALETTES, customs_of, palette_of
+
+            current_pal = palette_of(cfg.get)
+            from ......const.theme.color_resolver import get_color as _get_hm_color
+
+            cur_col = _get_hm_color(cfg, Config.HEATMAP_COLOR, "pinned")
+
+            def _pick_color():
+                from aqt.qt import QColor, QColorDialog
+
+                cur = _get_hm_color(cfg, Config.HEATMAP_COLOR, "pinned")
+                color = QColorDialog.getColor(QColor(cur), mw, tr("Pick Color"))
+                if not color.isValid():
+                    return
+                chosen = color.name()
+                if cfg.get(Config.PINNED_THEME_SEPARATE, False):
+                    custom = dict(cfg.get(Config.PINNED_THEME_CUSTOM_COLORS, {}) or {})
+                    custom[Config.HEATMAP_COLOR] = chosen
+                    _write_config_value(Config.PINNED_THEME_CUSTOM_COLORS, custom)
+                    _write_config_value(Config.PINNED_THEME_IS_CUSTOM, True)
+                else:
+                    _write_config_value(Config.HEATMAP_COLOR, chosen)
+                if current_pal:
+                    _write_config_value(Config.HEATMAP_PALETTE, "")
+                self.manager.refresh(clear_cache=False)
+
+            def _swatch_icon(hex_col):
+                from aqt.qt import QColor, QIcon, QPainter, QPen, QPixmap
+
+                pm = QPixmap(32, 32)
+                pm.fill(Qt.GlobalColor.transparent)
+                p = QPainter(pm)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                p.setBrush(QColor(hex_col))
+                p.setPen(QPen(QColor(128, 128, 128, 115), 2))
+                p.drawEllipse(3, 3, 26, 26)
+                p.end()
+                return QIcon(pm)
+
+            color_act = QAction(_swatch_icon(cur_col), tr("Color..."), menu)
+            color_act.triggered.connect(lambda _=False: QTimer.singleShot(0, _pick_color))
+            menu.addAction(color_act)
+
+            pal_menu = menu.addMenu(tr("Palette"))
+            entries = [(k, tr_name(label)) for k, label in PALETTES]
+            mine = customs_of(cfg.get)
+            if mine:  # the user's own gradients
+                entries += [None] + [(CUSTOM + p["id"], p["name"]) for p in mine]
+            for entry in entries:
+                if entry is None:
+                    pal_menu.addSeparator()
+                    continue
+                pal_key, pal_label = entry
+                pal_act = QAction(pal_label, pal_menu)
+                pal_act.setCheckable(True)
+                pal_act.setChecked(pal_key == current_pal)
+
+                def _set_palette(_=False, value=pal_key):
+                    _write_config_value(Config.HEATMAP_PALETTE, value)
+                    self.manager.refresh(clear_cache=False)
+                    pal_menu.close()
+                    menu.close()
+
+                pal_act.triggered.connect(_set_palette)
+                pal_menu.addAction(pal_act)
+
+            # a gradient of one's own, made from the palette shown (or the one chosen changed), in a small window
+            def _gradient(_=False, new=True):
+                from .....ui.config.dialogs.heatmap_gradient import edit_gradient
+                from .....ui.theme import get_theme_effective_is_dark
+                from ......const.theme.color_resolver import get_color
+                from ....charts.heatmap.palettes import seed_colors
+
+                pal_menu.close()
+                menu.close()
+                seed = None
+                if new:
+                    seed = seed_colors(current_pal, mine, get_color(cfg, Config.HEATMAP_COLOR, "pinned"), dark=get_theme_effective_is_dark(cfg))
+                edit_gradient(mw, cfg, _write_config_value, lambda: self.manager.refresh(clear_cache=False),
+                              new=new, seed=seed)
+
+            pal_menu.addSeparator()
+            new_act = QAction(tr("New gradient..."), pal_menu)
+            new_act.triggered.connect(lambda _=False: QTimer.singleShot(0, lambda: _gradient(new=True)))
+            pal_menu.addAction(new_act)
+            if current_pal.startswith(CUSTOM):
+                edit_act = QAction(tr("Edit gradient..."), pal_menu)
+                edit_act.triggered.connect(lambda _=False: QTimer.singleShot(0, lambda: _gradient(new=False)))
+                pal_menu.addAction(edit_act)
+            multi_hue_act.setEnabled(current_pal == "")  # only the chosen color's shades
             menu.addAction(multi_hue_act)
 
             def on_display_changed(key, value):
@@ -468,6 +544,14 @@ class PinnedContextMenu:
 
             from .....ui.shared.heatmap_menu import add_heatmap_display_actions
             add_heatmap_display_actions(menu, cfg, on_display_changed)
+
+            # this card's own: the year in two rows or the month grid when it is narrow (heatmap.js narrowOn)
+            narrow_act = QAction(tr("Adapt the year to narrow cards"), menu)
+            narrow_act.setCheckable(True)
+            narrow_act.setChecked(bool(widget_def.get("narrow_layout", True)))
+            narrow_act.triggered.connect(lambda checked, wid=widget_def["id"]:
+                self.manager._update_setting(wid, "narrow_layout", checked))
+            menu.addAction(narrow_act)
 
         wtype_stats = ["activity", "added", "hourly", "future_due", "review_intervals", "stability", "difficulty",
                        "retrievability", "retention", *MORE_TYPES]
@@ -504,396 +588,23 @@ class PinnedContextMenu:
                 self.manager._update_setting(wid, "binning_override", checked))
             menu.addAction(binning_act)
 
-        # Row break option, only for chart widgets (stat cards expose it through StatCardsContainer's own context menu).
-        _wtype = widget_def.get("type")
-        menu.addSeparator()
-        if SHOW_POSITION_MENU:
-            position_menu = menu.addMenu(tr("Position"))
-        else:
-            # Lines, boxes and shifts are done by dragging now (and a whole box by its
-            # handle): the submenu is built but not shown. Moving a box up / down stays
-            # in the menu itself, below.
-            from aqt.qt import QMenu
-            position_menu = QMenu(menu)
+        # the charts' axis animation (Chart_Axis_Anim, one setting for every chart, here and in Deep Dive; also in
+        # Settings > General > Animations)
+        if wtype in wtype_stats or wtype == "distribution":
+            ax_menu = menu.addMenu(tr("Axis Animation"))
+            ax_now = "count" if self.manager._config_manager.config.get(Config.CHART_AXIS_ANIM) == "count" else "slide"
+            for ax_key, ax_label in (("count", tr("Numbers count")), ("slide", tr("Ticks slide"))):
+                ax_act = QAction(ax_label, ax_menu)
+                ax_act.setCheckable(True)
+                ax_act.setChecked(ax_key == ax_now)
 
-        def _do_down(_=None, wid=widget_def["id"]):
-            cur = self._get_widget_def_by_id(wid) or {}
-            rn = int(cur.get("row_num", 0) or 0)
-            WidgetRegistry.update_setting(wid, "row_num", rn + 1)
-            _refresh_and_reopen_menu(reopen_position=True)
-
-        def _do_up(_=None, wid=widget_def["id"]):
-            cur = self._get_widget_def_by_id(wid) or {}
-            rn = int(cur.get("row_num", 0) or 0)
-            new_rn = max(0, rn - 1)
-            WidgetRegistry.update_setting(wid, "row_num", new_rn if new_rn > 0 else None)
-            _refresh_and_reopen_menu(reopen_position=True)
-
-        def _do_shift_right(_=None, wid=widget_def["id"]):
-            cur = self._get_widget_def_by_id(wid) or {}
-            co = int(cur.get("col_offset", 0) or 0)
-            new_co = co + 1
-            WidgetRegistry.update_setting(wid, "col_offset", None if new_co == 0 else new_co)
-            try:
-                live = self.manager._active_widgets.get(wid)
-                if live is not None:
-                    live._col_offset = int(new_co)
-                    # Enable move animations before relayout so the card glides.
-                    self.manager._schedule_chart_reflow_animation()
-                    p = live.parentWidget()
-                    if p is not None and p.layout() is not None:
-                        p.layout().invalidate()
-                        p.layout().activate()
-                        p.updateGeometry()
-                        p.update()
-                    self.manager.sync_overlay()
-            except Exception:
-                log_swallowed()
-            _refresh_and_reopen_menu(reopen_position=True)
-
-        def _do_shift_left(_=None, wid=widget_def["id"]):
-            cur = self._get_widget_def_by_id(wid) or {}
-            co = int(cur.get("col_offset", 0) or 0)
-            new_co = co - 1
-            WidgetRegistry.update_setting(wid, "col_offset", None if new_co == 0 else new_co)
-            try:
-                live = self.manager._active_widgets.get(wid)
-                if live is not None:
-                    live._col_offset = int(new_co)
-                    # Enable move animations before relayout so the card glides.
-                    self.manager._schedule_chart_reflow_animation()
-                    p = live.parentWidget()
-                    if p is not None and p.layout() is not None:
-                        p.layout().invalidate()
-                        p.layout().activate()
-                        p.updateGeometry()
-                        p.update()
-                    self.manager.sync_overlay()
-            except Exception:
-                log_swallowed()
-            _refresh_and_reopen_menu(reopen_position=True)
-
-        self._add_persistent_action(position_menu, '↓ ' + tr('Move to next line'), _do_down)
-        self._add_persistent_action(position_menu, '↑ ' + tr('Move up a line'), _do_up)
-        self._add_persistent_action(position_menu, '→ ' + tr('Shift right'), _do_shift_right)
-        self._add_persistent_action(position_menu, '← ' + tr('Shift left'), _do_shift_left)
-
-        _cur_def = self._get_widget_def_by_id(widget_def["id"]) or widget_def
-        _cur_row = int(_cur_def.get("row_num", 0) or 0)
-        _cur_col = int(_cur_def.get("col_offset", 0) or 0)
-        if _cur_row != 0 or _cur_col != 0:
-            def _do_reset_position(_=None, wid=widget_def["id"]):
-                WidgetRegistry.update_setting(wid, "row_num", None)
-                WidgetRegistry.update_setting(wid, "col_offset", None)
-                try:
-                    live = self.manager._active_widgets.get(wid)
-                    if live is not None:
-                        live._col_offset = 0
-                except Exception:
-                    log_swallowed()
-                _refresh_and_reopen_menu(reopen_position=True)
-            self._add_persistent_action(position_menu, '↺ ' + tr('Reset line/shift position'), _do_reset_position)
-
-        position_menu.addSeparator()
-
-        if _wtype == "stat_card":
-            def _stat_box_num(defn):
-                try:
-                    return max(0, int(defn.get("stat_box", 0) or 0))
-                except Exception:
-                    return 0
-
-            def _refresh_after_box_move():
-                _refresh_and_reopen_menu(reopen_position=True)
-
-            def _next_stat_box_id(defs):
-                used = [_stat_box_num(d) for d in defs if d.get("type") == "stat_card"]
-                return (max(used) + 1) if used else 1
-
-            def _do_box_down(_=None, wid=widget_def["id"]):
-                cur = self._get_widget_def_by_id(wid) or {}
-                cur_box = _stat_box_num(cur)
-                defs = WidgetRegistry.get_all()
-                order = _live_section_order(defs)
-                cur_key = stats_section_key(cur_box)
-                if cur_key not in order:
-                    order.append(cur_key)
-                idx = order.index(cur_key)
-
-                target_box = cur_box
-                next_same = None
-                for key in order[idx + 1 :]:
-                    base, box = parse_section_key(key)
-                    if base == BLOCK_STATS:
-                        next_same = _nonneg_int(box, 0)
-                        break
-                if next_same is not None:
-                    target_box = next_same
-                elif idx + 1 < len(order):
-                    target_box = _next_stat_box_id(defs)
-                    new_key = stats_section_key(target_box)
-                    insert_at = min(len(order), idx + 2)
-                    if new_key not in order:
-                        order.insert(insert_at, new_key)
-                else:
-                    target_box = _next_stat_box_id(defs)
-                    new_key = stats_section_key(target_box)
-                    if new_key not in order:
-                        order.append(new_key)
-
-                WidgetRegistry.update_setting(wid, "stat_box", None if target_box == 0 else int(target_box))
-                _write_config_value(Config.PINNED_BLOCK_ORDER, order)
-                _refresh_after_box_move()
-
-            def _do_box_up(_=None, wid=widget_def["id"]):
-                cur = self._get_widget_def_by_id(wid) or {}
-                cur_box = _stat_box_num(cur)
-                defs = WidgetRegistry.get_all()
-                order = _live_section_order(defs)
-                cur_key = stats_section_key(cur_box)
-                if cur_key not in order:
-                    order.insert(0, cur_key)
-                idx = order.index(cur_key)
-                if idx <= 0:
-                    return
-
-                target_box = None
-                for key in reversed(order[:idx]):
-                    base, box = parse_section_key(key)
-                    if base == BLOCK_STATS:
-                        target_box = _nonneg_int(box, 0)
-                        break
-                if target_box is None:
-                    target_box = _next_stat_box_id(defs)
-                    new_key = stats_section_key(target_box)
-                    if new_key not in order:
-                        order.insert(idx - 1, new_key)
-                if target_box == cur_box:
-                    return
-
-                WidgetRegistry.update_setting(wid, "stat_box", None if target_box == 0 else int(target_box))
-                _write_config_value(Config.PINNED_BLOCK_ORDER, order)
-                _refresh_after_box_move()
-
-            self._add_persistent_action(position_menu, '↓ ' + tr('Move to next box/section'), _do_box_down)
-            self._add_persistent_action(position_menu, '↑ ' + tr('Move to previous box/section'), _do_box_up)
-
-            _cur_box = _stat_box_num(self._get_widget_def_by_id(widget_def["id"]) or widget_def)
-            if _cur_box != 0:
-                def _do_box_reset(_=None, wid=widget_def["id"]):
-                    WidgetRegistry.update_setting(wid, "stat_box", None)
-                    _refresh_after_box_move()
-
-                self._add_persistent_action(position_menu, '↺ ' + tr('Return to main stats box'), _do_box_reset)
-        else:
-            def _chart_box_num(defn):
-                try:
-                    return max(0, int(defn.get("chart_box", 0) or 0))
-                except Exception:
-                    return 0
-
-            def _text_box_num(defn):
-                try:
-                    return max(0, int(defn.get("text_box", defn.get("chart_box", 0)) or 0))
-                except Exception:
-                    return 0
-
-            def _refresh_after_chart_box_move():
-                _refresh_and_reopen_menu(reopen_position=True)
-
-            def _next_chart_box_id(defs):
-                used = [
-                    _chart_box_num(d)
-                    for d in defs
-                    if d.get("type") not in ("stat_card", "text_label")
-                ]
-                return (max(used) + 1) if used else 1
-
-            def _next_text_box_id(defs):
-                used = [_text_box_num(d) for d in defs if d.get("type") == "text_label"]
-                return (max(used) + 1) if used else 1
-
-            is_text_widget = (_wtype == "text_label")
-            current_family = BLOCK_TEXTS if is_text_widget else BLOCK_CHARTS
-            current_section_key_fn = texts_section_key if is_text_widget else charts_section_key
-            current_box_num = _text_box_num if is_text_widget else _chart_box_num
-            next_box_id = _next_text_box_id if is_text_widget else _next_chart_box_id
-            main_box_label = tr("main text box") if is_text_widget else tr("main charts box")
-
-            def _write_current_box(wid, target_box):
-                if is_text_widget:
-                    WidgetRegistry.update_setting(wid, "text_box", int(target_box))
-                else:
-                    WidgetRegistry.update_setting(wid, "chart_box", None if target_box == 0 else int(target_box))
-
-            def _do_chart_box_down(_=None, wid=widget_def["id"]):
-                cur = self._get_widget_def_by_id(wid) or {}
-                cur_box = current_box_num(cur)
-                defs = WidgetRegistry.get_all()
-                order = _live_section_order(defs)
-                cur_key = current_section_key_fn(cur_box)
-                if cur_key not in order:
-                    order.append(cur_key)
-                idx = order.index(cur_key)
-
-                target_box = cur_box
-                next_same = None
-                for key in order[idx + 1 :]:
-                    base, box = parse_section_key(key)
-                    if base == current_family:
-                        next_same = _nonneg_int(box, 0)
-                        break
-                if next_same is not None:
-                    target_box = next_same
-                elif idx + 1 < len(order):
-                    target_box = next_box_id(defs)
-                    new_key = current_section_key_fn(target_box)
-                    insert_at = min(len(order), idx + 2)
-                    if new_key not in order:
-                        order.insert(insert_at, new_key)
-                else:
-                    target_box = next_box_id(defs)
-                    new_key = current_section_key_fn(target_box)
-                    if new_key not in order:
-                        order.append(new_key)
-
-                _write_current_box(wid, target_box)
-                _write_config_value(Config.PINNED_BLOCK_ORDER, order)
-                _refresh_after_chart_box_move()
-
-            def _do_chart_box_up(_=None, wid=widget_def["id"]):
-                cur = self._get_widget_def_by_id(wid) or {}
-                cur_box = current_box_num(cur)
-                defs = WidgetRegistry.get_all()
-                order = _live_section_order(defs)
-                cur_key = current_section_key_fn(cur_box)
-                if cur_key not in order:
-                    order.append(cur_key)
-                idx = order.index(cur_key)
-                if idx <= 0:
-                    return
-
-                target_box = None
-                for key in reversed(order[:idx]):
-                    base, box = parse_section_key(key)
-                    if base == current_family:
-                        target_box = _nonneg_int(box, 0)
-                        break
-                if target_box is None:
-                    target_box = next_box_id(defs)
-                    new_key = current_section_key_fn(target_box)
-                    if new_key not in order:
-                        order.insert(idx - 1, new_key)
-                if target_box == cur_box:
-                    return
-
-                _write_current_box(wid, target_box)
-                _write_config_value(Config.PINNED_BLOCK_ORDER, order)
-                _refresh_after_chart_box_move()
-
-            self._add_persistent_action(position_menu, '↓ ' + tr('Move to next box/section'), _do_chart_box_down)
-            self._add_persistent_action(position_menu, '↑ ' + tr('Move to previous box/section'), _do_chart_box_up)
-
-            _cur_box = current_box_num(self._get_widget_def_by_id(widget_def["id"]) or widget_def)
-            if _cur_box != 0:
-                def _do_chart_box_reset(_=None, wid=widget_def["id"]):
-                    _write_current_box(wid, 0)
-                    _refresh_after_chart_box_move()
-
-                self._add_persistent_action(position_menu, "\u21ba " + tr("Return to {box}", box=main_box_label), _do_chart_box_reset)
-
-        block_actions = []
-        all_defs_for_blocks = WidgetRegistry.get_all()
-        stat_boxes, chart_boxes, text_boxes = _collect_boxes_from_defs(all_defs_for_blocks)
-
-        available_sections = [stats_section_key(box_id) for box_id in stat_boxes]
-        available_sections.extend(charts_section_key(box_id) for box_id in chart_boxes)
-        available_sections.extend(texts_section_key(box_id) for box_id in text_boxes)
-
-        if len(available_sections) >= 2:
-            raw_block_order = cfg.get(Config.PINNED_BLOCK_ORDER, None)
-            full_order = normalize_block_order(
-                raw_block_order,
-                stats_boxes=stat_boxes,
-                chart_boxes=chart_boxes,
-                text_boxes=text_boxes,
-            )
-            working_order = [section for section in full_order if section in available_sections]
-            current_block = block_for_widget(widget_def)
-
-            if current_block in working_order:
-                current_index = working_order.index(current_block)
-                current_label = section_label(current_block)
-
-                def _persist_block_order(new_working_order):
-                    _write_config_value(Config.PINNED_BLOCK_ORDER, list(new_working_order))
-                    if SHOW_POSITION_MENU:
-                        _refresh_and_reopen_menu(reopen_position=True)
-                        return
-                    self.manager._last_state = None
-                    self.manager._last_widget_set = None
+                def _set_axis_anim(_=False, value=ax_key):
+                    _write_config_value(Config.CHART_AXIS_ANIM, value)
                     self.manager.refresh(clear_cache=False)
 
-                def _load_working_order():
-                    live_cfg = (self.manager._config_manager.config or {})
-                    live_full = normalize_block_order(
-                        live_cfg.get(Config.PINNED_BLOCK_ORDER, None),
-                        stats_boxes=stat_boxes,
-                        chart_boxes=chart_boxes,
-                        text_boxes=text_boxes,
-                    )
-                    return [section for section in live_full if section in available_sections]
+                ax_act.triggered.connect(_set_axis_anim)
+                ax_menu.addAction(ax_act)
 
-                position_menu.addSeparator()
-                if current_index > 0:
-                    def _move_block_up(_=None):
-                        updated = _load_working_order()
-                        if current_block not in updated:
-                            return
-                        idx = updated.index(current_block)
-                        if idx <= 0:
-                            return
-                        updated[idx - 1], updated[idx] = updated[idx], updated[idx - 1]
-                        _persist_block_order(updated)
-
-                    if SHOW_POSITION_MENU:
-                        self._add_persistent_action(position_menu, "\u2191 " + tr("Move {section} up", section=current_label), _move_block_up)
-                    else:
-                        block_actions.append(("\u2191 " + tr("Move {section} up", section=current_label), _move_block_up))
-
-                if current_index < len(working_order) - 1:
-                    def _move_block_down(_=None):
-                        updated = _load_working_order()
-                        if current_block not in updated:
-                            return
-                        idx = updated.index(current_block)
-                        if idx >= len(updated) - 1:
-                            return
-                        updated[idx + 1], updated[idx] = updated[idx], updated[idx + 1]
-                        _persist_block_order(updated)
-
-                    if SHOW_POSITION_MENU:
-                        self._add_persistent_action(position_menu, "\u2193 " + tr("Move {section} down", section=current_label), _move_block_down)
-                    else:
-                        block_actions.append(("\u2193 " + tr("Move {section} down", section=current_label), _move_block_down))
-
-                default_order = normalize_block_order(
-                    None,
-                    stats_boxes=stat_boxes,
-                    chart_boxes=chart_boxes,
-                    text_boxes=text_boxes,
-                )
-                if working_order != default_order:
-                    def _reset_block_order(_=None):
-                        _write_config_value(Config.PINNED_BLOCK_ORDER, default_order)
-                        _refresh_and_reopen_menu(reopen_position=True)
-
-                    self._add_persistent_action(position_menu, '↺ ' + tr('Reset section order'), _reset_block_order)
-
-        for label, fn in (block_actions if SHOW_BOX_MOVE_ENTRIES else []):
-            act = QAction(label, menu)
-            act.triggered.connect(lambda _=False, f=fn: f())
-            menu.addAction(act)
         menu.addSeparator()
         remove_action = QAction(tr("Remove from main menu"), menu)
         remove_action.setIcon(get_svg_icon("trash-2", size=14, context_ref=menu))
@@ -907,20 +618,5 @@ class PinnedContextMenu:
             reset_size_act.setIcon(get_svg_icon("maximize", size=16, context_ref=menu))
             reset_size_act.triggered.connect(lambda: self.manager._reset_widget_size(widget_def["id"]))
             menu.addAction(reset_size_act)
-
-        if reopen_position_menu and position_menu is not None:
-            def _open_position_submenu():
-                try:
-                    action = position_menu.menuAction()
-                    if action is None:
-                        return
-                    menu.setActiveAction(action)
-                    rect = menu.actionGeometry(action)
-                    anchor = menu.mapToGlobal(rect.topRight()) if rect.isValid() else global_pos
-                    position_menu.popup(anchor)
-                except Exception:
-                    log_swallowed()
-
-            QTimer.singleShot(0, _open_position_submenu)
 
         menu.exec(global_pos)

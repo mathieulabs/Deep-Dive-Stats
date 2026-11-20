@@ -6,9 +6,6 @@ import importlib
 # every Anki startup, because main_menu.manager lives under this package. Names are imported on
 # first use instead.
 _LAZY_IMPORTS = {
-    "DetailedStatsDialog": (".dialog", "DetailedStatsDialog"),
-    "DetailedStatsConfigDialog": (".ui.config", "DetailedStatsConfigDialog"),
-    "DeckSettingsDialog": (".ui.config", "DeckSettingsDialog"),
 }
 
 
@@ -27,16 +24,5 @@ def __dir__():
     return sorted(set(globals().keys()) | set(_LAZY_IMPORTS.keys()))
 
 
-def open_details_dialog():
-    """Open Details via overview singleton flow."""
-    from ..startup import on_show_details
-
-    return on_show_details()
-
-
 __all__ = [
-    "DeckSettingsDialog",
-    "DetailedStatsConfigDialog",
-    "DetailedStatsDialog",
-    "open_details_dialog",
 ]

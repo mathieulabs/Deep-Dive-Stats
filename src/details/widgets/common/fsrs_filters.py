@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from ...animations.chart_policy import local_chart_animation_batch
+from contextlib import nullcontext
 from ....i18n import num, tr, tr_n, N_, tr_name
+
+local_chart_animation_batch = lambda *_a, **_k: nullcontext()
 
 DEFAULT_FSRS_FILTER_IDX = 2
 FSRS_FILTER_MODES = ("1_month", "50_percent", "95_percent", "all")
@@ -82,8 +84,48 @@ def normalize_fsrs_filter_modes(modes):
     return tuple(sorted(values, key=_fsrs_mode_sort_key))
 
 
+# The charts with these buttons share one list of them, in the Deep Dive and on the main screen (Future Due has
+# buttons of its own kind, days ahead): the one chosen stays each chart's own.
+SHARED_FILTER_TYPES = ("stability", "review_intervals", "interval_load", "lapse_distribution", "review_distribution",
+                       "learning_steps", "time_distribution", "interval_history", "stability_history")
+
+
+def shared_fsrs_filter_modes(conf=None):
+    """The Range Buttons the charts share (Config.SHARED_FILTER_MODES, saved by the widget settings' Save). Before
+    any was saved there, the first list a chart was given (its Deep Dive settings, then a pinned chart's), so a list
+    made for one chart is the one they all show; None: none was ever given (the defaults)."""
+    try:
+        if conf is None:
+            from .... import config as _c
+
+            conf = _c.read_config_dict()
+            # a settings window open: the config it shows (set_live_config_override) may not hold it; the saved one
+            if _c._LIVE_CONFIG_OVERRIDE[0] is not None and not conf.get("Shared_Filter_Modes"):
+                conf = _c.addon_config().config
+        shared = conf.get("Shared_Filter_Modes")
+        if shared:
+            return shared
+        sets = conf.get("Deep_Dive_Widget_Settings") or {}
+        for t in SHARED_FILTER_TYPES:
+            for key in (t + "_g", t):
+                sec = sets.get(key)
+                own = sec.get("filter_modes") if isinstance(sec, dict) else None
+                if own:
+                    return own
+        for d in conf.get("Pinned_Widgets") or ():
+            if isinstance(d, dict) and d.get("type") in SHARED_FILTER_TYPES and d.get("filter_modes"):
+                return d["filter_modes"]
+    except Exception:
+        pass
+    return None
+
+
 def resolve_fsrs_filters(modes=None):
-    """Return (modes, short_labels, long_labels) for the radio buttons."""
+    """Return (modes, short_labels, long_labels) for the radio buttons: the list the charts share
+    (shared_fsrs_filter_modes), else the one given."""
+    shared = shared_fsrs_filter_modes()
+    if shared:
+        modes = shared
     resolved = normalize_fsrs_filter_modes(modes)
     return resolved, tuple(fsrs_mode_labels(m)[1] for m in resolved), tuple(fsrs_mode_labels(m)[0] for m in resolved)
 
@@ -105,14 +147,6 @@ def clamp_fsrs_filter_idx(idx, default_idx=DEFAULT_FSRS_FILTER_IDX, count=len(FS
 
 def get_fsrs_filter_mode(idx, default_idx=DEFAULT_FSRS_FILTER_IDX, modes=FSRS_FILTER_MODES):
     return modes[clamp_fsrs_filter_idx(idx, default_idx=default_idx, count=len(modes))]
-
-
-def get_chart_fsrs_filter_mode(chart):
-    for attr in ("filter_mode", "last_filter_mode"):
-        value = getattr(chart, attr, None)
-        if value is not None:
-            return str(value)
-    return None
 
 
 def resolve_fsrs_filter_choice(idx, default_idx=None, modes=FSRS_FILTER_MODES):
@@ -206,24 +240,3 @@ def resolve_fsrs_filter_max_days(
     return int(max_days)
 
 
-def create_fsrs_filter_group(
-    chart,
-    *,
-    labels,
-    resolved_idx,
-    make_radio_group,
-    parent=None,
-    on_idx_applied=None,
-    default_idx=DEFAULT_FSRS_FILTER_IDX,
-    modes=FSRS_FILTER_MODES,
-):
-    def _on_filter_change(idx):
-        next_mode = get_fsrs_filter_mode(idx, default_idx=default_idx, modes=modes)
-        if get_chart_fsrs_filter_mode(chart) == next_mode:
-            return
-        with local_chart_animation_batch(chart):
-            chart.set_view_filter(next_mode, transition_mode="timespan")
-        if callable(on_idx_applied):
-            on_idx_applied(idx)
-
-    return make_radio_group(list(labels), resolved_idx, _on_filter_change, parent)

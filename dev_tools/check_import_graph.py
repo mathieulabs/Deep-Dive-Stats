@@ -209,20 +209,8 @@ def main():
 
     check("addon startup (register_hooks)", lambda: (spec.loader.exec_module(module), None)[1])
     check(
-        "lazy DetailedStatsDialog import",
-        lambda: sys.modules[f"{module_name}.src.details"].DetailedStatsDialog,
-    )
-    check(
-        "lazy chart widget import (ActivityChart)",
-        lambda: sys.modules[f"{module_name}.src.details.widgets"].ActivityChart,
-    )
-    check(
         "history_cache import (the exact path that crashed on sync_did_finish)",
         lambda: importlib.import_module(f"{module_name}.src.details.logic.history_cache").GlobalHistoryCache,
-    )
-    check(
-        "settings dialog import",
-        lambda: importlib.import_module(f"{module_name}.src.details.ui.config").DetailedStatsConfigDialog,
     )
 
     def import_every_module():

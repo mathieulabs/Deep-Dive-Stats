@@ -11,7 +11,6 @@ TEXT_WIDGET_DEFAULT_TEMPLATE = '<span style=" font-size:11pt;">' + TEXT_WIDGET_D
 
 class Config:
     INCLUDE_DELETED_CARDS = 'Include_Deleted_Cards'
-    DECIMAL_TIME = 'Decimal_Time'
     EXCLUDED_DECKS = 'Excluded_Decks'
     EXCLUDED_DATES = 'Excluded_Dates'
     DECK_COLORS = "Deck_Colors"
@@ -22,13 +21,15 @@ class Config:
     DETAILS_TABS_DATA = 'detailsTabsData'
     DETAILS_VIEW_MODE = 'detailsViewMode'
     SPARKLINE_PRECISION = 'sparklinePrecision'
-    RETENTION_SPARKLINE = 'retentionSparkline'
     SHOW_BUTTONS_DIST_VISUAL = 'Show_Buttons_Dist_Visual'
     RETENTION_VISUAL_ALL = 'Retention_Visual_All'
     RETENTION_VISUAL_YOUNG = 'Retention_Visual_Young'
     RETENTION_VISUAL_MATURE = 'Retention_Visual_Mature'
     GLOBAL_ROW_HEIGHT = 'Global_Row_Height'
     TABLE_ZEBRA = 'Table_Zebra'
+    # the deck table's columns, the same for every time span
+    TABLE_COLUMNS = 'Table_Columns'
+    TABLE_SHOW_COUNTS = 'Table_Show_Counts'
     SHOW_ACTIVE_DAYS = 'Show_Active_Days'
     DASH_SHOW_RET_ALL = 'Dash_Show_Ret_All'
     DASH_SHOW_RET_YOUNG = 'Dash_Show_Ret_Young'
@@ -42,6 +43,9 @@ class Config:
     DASH_SHOW_LONGEST_STREAK = 'Dash_Show_Longest_Streak'
     DASH_SHOW_REVIEWS_PER_DAY = 'Dash_Show_Reviews_Per_Day'
     DASH_SHOW_TIME_PER_DAY = 'Dash_Show_Time_Per_Day'
+    # the same, divided by the days studied only (not every day of the period)
+    DASH_SHOW_REVIEWS_PER_ACTIVE_DAY = 'Dash_Show_Reviews_Per_Active_Day'
+    DASH_SHOW_TIME_PER_ACTIVE_DAY = 'Dash_Show_Time_Per_Active_Day'
     DASH_SHOW_RET_TRUE = 'Dash_Show_Ret_True'
     DASH_SHOW_REV_YOUNG = 'Dash_Show_Rev_Young'
     DASH_SHOW_REV_MATURE = 'Dash_Show_Rev_Mature'
@@ -68,10 +72,6 @@ class Config:
     DEEP_DIVE_SHOW_RET_MAT = 'Deep_Dive_Show_Ret_Mature'
     DEEP_DIVE_SHOW_STREAK = 'Deep_Dive_Show_Streak'
     DEEP_DIVE_SHOW_ACTIVE_DAYS = 'Deep_Dive_Show_Active_Days'
-    HIERARCHY_ENABLED = 'Hierarchy_Enabled'
-    DEEP_DIVE_GRID_MODE = 'Deep_Dive_Grid_Mode'
-    DEEP_DIVE_STATS_COLLAPSED = 'Deep_Dive_Stats_Collapsed'
-    DEEP_DIVE_GRID_SETTINGS = 'Deep_Dive_Grid_Settings'
     DEEP_DIVE_SHOW_BOTTOM_STATS = "Deep_Dive_Show_Bottom_Stats"
     DEEP_DIVE_SHOW_STATS = "Deep_Dive_Show_Stats"
     DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS = "Deep_Dive_Pinned_Show_Bottom_Stats"
@@ -80,11 +80,14 @@ class Config:
     DEEP_DIVE_CHART_ORDER = 'Deep_Dive_Chart_Order'
     DEEP_DIVE_EXTRA_CHARTS = 'Deep_Dive_Extra_Charts'  # charts added with "Add Chart"
     DEEP_DIVE_HIDDEN_CHARTS = 'Deep_Dive_Hidden_Charts'  # usual charts removed ("Remove")
+    # the texts of the web Deep Dive ("Add Text..."): {"text:1": {"template": "..."}}, placed in DEEP_DIVE_CHART_ORDER
+    DEEP_DIVE_TEXT_WIDGETS = 'Deep_Dive_Text_Widgets'
     DETAILS_LAYOUT_STATE = 'Details_Layout_State'
     DETAILS_TABLE_DRAWER_AUTO_CLOSE = 'Details_Table_Drawer_Auto_Close'
     DETAILS_TABLE_DRAWER_SHORTCUT = 'Details_Table_Drawer_Shortcut'
     DETAILS_TABLE_DRAWER_OPEN = 'Details_Table_Drawer_Open'
     DETAILS_TABLE_DRAWER_SIZES = 'Details_Table_Drawer_Sizes'
+    DETAILS_TABLE_SHOW = 'Details_Table_Show'  # off: the web Deep Dive has no table (charts only)
     DETAILS_TIME_TAB_INDEX = 'Details_Time_Tab_Index'
     DETAILS_DECK_TAB_INDEX = 'Details_Deck_Tab_Index'
     DETAILS_DEEP_DIVE_IDENTIFIER = 'Details_Deep_Dive_Identifier'
@@ -95,6 +98,8 @@ class Config:
     DEEP_DIVE_CHARTS_COLLAPSIBLE = 'Deep_Dive_Charts_Collapsible'
     DEEP_DIVE_FILL_HEIGHT = 'Deep_Dive_Fill_Height'
     DEEP_DIVE_SHARED_ROW_HEIGHT = 'Deep_Dive_Shared_Row_Height'
+    # the Range Buttons the distribution charts share (fsrs_filters.shared_fsrs_filter_modes), Deep Dive and pinned
+    SHARED_FILTER_MODES = 'Shared_Filter_Modes'
     SHOW_TOP_TOOLBAR_BUTTON = 'Show_Top_Toolbar_Button'
     TOOLBAR_BUTTON_STYLE = 'Toolbar_Button_Style'
     TOOLBAR_STYLE_LOGO = 'logo'
@@ -106,13 +111,16 @@ class Config:
 
     SHOW_TRENDS = 'Show_Trends'
     STATS_PRECISION = 'Stats_Precision'
-    DETAILS_SIDE_VIEW = 'Details_Side_View'
     PIE_CHART_SEPARATE_SUSPENDED = 'Pie_Chart_Separate_Suspended'
-    PIE_CHART_SHOW_DELETED = 'Pie_Chart_Show_Deleted'
     PINNED_WIDGETS = 'Pinned_Widgets'
     PINNED_GLASS = 'Pinned_Glass'
     PINNED_GLASS_INTENSITY = 'Pinned_Glass_Intensity'
     PINNED_GLASS_BLUR = 'Pinned_Glass_Blur'
+    # web pinned widgets: a soft shadow under the box (0 = none), with the blur for a glass look
+    PINNED_GLASS_SHADOW = 'Pinned_Glass_Shadow'
+    TEXT_WIDGET_GLASS_SHADOW = 'Text_Widget_Glass_Shadow'
+    HEATMAP_GLASS_SHADOW = 'Heatmap_Glass_Shadow'
+    FACECARDS_GLASS_SHADOW = 'Facecards_Glass_Shadow'
     PINNED_GLASS_BORDER = 'Pinned_Glass_Border'
     # Set once the old default box intensity (24) was raised (see ConfigManager._normalize_config).
     PINNED_GLASS_DEFAULT_RAISED = 'Pinned_Glass_Default_Raised'
@@ -126,7 +134,6 @@ class Config:
     TEXT_WIDGET_GLASS_BLUR = 'Text_Widget_Glass_Blur'
     TEXT_WIDGET_GLASS_BORDER = 'Text_Widget_Glass_Border'
     TEXT_WIDGET_HOVER_BORDER = 'Text_Widget_Hover_Border'
-    FACECARDS_GLASS = 'Facecards_Glass'
     FACECARDS_GLASS_INTENSITY = 'Facecards_Glass_Intensity'
     FACECARDS_GLASS_BLUR = 'Facecards_Glass_Blur'
     FACECARDS_GLASS_BORDER = 'Facecards_Glass_Border'
@@ -138,23 +145,25 @@ class Config:
     FACECARDS_STAT_SHADOW_INTENSITY = 'Facecards_Stat_Shadow_Intensity'
     FACECARDS_HOVER_EFFECT = 'Facecards_Hover_Effect'
     FACECARDS_INLINE_STATS = 'Facecards_Inline_Stats'
+    FACECARDS_SHOW_ICONS = 'Facecards_Show_Icons'
+    FACECARDS_ICON_POS = 'Facecards_Icon_Pos'
     DASHBOARD_SCALE = 'Dashboard_Scale'
     DASHBOARD_TITLE_SIZE = 'Dashboard_Title_Size'
     DASHBOARD_TITLE_COLOR = 'Dashboard_Title_Color'
     DASHBOARD_SHOW_GLASS = 'Dashboard_Show_Glass'
     DASHBOARD_GLASS_INTENSITY = 'Dashboard_Glass_Intensity'
-    DASHBOARD_GLASS_BLUR = 'Dashboard_Glass_Blur'
     DASHBOARD_GLASS_BORDER = 'Dashboard_Glass_Border'
     DASHBOARD_TITLE_SHADOW_INTENSITY = 'Dashboard_Title_Shadow_Intensity'
     DASHBOARD_STAT_SHADOW_INTENSITY = 'Dashboard_Stat_Shadow_Intensity'
     DASHBOARD_HOVER_EFFECT = 'Dashboard_Hover_Effect'
     DASHBOARD_INLINE_STATS = 'Dashboard_Inline_Stats'
+    DASHBOARD_SHOW_ICONS = 'Dashboard_Show_Icons'
+    DASHBOARD_ICON_POS = 'Dashboard_Icon_Pos'
     DASH_STAT_ORDER = 'Dash_Stat_Order'
     DASH_STAT_ROW_NUMS = 'Dash_Stat_Row_Nums'
     DASH_STAT_LABELS = 'Dash_Stat_Labels'
     DASH_STAT_STYLES = 'Dash_Stat_Styles'
     DASH_STAT_COLORS = 'Dash_Stat_Colors'  # {stat key: hex} picked for one Deep Dive stat card
-    LOCKED_EFFECTS = 'Locked_Effects'
     # Global Stat Colors
     COLOR_TIME = 'Color_Time'
     COLOR_AVG_TIME = 'Color_Avg_Time'
@@ -186,7 +195,6 @@ class Config:
     # Difficulty / Retrievability gradient (red to green by default)
     COLOR_GRADIENT_LOW = 'Color_Gradient_Low'
     COLOR_GRADIENT_HIGH = 'Color_Gradient_High'
-    HEATMAP_GLASS = 'Heatmap_Glass'
     HEATMAP_SHOW_GLASS = 'Heatmap_Show_Glass'
     HEATMAP_GLASS_INTENSITY = 'Heatmap_Glass_Intensity'
     HEATMAP_GLASS_BLUR = 'Heatmap_Glass_Blur'
@@ -201,7 +209,6 @@ class Config:
     HEATMAP_SHOW_FUTURE = 'Heatmap_Show_Future'
     HEATMAP_COLOR = 'Heatmap_Color'
     HEATMAP_TINTED_FUTURE = 'Heatmap_Tinted_Future'
-    HEATMAP_ROUNDED = 'Heatmap_Rounded'
     HEATMAP_MONDAY_FIRST = 'Heatmap_Monday_First'
     HEATMAP_NAV_POS = 'Heatmap_Nav_Pos'
     PINNED_BLOCK_ORDER = 'Pinned_Block_Order'
@@ -210,6 +217,10 @@ class Config:
     HEATMAP_ROUNDING = 'Heatmap_Rounding_Radius'
     HEATMAP_INTENSITY_CURVE = 'Heatmap_Intensity_Curve'
     HEATMAP_MULTI_HUE_INTENSITY = 'Heatmap_Multi_Hue_Intensity'
+    # the levels' palette (heatmap/palettes.py: '' the chosen color, a preset, 'custom') and the custom one's colors
+    HEATMAP_PALETTE = 'Heatmap_Palette'
+    HEATMAP_PALETTE_COLORS = 'Heatmap_Palette_Colors'  # the one gradient of before the saved ones
+    HEATMAP_CUSTOM_PALETTES = 'Heatmap_Custom_Palettes'  # the user's gradients: [{id, name, colors}]
     HEATMAP_METRIC = 'Heatmap_Metric'
     HEATMAP_INVERT_INTENSITY = 'Heatmap_Invert_Intensity'
     HEATMAP_CLICK_BROWSER = 'Heatmap_Click_Browser'
@@ -219,6 +230,7 @@ class Config:
     HEATMAP_SHOW_YEARS_MODE = 'Heatmap_Show_Years_Mode'  # the "all years" view (YRS)
     HEATMAP_YEARS_FOLD = 'Heatmap_Years_Fold'  # years shown before the older ones fold (0: never)
     HEATMAP_YEARS_NO_GAP = 'Heatmap_Years_No_Gap'  # all years view: no space between the years
+    HEATMAP_MONTH_GRID = 'Heatmap_Month_Grid'  # year / 365 on a narrow card: the months as a grid, not two rows
     HEATMAP_TOOLTIP_HIDDEN = 'Heatmap_Tooltip_Hidden'
     PINNED_POSITION_TOP = 'Pinned_Position_Top'
     PINNED_CHARTS_COLLAPSIBLE = 'Pinned_Charts_Collapsible'
@@ -242,13 +254,21 @@ class Config:
     CHART_BINNING_SCALE = CHART_BINNING_SCALE
     CHART_LINE_OPACITY = 'Chart_Line_Opacity'
     CHART_SHOW_GRID = 'Chart_Show_Grid'
+    # how the axis numbers move when a chart's scale changes: 'count' (they count up / down at their places) or
+    # 'slide' (round values that slide to their new heights, the old fading out, the new fading in, as Anki's charts)
+    CHART_AXIS_ANIM = 'Chart_Axis_Anim'
+    STAT_NUM_ANIM = 'Stat_Num_Anim'  # stat cards' numbers on a change: 'count' (count to the new value) or 'roll' (digits roll)
     CHART_BAR_GRADIENT = 'Chart_Bar_Gradient'
     USE_THOUSANDS_SEPARATOR = 'Use_Thousands_Separator'
     SHOW_CHART_HELP = 'Show_Chart_Help'  # the "?" next to chart titles (widgets.common.chart_help)
+    INTERACTION_MODE = 'Interaction_Mode'  # 'auto', 'desktop', or 'touch': mouse vs touch gestures & control sizing
+    # a line drawn over the edge of the running total's pale area (0 % = none, Anki's look; 100 % = a clear line)
+    CHART_TOTAL_LINE = 'Chart_Total_Line'
     ANIMATION_SCOPE = 'Animation_Scope'
-    CHART_ANIMATION_VISIBLE_THRESHOLD = 'Chart_Animation_Visible_Threshold'
     DEEP_DIVE_TRANSITION_STYLE = 'Deep_Dive_Transition_Style'  # 'morph' (each chart animates) or 'fade'
     PINNED_TRANSITION_STYLE = 'Pinned_Transition_Style'  # the same for the pinned widgets
+    DEEP_DIVE_ANIMATION_SPEED = 'Deep_Dive_Animation_Speed'  # 'slow', 'normal' or 'fast': the web charts' durations
+    PINNED_ANIMATION_SPEED = 'Pinned_Animation_Speed'  # the same for the pinned widgets
     CHART_APPEAR_ANIMATION = 'Chart_Appear_Animation'  # charts grow in when they first show
     ZOOM_ANIMATION = 'Zoom_Animation'  # the zoom glides to the new range
 
@@ -265,15 +285,15 @@ class Config:
         BROWSER_LIFETIME_STATS: False,
         SHOW_EMPTY_CHARTS: False,
         INCLUDE_DELETED_CARDS: True,
-        DECIMAL_TIME: True,
         SPARKLINE_PRECISION: False,
-        RETENTION_SPARKLINE: False,
         SHOW_BUTTONS_DIST_VISUAL: True,
         RETENTION_VISUAL_ALL: False,
         RETENTION_VISUAL_YOUNG: False,
         RETENTION_VISUAL_MATURE: False,
         GLOBAL_ROW_HEIGHT: 30,
         TABLE_ZEBRA: True,
+        TABLE_COLUMNS: None,  # None: taken from the first time span (see details/logic/tabs/columns.py)
+        TABLE_SHOW_COUNTS: None,
         SHOW_FULL_DECK_NAME: True,
         SHOW_ACTIVE_DAYS: True,
         DASH_SHOW_RET_ALL: False,
@@ -286,8 +306,10 @@ class Config:
         DASH_SHOW_STREAK: True,
         DASH_SHOW_DAYS_LEARNED: False,
         DASH_SHOW_LONGEST_STREAK: True,
-        DASH_SHOW_REVIEWS_PER_DAY: False,
+        DASH_SHOW_REVIEWS_PER_DAY: True,  # 9 cards by default: 3 over each chart of the default 3 per row
         DASH_SHOW_TIME_PER_DAY: False,
+        DASH_SHOW_REVIEWS_PER_ACTIVE_DAY: False,
+        DASH_SHOW_TIME_PER_ACTIVE_DAY: False,
         DASH_SHOW_RET_TRUE: False,
         DASH_SHOW_REV_YOUNG: False,
         DASH_SHOW_REV_MATURE: False,
@@ -314,17 +336,13 @@ class Config:
         DEEP_DIVE_SHOW_RET_MAT: True,
         DEEP_DIVE_SHOW_STREAK: False,
         DEEP_DIVE_SHOW_ACTIVE_DAYS: False,
-        HIERARCHY_ENABLED: True,
-        DEEP_DIVE_STATS_COLLAPSED: False,
-        DEEP_DIVE_SHOW_STATS: False,
-        DEEP_DIVE_SHOW_BOTTOM_STATS: True,
+        DEEP_DIVE_SHOW_STATS: True,
+        DEEP_DIVE_SHOW_BOTTOM_STATS: False,
         DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS: False,
         DEEP_DIVE_PINNED_SHOW_STATS: True,
-        DETAILS_SIDE_VIEW: False,
         SHOW_TRENDS: False,
         STATS_PRECISION: 2,
         PIE_CHART_SEPARATE_SUSPENDED: True,
-        PIE_CHART_SHOW_DELETED: False,
         # Default main-screen layout for new profiles: stat cards on top, the
         # heatmap under them (no title), a text line, then the charts.
         PINNED_WIDGETS: [
@@ -354,18 +372,21 @@ class Config:
         PINNED_GLASS: True,
         # 54: readable over a background image (other add-ons); on Anki's plain background
         # it looks close to a faint box, the card being near its color.
-        PINNED_GLASS_INTENSITY: 54,
-        PINNED_GLASS_BLUR: 0,
+        PINNED_GLASS_INTENSITY: 90,  # mostly solid: readable over any background, a hint of what is behind (blurred)
+        PINNED_GLASS_BLUR: 14,  # px: what shows through the box is blurred (a saved -1, the former Auto, is 14 px too)
+        PINNED_GLASS_SHADOW: 0,
+        TEXT_WIDGET_GLASS_SHADOW: 0,
+        HEATMAP_GLASS_SHADOW: 0,
+        FACECARDS_GLASS_SHADOW: 0,
         PINNED_GLASS_BORDER: 34,
-        PINNED_HOVER_BORDER: True,
+        PINNED_HOVER_BORDER: False,
         TEXT_WIDGET_SHOW_GLASS: False,
-        TEXT_WIDGET_GLASS_INTENSITY: 54,
-        TEXT_WIDGET_GLASS_BLUR: 0,
+        TEXT_WIDGET_GLASS_INTENSITY: 90,
+        TEXT_WIDGET_GLASS_BLUR: 14,  # px: what shows through the box is blurred (a saved -1, the former Auto, is 14 px too)
         TEXT_WIDGET_GLASS_BORDER: 50,
         TEXT_WIDGET_HOVER_BORDER: True,
-        FACECARDS_GLASS: True,
         FACECARDS_GLASS_INTENSITY: 6,
-        FACECARDS_GLASS_BLUR: 0,
+        FACECARDS_GLASS_BLUR: -1,  # Auto: blurred only over a background image (web)
         FACECARDS_GLASS_BORDER: 100,
         FACECARDS_SHOW_GLASS: True,
         FACECARDS_SCALE: 75,
@@ -375,22 +396,28 @@ class Config:
         FACECARDS_STAT_SHADOW_INTENSITY: 0,
         FACECARDS_HOVER_EFFECT: True,
         FACECARDS_INLINE_STATS: False,
+        FACECARDS_SHOW_ICONS: "inline",
+        FACECARDS_ICON_POS: "tl",
         DASHBOARD_SCALE: 100,
         DASHBOARD_TITLE_SIZE: 100,
         DASHBOARD_TITLE_COLOR: "",
         DASHBOARD_SHOW_GLASS: True,
         DASHBOARD_GLASS_INTENSITY: 7,
-        DASHBOARD_GLASS_BLUR: 0,
         DASHBOARD_GLASS_BORDER: 100,
         DASHBOARD_TITLE_SHADOW_INTENSITY: 0,
         DASHBOARD_STAT_SHADOW_INTENSITY: 0,
         DASHBOARD_HOVER_EFFECT: True,
         DASHBOARD_INLINE_STATS: False,
+        DASHBOARD_SHOW_ICONS: "inline",
+        DASHBOARD_ICON_POS: "tl",
         DASH_STAT_ORDER: [
-            "Dash_Show_Time", "Dash_Show_Reviews", "Dash_Show_Ret_All", "Dash_Show_Ret_Young",
+            # shown by default, in threes over the 3 charts of a row: study (time, reviews, reviews a day),
+            # retention and speed, streaks and days
+            "Dash_Show_Time", "Dash_Show_Reviews", "Dash_Show_Reviews_Per_Day", "Dash_Show_Ret_All", "Dash_Show_Ret_Young",
             "Dash_Show_Ret_Mature", "Dash_Show_Ret_True", "Dash_Show_Avg_Time", "Dash_Show_Streak",
             "Dash_Show_Longest_Streak", "Dash_Show_Days_Learned", "Dash_Show_Active_Days",
-            "Dash_Show_Reviews_Per_Day", "Dash_Show_Time_Per_Day", "Dash_Show_Rev_Young", "Dash_Show_Rev_Mature",
+            "Dash_Show_Time_Per_Day", "Dash_Show_Reviews_Per_Active_Day", "Dash_Show_Time_Per_Active_Day",
+            "Dash_Show_Rev_Young", "Dash_Show_Rev_Mature",
             "Dash_Show_Again", "Dash_Show_Best_Day", "Dash_Show_Cards_Total", "Dash_Show_Cards_New",
             "Dash_Show_Cards_Learning", "Dash_Show_Cards_Young", "Dash_Show_Cards_Mature",
             "Dash_Show_Cards_Suspended", "Dash_Show_Cards_Buried", "Dash_Show_Cards_Deleted",
@@ -401,7 +428,6 @@ class Config:
         DASH_STAT_LABELS: {},
         DASH_STAT_STYLES: {},
         DASH_STAT_COLORS: {},
-        LOCKED_EFFECTS: ['Dash_Show_Streak', 'Dash_Show_Active_Days'],
         COLOR_TIME: '#8ab4f8',
         COLOR_AVG_TIME: '#06b6d4',
         COLOR_REVIEWS: '#FF9800',
@@ -416,10 +442,9 @@ class Config:
         COLOR_NEW: '#1976d2',
         COLOR_SUSPENDED: '#fdd835',
         COLOR_BURIED: '#9e9e9e',
-        HEATMAP_GLASS: False,
         HEATMAP_SHOW_GLASS: False,
         HEATMAP_GLASS_INTENSITY: 21,
-        HEATMAP_GLASS_BLUR: 0,
+        HEATMAP_GLASS_BLUR: 14,  # px: what shows through the box is blurred (a saved -1, the former Auto, is 14 px too)
         HEATMAP_GLASS_BORDER: 0,
         HEATMAP_HIDE_TITLE: True,
         HEATMAP_HIDE_LABELS: True,
@@ -435,6 +460,9 @@ class Config:
         HEATMAP_ROUNDING: 30,
         HEATMAP_INTENSITY_CURVE: 100,
         HEATMAP_MULTI_HUE_INTENSITY: False,
+        HEATMAP_PALETTE: '',
+        HEATMAP_PALETTE_COLORS: ['#6366f1', '#22c55e', '#f59e0b'],
+        HEATMAP_CUSTOM_PALETTES: [],
         HEATMAP_METRIC: 'reviews',
         HEATMAP_INVERT_INTENSITY: False,
         HEATMAP_CLICK_BROWSER: True,
@@ -444,6 +472,7 @@ class Config:
         HEATMAP_SHOW_YEARS_MODE: True,
         HEATMAP_YEARS_FOLD: 3,
         HEATMAP_YEARS_NO_GAP: False,
+        HEATMAP_MONTH_GRID: False,
         HEATMAP_TOOLTIP_HIDDEN: [],
         PINNED_BLOCK_ORDER: ["stats:0", "charts:1", "texts:0", "charts:0"],
         PINNED_POSITION_TOP: True,
@@ -463,11 +492,8 @@ class Config:
         PINNED_THEME_CUSTOM_COLORS: {},
         PINNED_THEME_CUSTOM_BASE_MODE: None,
         HEATMAP_TINTED_FUTURE: False,
-        HEATMAP_ROUNDED: False,
         HEATMAP_MONDAY_FIRST: False,
         HEATMAP_NAV_POS: "top_right",
-        DEEP_DIVE_GRID_MODE: True,
-        DEEP_DIVE_GRID_SETTINGS: {},
         DEEP_DIVE_GRID_COLUMNS: 3,
         DEEP_DIVE_CHART_ORDER: [
             "activity", "retention", "heatmap", "future_due", "distribution",
@@ -476,6 +502,7 @@ class Config:
         ],
         DEEP_DIVE_EXTRA_CHARTS: [],
         DEEP_DIVE_HIDDEN_CHARTS: [],
+        DEEP_DIVE_TEXT_WIDGETS: {},
         DEEP_DIVE_WIDGET_SETTINGS: {
             "heatmap_g": {"heatmap_mode": "365", "col_span": 1},
             "future_due_g": {"time_span_idx": 2, "show_backlog": True},
@@ -499,13 +526,18 @@ class Config:
         CHART_BINNING_SCALE: 100,
         CHART_LINE_OPACITY: 80,
         CHART_SHOW_GRID: True,
+        CHART_AXIS_ANIM: 'slide',  # the axis values slide as in Anki's charts; 'count': they count to the new scale
+        STAT_NUM_ANIM: 'count',
         CHART_BAR_GRADIENT: 43,
         USE_THOUSANDS_SEPARATOR: True,
         SHOW_CHART_HELP: True,
+        INTERACTION_MODE: 'auto',
+        CHART_TOTAL_LINE: 0,
         ANIMATION_SCOPE: 'all',
-        CHART_ANIMATION_VISIBLE_THRESHOLD: 6,
         DEEP_DIVE_TRANSITION_STYLE: 'morph',
         PINNED_TRANSITION_STYLE: 'morph',
+        DEEP_DIVE_ANIMATION_SPEED: 'normal',
+        PINNED_ANIMATION_SPEED: 'normal',
         CHART_APPEAR_ANIMATION: True,
         ZOOM_ANIMATION: True,
         DETAILS_LAYOUT_STATE: 1,
@@ -513,6 +545,7 @@ class Config:
         DETAILS_TABLE_DRAWER_SHORTCUT: 'T',
         DETAILS_TABLE_DRAWER_OPEN: False,
         DETAILS_TABLE_DRAWER_SIZES: [0, 0],
+        DETAILS_TABLE_SHOW: True,
         DETAILS_TIME_TAB_INDEX: 0,
         DETAILS_DECK_TAB_INDEX: 0,
         DETAILS_DEEP_DIVE_IDENTIFIER: None,

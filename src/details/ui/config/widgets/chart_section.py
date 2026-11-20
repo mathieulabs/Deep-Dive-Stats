@@ -30,6 +30,38 @@ def _hover_border_key(dialog):
     return Config.PINNED_HOVER_BORDER
 
 
+_TOTAL_TYPES = ("activity", "added", "hourly", "future_due", "review_intervals", "stability", "due_today")
+
+
+def has_total_curve(wtype):
+    """A chart drawing a running total (the pale area of Total / Average Lines), so a Total Line of its own."""
+    if wtype in _TOTAL_TYPES:
+        return True
+    try:
+        from ....widgets.charts.daily_metrics import BY_TYPE
+
+        m = BY_TYPE.get(wtype)
+        return bool(m is not None and m.cumulative and m.unit not in ("level", "seconds"))
+    except Exception:
+        return False
+
+
+def total_line_global(dialog):
+    """Settings > General > Chart Style's Total Line (0 by default): what a chart without its own follows. A Deep
+    Dive chart's dialog edits a small style dict, the whole config is its theme_config."""
+    for conf in (getattr(dialog, "addon_config", None), getattr(dialog, "theme_config", None)):
+        try:
+            v = conf.get(Config.CHART_TOTAL_LINE) if conf is not None else None
+        except Exception:
+            v = None
+        if v is not None:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                pass
+    return 0
+
+
 def setup_chart_settings(dialog, *, include_chart_appearance: bool = True) -> None:
     show_key, intensity_key, border_key = _box_style_keys(dialog)
     group = QGroupBox(tr("Background Box Settings"))
@@ -39,22 +71,29 @@ def setup_chart_settings(dialog, *, include_chart_appearance: bool = True) -> No
     dialog.glass_cb.setChecked(dialog.addon_config.get(show_key, True))
     layout.addWidget(dialog.glass_cb)
 
-    if dialog.type == "activity":
+    def _activity_lines(lay):
+        # the chart's lines: with the chart's look (they sat in the box's settings)
         dialog.avg_cb = QCheckBox(tr("Show Average Line"))
         dialog.avg_cb.setChecked(dialog.widget_def.get("show_average", True))
-        layout.addWidget(dialog.avg_cb)
-
+        lay.addWidget(dialog.avg_cb)
         dialog.cum_cb = QCheckBox(tr("Show Cumulative Line"))
         dialog.cum_cb.setChecked(dialog.widget_def.get("show_cumulative", True))
-        layout.addWidget(dialog.cum_cb)
+        lay.addWidget(dialog.cum_cb)
+
+    if dialog.type == "activity" and not include_chart_appearance:
+        _activity_lines(layout)
+
+    from .web_glass import web_preview_on
 
     dialog.int_slider = SettingsSlider(
-        tr("Background Intensity"),
+        tr("Background Opacity") if web_preview_on(dialog) else tr("Background Intensity"),
         dialog.addon_config.get(intensity_key, Config.DEFAULT_CONFIG[intensity_key]),
         0,
         100,
         suffix="%",
     )
+    if web_preview_on(dialog):
+        dialog.int_slider.setToolTip(tr("How much the box covers what is behind it: 0% see-through, 100% solid."))
     layout.addWidget(dialog.int_slider)
 
     dialog.border_slider = SettingsSlider(
@@ -66,10 +105,19 @@ def setup_chart_settings(dialog, *, include_chart_appearance: bool = True) -> No
     )
     layout.addWidget(dialog.border_slider)
 
+    # The web pinned widgets only (frosted glass, shadow): web_glass.py
+    from .web_glass import add_web_glass
+
+    if getattr(dialog, "type", None) == "text_label":
+        add_web_glass(dialog, layout, "", Config.TEXT_WIDGET_GLASS_BLUR, Config.TEXT_WIDGET_GLASS_SHADOW)
+    else:
+        add_web_glass(dialog, layout, "", Config.PINNED_GLASS_BLUR, Config.PINNED_GLASS_SHADOW)
+
     # Like the stat cards' "Hover Effect": the border brightens on hover unless off.
     dialog.hover_border_cb = QCheckBox(tr("Show Hover Border"))
     dialog.hover_border_cb.setToolTip(tr("Brighten the box border when the mouse is over it."))
-    dialog.hover_border_cb.setChecked(dialog.addon_config.get(_hover_border_key(dialog), True))
+    _hk = _hover_border_key(dialog)
+    dialog.hover_border_cb.setChecked(bool(dialog.addon_config.get(_hk, Config.DEFAULT_CONFIG.get(_hk, False))))
     layout.addWidget(dialog.hover_border_cb)
     dialog.content_layout.addWidget(group)
 
@@ -87,8 +135,10 @@ def setup_chart_settings(dialog, *, include_chart_appearance: bool = True) -> No
             suffix="%",
         )
         appearance_layout.addWidget(dialog.chart_opacity_slider)
+        if dialog.type == "activity":
+            _activity_lines(appearance_layout)
 
-        if dialog.type == "card_counts":
+        if dialog.type in ("card_counts", "todays_retention"):
             dialog.show_legend_cb = QCheckBox(tr("Show Legend"))
             dialog.show_legend_cb.setToolTip(tr("The list of card types with their counts, on the right of the donut. Off keeps only the donut."))
             dialog.show_legend_cb.setChecked(bool(dialog.widget_def.get("show_legend", True)))
@@ -128,6 +178,17 @@ def setup_chart_settings(dialog, *, include_chart_appearance: bool = True) -> No
                 suffix="%",
             )
             appearance_layout.addWidget(dialog.line_opacity_slider)
+            if has_total_curve(dialog.type):
+                # a clear line over the edge of the total's pale area (Settings > General > Chart Style's, or its own)
+                dialog.total_line_slider = SettingsSlider(
+                    tr("Total Line"),
+                    dialog.widget_def.get("total_line", total_line_global(dialog)),
+                    0,
+                    100,
+                    suffix="%",
+                )
+                dialog.total_line_slider.setToolTip(tr("A line over the edge of the Total area. 0% = no line (Anki's look), 100% = a clear line."))
+                appearance_layout.addWidget(dialog.total_line_slider)
             dialog.bar_gradient_slider = SettingsSlider(
                 tr("Bar Gradient"),
                 dialog.widget_def.get("bar_gradient", _global_style("Chart_Bar_Gradient")),
@@ -165,7 +226,8 @@ def setup_chart_settings(dialog, *, include_chart_appearance: bool = True) -> No
 
         # (Interval Load and the card history charts have the same buttons as Review Intervals.)
         if dialog.type in ("future_due", "stability", "review_intervals", "interval_load",
-                           "lapse_distribution", "review_distribution", "learning_steps"):
+                           "lapse_distribution", "review_distribution", "learning_steps", "time_distribution", "interval_history",
+                           "stability_history"):
             # Which four radio buttons the chart header shows.
             if dialog.type == "future_due":
                 from ....widgets.common.future_due_filters import FUTURE_DUE_DAY_CHOICES, normalize_future_due_days

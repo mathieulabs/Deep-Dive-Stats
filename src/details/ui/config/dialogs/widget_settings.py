@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 
-import copy
-from aqt import mw
 from aqt.qt import (
     QDialog,
     QVBoxLayout,
@@ -23,7 +21,7 @@ from aqt.qt import (
 from aqt.theme import theme_manager
 from ... import Config
 from ....logic.logger import log_swallowed
-from ....widgets.stats_cards.logic.model import get_stat_card_default_title
+from ....logic.stat_cards import get_stat_card_default_title
 from ...theme.icons import get_svg_icon
 from ...theme import get_settings_dialog_style, get_theme_palette, get_theme_effective_is_dark
 from ..widgets.persistence_keys import (
@@ -51,8 +49,29 @@ from ..widgets.label_defaults import (
 from ..widgets.save_persistence import persist_widget_settings
 from ..shared import apply_standard_dialog_sizing, clamp_dialog_height, clamp_dialog_width, install_no_wheel_filters, show_when_painted
 from .....qss import set_qss
-from .....config import ConfigManager, set_live_config_override
+from .....config import set_live_config_override
+from ....logic import widget_settings_state as _state
 from .....i18n import tr, tr_name, upper
+
+# Set by the web interface (web_ui/widget_settings.install): opens a widget's settings as its web page, or gives
+# None for the Qt dialog.
+_opener = None
+
+
+def widget_settings_dialog(widget_def, parent=None, global_config=None, local_config=None, theme_config=None):
+    """A widget's settings, to exec() (True once saved): the web page when the web interface draws them, else the Qt
+    dialog."""
+    kw = dict(global_config=global_config, local_config=local_config, theme_config=theme_config)
+    if _opener is not None:
+        try:
+            got = _opener(widget_def, parent, **kw)
+        except Exception:
+            log_swallowed()
+            got = None
+        if got is not None:
+            return got
+    return WidgetSettingsDialog(widget_def, parent=parent, **kw)
+
 
 class WidgetSettingsDialog(QDialog):
     # Set just before opening one (the folded range buttons' "Edit Buttons..."): the part of
@@ -72,83 +91,8 @@ class WidgetSettingsDialog(QDialog):
 
     def __init__(self, widget_def, parent=None, global_config=None, local_config=None, theme_config=None):
         super().__init__(parent)
-        self.widget_def = widget_def
-        self.widget_id = widget_def.get("id")
-        self.type = widget_def.get("type")
-
-        if global_config is not None:
-             self.global_config = global_config
-        else:
-             self.global_config = ConfigManager(mw).config
-
-        # Local config defaults to the widget definition
-        self.local_config = local_config if local_config is not None else self.widget_def
-
-        self.is_unlinked = self.local_config.get("use_custom_style", False)
-        self.is_grid = widget_def.get("is_grid", False)
-
-        self.addon_config = self.local_config if self.is_unlinked else self.global_config
-
-        # Theme source can differ from style source (e.g. Deep Dive grid widget settings
-        # stores style overrides in a compact dict). Keep a full config dict for theming.
-        self.theme_config = theme_config if isinstance(theme_config, dict) else None
-        if self.theme_config is None:
-            p = parent
-            while p is not None:
-                cfg_obj = getattr(p, "addon_config", None)
-                cfg_dict = getattr(cfg_obj, "config", None)
-                if isinstance(cfg_dict, dict):
-                    self.theme_config = cfg_dict
-                    break
-                if isinstance(cfg_obj, dict):
-                    self.theme_config = cfg_obj
-                    break
-                p = p.parentWidget() if hasattr(p, "parentWidget") else None
-        if self.theme_config is None and isinstance(self.global_config, dict):
-            self.theme_config = self.global_config
-        # Deep Dive heatmap: the chart reads the top-level config when the compact
-        # grid style has no value, so show those values in the dialog too.
-        if (
-            self.is_grid
-            and widget_def.get("type") == "heatmap"
-            and isinstance(self.theme_config, dict)
-            and self.theme_config is not self.global_config
-            and isinstance(self.global_config, dict)
-        ):
-            for _k, _v in self.theme_config.items():
-                if isinstance(_k, str) and _k.startswith("Heatmap_") and _k not in self.global_config:
-                    self.global_config[_k] = _v
-        # Opened from a pinned widget: use the pinned theme, which can differ
-        # from the Deep Dive one.
-        if theme_config is None and isinstance(self.theme_config, dict):
-            try:
-                from ....widgets.chart_utils.theme import get_context_theme_config
-
-                self.theme_config = get_context_theme_config(parent, self.theme_config)
-            except Exception:
-                log_swallowed()
-
-        self.is_dashboard_context = False
-        if hasattr(parent, "is_pinned") and not parent.is_pinned:
-            self.is_dashboard_context = True
-        elif hasattr(parent, "cards"):
-            try:
-                cards = list(getattr(parent, "cards", []) or [])
-                if cards and not any(bool(getattr(c, "is_pinned", False)) for c in cards):
-                    self.is_dashboard_context = True
-            except Exception:
-                log_swallowed()
-
-        # Pinned mode when global_config holds Pinned_Widgets. The dashboard context stays isolated from pinned persistence.
-        self.is_pinned_mode = ("Pinned_Widgets" in self.global_config) and not self.is_dashboard_context
-
-        # Charts re-read their colours from the config while this dialog is
-        # open; let them see the unsaved edits (see read_config_dict).
-        set_live_config_override(self.live_config())
-
-        self._backup_global = copy.deepcopy(self.global_config)
-        self._backup_local = copy.deepcopy(self.local_config)
-        self._backup_unlinked = self.is_unlinked
+        # which configs the settings live in, their Cancel backup (shared with the web page, no window)
+        _state.setup(self, widget_def, parent, global_config, local_config, theme_config)
 
         # Debounce timer for live updates
         self.update_timer = QTimer(self)
@@ -156,6 +100,9 @@ class WidgetSettingsDialog(QDialog):
         self.update_timer.timeout.connect(self.apply_live_changes)
 
         self.setWindowTitle(tr("Configure Widget: {name}", name=self._get_default_label()))
+        from .....window_icon import addon_icon
+
+        addon_icon(self)
 
         apply_standard_dialog_sizing(self, min_width=500)
         show_when_painted(self)
@@ -260,14 +207,27 @@ class WidgetSettingsDialog(QDialog):
             self._setup_heatmap_settings()
         else:
             self._setup_chart_settings()
-        # Colors right under General: what people look for first.
+        # Under General: the background box (opacity, blur: what people change first over a background image),
+        # then the colors
+        from aqt.qt import QGroupBox as _QGB
         from ..widgets.widget_colors import build_widget_color_section
 
+        general = getattr(self, "_general_group", None)
+        at = self.content_layout.indexOf(general) + 1 if general is not None else 0
+        box_titles = (tr("Background Box Settings"), tr("Background Box Style"))
+        box = None
+        for i in range(self.content_layout.count()):
+            w = self.content_layout.itemAt(i).widget()
+            if isinstance(w, _QGB) and w.title() in box_titles:
+                box = w
+                break
+        if box is not None:
+            self.content_layout.removeWidget(box)
+            self.content_layout.insertWidget(at, box)
+            at += 1
         colors_group = build_widget_color_section(self)
         if colors_group is not None:
-            general = getattr(self, "_general_group", None)
-            at = self.content_layout.indexOf(general) + 1 if general is not None else self.content_layout.count()
-            self.content_layout.insertWidget(at, colors_group)
+            self.content_layout.insertWidget(min(at, self.content_layout.count()), colors_group)
 
         self.bottom_area = QWidget(self)
         bottom_area_layout = QVBoxLayout(self.bottom_area)
@@ -275,8 +235,13 @@ class WidgetSettingsDialog(QDialog):
 
         btn_layout = QHBoxLayout()
 
-        if self.type not in ("stat_card", "text_label"):
-            _reset_handler = self._reset_heatmap if self.type == "heatmap" else self._reset_chart_settings
+        if True:  # every widget, stat cards and the text widget too
+            if self.type == "heatmap":
+                _reset_handler = self._reset_heatmap
+            elif self.type == "stat_card":
+                _reset_handler = self._reset_facecard_settings
+            else:
+                _reset_handler = self._reset_chart_settings
             self.reset_btn = QPushButton(' ' + tr('Reset to Defaults'))
             self.reset_btn.setIcon(get_svg_icon("rotate-ccw", size=14, context_ref=self))
             self.reset_btn.setMinimumHeight(28)
@@ -319,14 +284,7 @@ class WidgetSettingsDialog(QDialog):
         self.resize(final_w, final_h)
 
     def live_config(self):
-        """The config charts read while the dialog is open: the one it edits. A Deep Dive
-        chart's settings are a compact style dict without the colors (the charts read
-        those through the Deep Dive), so they keep reading the whole config then:
-        otherwise a chart rebuilt meanwhile came back in the default colors."""
-        for conf in (self.global_config, self.theme_config):
-            if isinstance(conf, dict) and (Config.PINNED_WIDGETS in conf or Config.THEME_PRESET in conf):
-                return conf
-        return None
+        return _state.live_config(self)
 
     def done(self, result):
         self.update_timer.stop()
@@ -335,14 +293,7 @@ class WidgetSettingsDialog(QDialog):
 
     def reject(self):
         """Restore original config state and refresh UI before closing."""
-        self.global_config.clear()
-        self.global_config.update(self._backup_global)
-
-        self.local_config.clear()
-        self.local_config.update(self._backup_local)
-
-        self.is_unlinked = self._backup_unlinked
-        self.addon_config = self.local_config if self.is_unlinked else self.global_config
+        _state.restore(self)
 
         # Refresh the UI widgets to the restored config first, so apply_live_changes does not read the modified values.
         try:
@@ -410,7 +361,7 @@ class WidgetSettingsDialog(QDialog):
 
         Those need no dashboard rebuild, which would also destroy this dialog (it is a child of the chart)."""
         names = (
-            "chart_opacity_slider", "line_opacity_slider", "bar_gradient_slider",
+            "chart_opacity_slider", "line_opacity_slider", "bar_gradient_slider", "total_line_slider",
             "show_grid_cb", "show_legend_cb", "legend_mode_combo",
         )
         owners = [getattr(self, n, None) for n in names]
@@ -500,6 +451,9 @@ class WidgetSettingsDialog(QDialog):
             if hasattr(self, "filled_opacity_slider"): set_val(self.filled_opacity_slider, "setValue", conf.get(Config.HEATMAP_FILLED_OPACITY, 100))
             if hasattr(self, "vibrance_slider"): set_val(self.vibrance_slider, "setValue", conf.get(Config.HEATMAP_VIBRANCE, 100))
             if hasattr(self, "intensity_curve_slider"): set_val(self.intensity_curve_slider, "setValue", conf.get(Config.HEATMAP_INTENSITY_CURVE, 100))
+            if hasattr(self, "invert_intensity_cb"): set_val(self.invert_intensity_cb, "setChecked", bool(conf.get(Config.HEATMAP_INVERT_INTENSITY, False)))
+            if hasattr(self, "multi_hue_cb"): set_val(self.multi_hue_cb, "setChecked", bool(conf.get(Config.HEATMAP_MULTI_HUE_INTENSITY, False)))
+            if hasattr(self, "hm_palette_load"): self.hm_palette_load(conf)
             if hasattr(self, "hm_levels_slider"): set_val(self.hm_levels_slider, "setValue", conf.get(Config.HEATMAP_COLOR_LEVELS, 15))
             if hasattr(self, "hm_glass_cb"): set_val(self.hm_glass_cb, "setChecked", conf.get(Config.HEATMAP_SHOW_GLASS, False))
             if hasattr(self, "hm_int_slider"): set_val(self.hm_int_slider, "setValue", conf.get(Config.HEATMAP_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.HEATMAP_GLASS_INTENSITY]))
@@ -517,7 +471,7 @@ class WidgetSettingsDialog(QDialog):
             if hasattr(self, "glass_cb"): set_val(self.glass_cb, "setChecked", conf.get(Config.PINNED_GLASS, True))
             if hasattr(self, "int_slider"): set_val(self.int_slider, "setValue", conf.get(Config.PINNED_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.PINNED_GLASS_INTENSITY]))
             if hasattr(self, "border_slider"): set_val(self.border_slider, "setValue", conf.get(Config.PINNED_GLASS_BORDER, 50))
-            if hasattr(self, "hover_border_cb"): set_val(self.hover_border_cb, "setChecked", conf.get(Config.PINNED_HOVER_BORDER, True))
+            if hasattr(self, "hover_border_cb"): set_val(self.hover_border_cb, "setChecked", conf.get(Config.PINNED_HOVER_BORDER, False))
             # Activity per-widget toggles always come from widget_def
             if hasattr(self, "avg_cb"): set_val(self.avg_cb, "setChecked", self.widget_def.get("show_average", True))
             if hasattr(self, "cum_cb"): set_val(self.cum_cb, "setChecked", self.widget_def.get("show_cumulative", True))
@@ -535,6 +489,10 @@ class WidgetSettingsDialog(QDialog):
             ):
                 if hasattr(self, _sl_attr):
                     set_val(getattr(self, _sl_attr), "setValue", self.widget_def.get(_sl_key, self.addon_config.get(_sl_conf, 100)))
+            if hasattr(self, "total_line_slider"):
+                from ..widgets.chart_section import total_line_global
+
+                set_val(self.total_line_slider, "setValue", self.widget_def.get("total_line", total_line_global(self)))
             for _cb_attr, _cb_key, _cb_conf in (
                 ("show_grid_cb", "show_grid", Config.CHART_SHOW_GRID),
             ):
@@ -563,7 +521,6 @@ class WidgetSettingsDialog(QDialog):
         apply_chart_opacity_live_change(self)
 
         from ....widgets.pinned.main_menu.manager import MainMenuWidgetManager
-        from ....widgets.pinned.widget_factory.factory import WidgetFactory
 
         class DummyCM:
             def __init__(self, c): self.config = c
@@ -573,8 +530,6 @@ class WidgetSettingsDialog(QDialog):
 
         target = self.parent()
         if target and isinstance(target, QWidget):
-            if self.type != "stat_card":
-                WidgetFactory.apply_style(target, config_manager=dm)
             if self.is_pinned_mode and self.type not in ("stat_card", "text_label") and hasattr(self, "label_edit"):
                 from aqt.qt import QLabel as _HdrLabel
                 _hdr = target.findChild(_HdrLabel, "pinned_header")
@@ -643,76 +598,17 @@ class WidgetSettingsDialog(QDialog):
                     if hasattr(target, "trigger_layout_update"):
                         target.trigger_layout_update()
             elif self.type == "heatmap":
-                # Navigation position and "Show at Top" alter structure/order and need
-                # an immediate rebuild to reflect in pinned layout.
                 if getattr(self, "_heatmap_requires_structure_refresh", False):
                     if MainMenuWidgetManager.instance_exists():
                         MainMenuWidgetManager.instance().refresh(clear_cache=False)
                     self._heatmap_requires_structure_refresh = False
                     return
-                from ....widgets.pinned.widget_factory.builders.heatmap import _update_heatmap
-                hm = target.findChild(QWidget, "heatmap_widget")
-                needs_rebuild = False
-                if hm:
-                    needs_rebuild = (_update_heatmap(hm, merged_def, merged_def.get("deck_id")) is False)
-                elif hasattr(self, "is_grid") and self.is_grid:
-                    # Deep dive context: heatmap_widget objectName not set, find by type
-                    from ....widgets.charts.heatmap import HeatmapWidget as _HW
-                    dd_hm = target.findChild(_HW)
-                    if dd_hm:
-                        dd_hm.set_monday_first(merged_def.get(Config.HEATMAP_MONDAY_FIRST, False))
-                        if Config.HEATMAP_YEARS_FOLD in merged_def:
-                            dd_hm.set_years_fold(merged_def.get(Config.HEATMAP_YEARS_FOLD, 3))
-                if needs_rebuild:
-                    if MainMenuWidgetManager.instance_exists():
-                        MainMenuWidgetManager.instance().refresh()
-                    return
-                if hasattr(self, "show_cont_cb"):
-                    from aqt.qt import QPushButton, QLabel as _QLabel
-                    cont_v = self.show_cont_cb.isChecked()
-                    m365_v = self.show_365_cb.isChecked()
-                    year_v = self.show_year_cb.isChecked()
-                    btn = target.findChild(QPushButton, "heatmap_mode_cont")
-                    if btn: btn.setVisible(cont_v)
-                    btn = target.findChild(QPushButton, "heatmap_mode_365")
-                    if btn: btn.setVisible(m365_v)
-                    btn = target.findChild(QPushButton, "heatmap_mode_year")
-                    if btn: btn.setVisible(year_v)
-                    s = target.findChild(_QLabel, "heatmap_sep_cont_365")
-                    if s: s.setVisible(cont_v and m365_v)
-                    s = target.findChild(_QLabel, "heatmap_sep_365_year")
-                    if s: s.setVisible(m365_v and year_v)
-                    s = target.findChild(_QLabel, "heatmap_sep_cont_year")
-                    if s: s.setVisible(cont_v and not m365_v and year_v)
-                    from ....widgets.charts.heatmap.years_ops import years_mode_available
-                    years_v = (self.show_years_cb.isChecked() if hasattr(self, "show_years_cb") else True) and years_mode_available()
-                    btn = target.findChild(QPushButton, "heatmap_mode_years")
-                    if btn: btn.setVisible(years_v)
-                    s = target.findChild(_QLabel, "heatmap_sep_year_years")
-                    if s: s.setVisible(years_v and (cont_v or m365_v or year_v))
-            elif self.type == "activity":
-                from ....widgets.pinned.widget_factory.builders.activity import _update_activity
-                stack = target.findChild(QWidget, "activity_stack")
-                if stack:
-                    _update_activity(stack, merged_def, merged_def.get("deck_id"))
             elif self.type == "text_label":
                 from aqt.qt import QLabel as _QLabel
                 from ....widgets.pinned.widget_factory.builders.text_label import _update_text_label
                 label = target.findChild(_QLabel, "pinned_text_label_inner")
                 if label:
                     _update_text_label(label, merged_def, merged_def.get("deck_id"), cfg=dm)
-            elif self.type == "added":
-                from ....widgets.pinned.widget_factory.builders.added import _update_added
-                from ....widgets.charts.added_chart import AddedChartWidget
-                chart = target.findChild(AddedChartWidget)
-                if chart:
-                    _update_added(chart, merged_def, merged_def.get("deck_id"))
-            elif self.type == "distribution":
-                from ....widgets.pinned.widget_factory.builders.distribution import _update_distribution
-                from ....widgets.charts.grouped_bar import GroupedBarWidget
-                chart = target.findChild(GroupedBarWidget)
-                if chart:
-                    _update_distribution(chart, merged_def, merged_def.get("deck_id"))
             else:
                 if hasattr(target, "refresh_theme"):
                     target.refresh_theme()
@@ -858,6 +754,11 @@ class WidgetSettingsDialog(QDialog):
 
     def _reset_chart_settings(self):
         reset_chart_settings(self)
+
+    def _reset_facecard_settings(self):
+        from ..widgets.facecard_section import reset_facecard_settings
+
+        reset_facecard_settings(self)
 
     def refresh_styles(self):
         """Apply a cleaner, slightly detached style for settings dialogs."""

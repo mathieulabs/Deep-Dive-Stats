@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from aqt import mw
 from .. import Period
+from ..fsrs_math import curve_known
 from ..history_provider import HistoryProvider
 
 
@@ -235,7 +236,7 @@ class FutureDueDataProvider:
         if breakdown == "type":
             days = {d: (by_day[d][2], by_day[d][1], by_day[d][0]) for d in shown}
             payload["breakdown"] = {"kind": "type", "days": days}
-        elif breakdown == "result":
+        elif breakdown == "result" and curve_known():  # (another FSRS: no retention, see fsrs_math)
             ret = _expected_retention(did_limit, include_backlog)
             days = {}
             for d in shown:

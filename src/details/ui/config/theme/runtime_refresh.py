@@ -2,16 +2,6 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 from ....logic.logger import log_swallowed
 def refresh_live_data_colors(*, parent_dialog, addon_config, self_widget=None, source=None, emit_theme_runtime=True):
-    # Invalidate pie chart module cache so instances reload current config.
-    try:
-        from ....widgets.charts import pie_chart as _pc
-        if hasattr(_pc, "invalidate_pie_chart_color_cache"):
-            _pc.invalidate_pie_chart_color_cache()
-        else:
-            _pc._PIE_CHART_COLORS = None
-    except Exception:
-        log_swallowed()
-
     try:
         from ....widgets.pinned.main_menu.manager import MainMenuWidgetManager
         MainMenuWidgetManager.instance().update_styles(config_manager=addon_config)

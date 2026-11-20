@@ -17,7 +17,7 @@ Config.DASH_STAT_COLORS.
 from __future__ import annotations
 
 from aqt import mw
-from aqt.qt import QCheckBox, QColor, QColorDialog, QGroupBox, QHBoxLayout, QLabel, QPushButton, Qt, QVBoxLayout
+from aqt.qt import QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, Qt, QVBoxLayout, QWidget
 
 from ... import Config
 from ...theme.icons import get_svg_icon
@@ -88,6 +88,25 @@ WIDGET_COLOR_KEYS = {
         (Config.COLOR_GOOD, N_("Good")),
         (Config.COLOR_EASY, N_("Easy")),
     ),
+    "todays_retention": (
+        (Config.COLOR_GOOD, N_("Passed")),
+        (Config.COLOR_AGAIN, N_("Failed")),
+    ),
+    "introduced_load": (
+        (Config.COLOR_MATURE, N_("Mature")),
+        (Config.COLOR_YOUNG, N_("Young")),
+    ),
+    "resets": (
+        (Config.COLOR_MATURE, N_("Mature")),
+        (Config.COLOR_YOUNG, N_("Young")),
+        (Config.COLOR_LEARN, N_("Learning")),
+    ),
+    "stability_trend": (_BAR,),
+    "memorised": (_BAR,),
+    "load_trend": (
+        (Config.COLOR_MATURE, N_("Mature")),
+        (Config.COLOR_YOUNG, N_("Young")),
+    ),
     "answer_time": (
         (Config.COLOR_AGAIN, N_("Again")),
         (Config.COLOR_HARD, N_("Hard")),
@@ -103,6 +122,33 @@ WIDGET_COLOR_KEYS = {
         (Config.COLOR_GOOD, N_("Good")),
         (Config.COLOR_EASY, N_("Easy")),
     ),
+    "fsrs_calibration": (
+        (Config.COLOR_AGAIN, N_("Failed")),
+        (Config.COLOR_GOOD, N_("Passed")),
+    ),
+    "forgetting_curve": (
+        (Config.COLOR_AGAIN, N_("Failed")),
+        (Config.COLOR_GOOD, N_("Passed")),
+    ),
+    "fsrs_fatigue": (_BAR,),
+    "future_retention": (
+        (Config.COLOR_AGAIN, N_("Predicted fail")),
+        (Config.COLOR_GOOD, N_("Predicted pass")),
+    ),
+    "leech_detector": ((Config.COLOR_AGAIN, N_("Cards")),),
+    "stability_increase": ((Config.COLOR_GOOD, N_("Cards")),),
+    "rating_fatigue": (
+        (Config.COLOR_AGAIN, N_("Again")),
+        (Config.COLOR_HARD, N_("Hard")),
+        (Config.COLOR_GOOD, N_("Good")),
+        (Config.COLOR_EASY, N_("Easy")),
+    ),
+    "sibling_ratings": (
+        (Config.COLOR_AGAIN, N_("Again")),
+        (Config.COLOR_HARD, N_("Hard")),
+        (Config.COLOR_GOOD, N_("Good")),
+        (Config.COLOR_EASY, N_("Easy")),
+    ),
     "review_speed": (_BAR,),
     "forgotten": ((Config.COLOR_MATURE, N_("Mature")), (Config.COLOR_YOUNG, N_("Young"))),
     "interval_load": (_BAR,),
@@ -110,7 +156,13 @@ WIDGET_COLOR_KEYS = {
     "lapse_distribution": (_BAR,),
     "review_distribution": (_BAR,),
     "learning_steps": (_BAR,),
+    "time_distribution": (_BAR,),
+    "interval_history": (_BAR,),
+    "stability_history": (_BAR,),
+    "difficulty_history": _GRADIENT,
     "week_hours": ((Config.HEATMAP_COLOR, N_("Activity")),),
+    "sxr_heatmap": ((Config.HEATMAP_COLOR, N_("Cards")),),
+    "bw_matrix": ((Config.COLOR_EASY, N_("More than predicted")), (Config.COLOR_AGAIN, N_("Less than predicted"))),
     "card_states": (_BAR, (Config.COLOR_NEW, N_("New")), (Config.COLOR_LEARN, N_("Learning")),
                     (Config.COLOR_RELEARN, N_("Relearning")), (Config.COLOR_YOUNG, N_("Young")),
                     (Config.COLOR_MATURE, N_("Mature"))),
@@ -345,6 +397,194 @@ def sync_own_colors(dialog):
 
 # The section
 
+def _heatmap_palette(dialog, box):
+    """The heatmap's palette (also in its right-click menu): the presets and the user's own gradients, saved to come
+    back to and switch between (each a name and 2 to 12 colors, the least activity first)."""
+    from ....widgets.charts.heatmap.palettes import (CUSTOM, DEFAULT_COLORS, MAX_COLORS, MIN_COLORS, PALETTES,
+                                                     customs_of, new_id, palette_of)
+
+    conf = dialog.addon_config
+    row = QHBoxLayout()
+    row.addWidget(QLabel(tr("Palette")))
+    row.addStretch()
+    combo = QComboBox(dialog)
+    row.addWidget(combo)
+    new_btn = QPushButton(tr("New gradient"), dialog)
+    new_btn.setToolTip(tr("A new gradient of your own, saved with the others (starts from the one shown)"))
+    row.addWidget(new_btn)
+    box.addLayout(row)
+    dialog.hm_palette_combo = combo
+    dialog.hm_customs = customs_of(conf.get)
+
+    # the chosen gradient: its name, its colors, a color more or less, delete it
+    editor = QWidget(dialog)
+    ed_box = QVBoxLayout(editor)
+    ed_box.setContentsMargins(12, 0, 0, 0)
+    name_row = QHBoxLayout()
+    name_row.addWidget(QLabel(tr("Name")))
+    name_edit = QLineEdit(editor)
+    name_row.addWidget(name_edit, 1)
+    del_btn = QPushButton(tr("Delete"), editor)
+    name_row.addWidget(del_btn)
+    ed_box.addLayout(name_row)
+    colors_host = QWidget(editor)
+    colors_box = QVBoxLayout(colors_host)
+    colors_box.setContentsMargins(0, 0, 0, 0)
+    ed_box.addWidget(colors_host)
+    from ..dialogs.heatmap_gradient import stops_row
+
+    stop_row, rem_btn, add_btn, show_strip = stops_row(editor)
+    ed_box.insertLayout(1, stop_row)  # under the name, over the colors
+    box.addWidget(editor)
+
+    def current():
+        key = combo.currentData() or ""
+        return next((p for p in dialog.hm_customs if CUSTOM + p["id"] == key), None)
+
+    def fill_combo(select):
+        combo.blockSignals(True)
+        combo.clear()
+        for key, label in PALETTES:
+            combo.addItem(tr_name(label), key)
+        if dialog.hm_customs:
+            combo.insertSeparator(combo.count())
+            for p in dialog.hm_customs:
+                combo.addItem(p["name"], CUSTOM + p["id"])
+        combo.setCurrentIndex(max(0, combo.findData(select)))
+        combo.blockSignals(False)
+
+    def clear_layout(lay):
+        while lay.count():
+            item = lay.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+            elif item.layout() is not None:
+                clear_layout(item.layout())
+
+    def set_color(i, color):
+        p = current()
+        if p is not None and i < len(p["colors"]):
+            p["colors"][i] = color
+            show_strip(p["colors"])
+            dialog.apply_live_changes()
+
+    def build_colors():
+        clear_layout(colors_box)
+        p = current()
+        if p is None:
+            return
+        n = len(p["colors"])
+        for i in range(n):
+            if i == 0:
+                label = tr("Low")
+            elif i == n - 1:
+                label = tr("High")
+            else:
+                label = tr("Middle") if n == 3 else "%s %d" % (tr("Middle"), i)
+            _color_row(
+                dialog, colors_box, label,
+                current_fn=lambda i=i: (current() or {"colors": DEFAULT_COLORS})["colors"][i],
+                is_default_fn=lambda: True,  # a gradient of the user's has no default color: no arrow back
+                set_fn=lambda color, i=i: set_color(i, color),
+                reset_fn=lambda: None,
+                reset_tip="",
+            )
+        add_btn.setEnabled(n < MAX_COLORS)
+        rem_btn.setEnabled(n > MIN_COLORS)
+        show_strip(p["colors"])
+
+    def sync(*_args):
+        p = current()
+        editor.setVisible(p is not None)
+        if p is not None:
+            name_edit.blockSignals(True)
+            name_edit.setText(p["name"])
+            name_edit.blockSignals(False)
+        build_colors()
+        # Multicolor only changes the chosen color's shades
+        dialog.multi_hue_cb.setEnabled((combo.currentData() or "") == "")
+
+    def on_new(_checked=False):
+        from ....widgets.charts.heatmap.palettes import seed_colors
+        from ...theme import get_theme_effective_is_dark
+        from .....const.theme.color_resolver import get_color
+
+        pid = new_id(dialog.hm_customs)
+        # from the palette shown (a preset's colors, the chosen color's shades, the gradient shown)
+        seed = seed_colors(combo.currentData() or "", dialog.hm_customs, get_color(conf, Config.HEATMAP_COLOR, "details"),
+                           dark=get_theme_effective_is_dark(conf))
+        dialog.hm_customs.append({"id": pid, "name": tr("Gradient {number}", number=pid), "colors": seed})
+        fill_combo(CUSTOM + pid)
+        sync()
+        dialog.apply_live_changes()
+        name_edit.setFocus()
+        name_edit.selectAll()
+
+    def on_delete(_checked=False):
+        from aqt.utils import askUser
+
+        p = current()
+        if p is None or not askUser(tr("Delete the gradient {name}?", name=p["name"]), parent=dialog):
+            return
+        dialog.hm_customs = [x for x in dialog.hm_customs if x is not p]
+        fill_combo("")
+        sync()
+        dialog.apply_live_changes()
+
+    def on_name(text):
+        p = current()
+        if p is None or not text.strip():
+            return
+        p["name"] = text.strip()
+        combo.setItemText(combo.currentIndex(), p["name"])
+        dialog.apply_live_changes()
+
+    def _mix(a, b):
+        try:
+            ra, rb = int(a.lstrip("#")[:6], 16), int(b.lstrip("#")[:6], 16)
+        except ValueError:
+            return b
+        ch = [((ra >> s & 255) + (rb >> s & 255)) // 2 for s in (16, 8, 0)]
+        return "#%02x%02x%02x" % tuple(ch)
+
+    def on_add(_checked=False):
+        p = current()
+        if p is None or len(p["colors"]) >= MAX_COLORS:
+            return
+        # between the last two (the highest stays the highest)
+        p["colors"].insert(len(p["colors"]) - 1, _mix(p["colors"][-2], p["colors"][-1]))
+        build_colors()
+        dialog.apply_live_changes()
+
+    def on_remove(_checked=False):
+        p = current()
+        if p is None or len(p["colors"]) <= MIN_COLORS:
+            return
+        p["colors"].pop(len(p["colors"]) - 2)  # the last one before the highest
+        build_colors()
+        dialog.apply_live_changes()
+
+    def load(c):
+        dialog.hm_customs = customs_of(c.get)
+        fill_combo(palette_of(c.get, dialog.hm_customs))
+        sync()
+
+    def reset():
+        # back to the chosen color; the saved gradients stay
+        fill_combo("")
+        sync()
+
+    combo.currentIndexChanged.connect(sync)
+    new_btn.clicked.connect(on_new)
+    del_btn.clicked.connect(on_delete)
+    name_edit.textChanged.connect(on_name)
+    add_btn.clicked.connect(on_add)
+    rem_btn.clicked.connect(on_remove)
+    dialog.hm_palette_load = load
+    dialog.hm_palette_reset = reset
+    load(conf)
+
+
 def _color_row(dialog, box, label, current_fn, is_default_fn, set_fn, reset_fn, reset_tip):
     """label, a swatch to pick a color and a button back to the default one. Returns
     (swatch, show): show() repaints the row from current_fn / is_default_fn."""
@@ -367,10 +607,13 @@ def _color_row(dialog, box, label, current_fn, is_default_fn, set_fn, reset_fn, 
         reset.setVisible(not is_default_fn())
 
     def pick(_checked=False):
-        chosen = QColorDialog.getColor(QColor(current_fn()), dialog, tr("Pick Color"))
-        if chosen.isValid():
-            set_fn(chosen.name())
+        from ..shared.color_picker import pick_color_live
+
+        def live(hex_):
+            set_fn(hex_)
             show()
+
+        pick_color_live(dialog, current_fn(), tr("Pick Color"), live)
 
     def back(_checked=False):
         reset_fn()
@@ -444,6 +687,13 @@ def build_widget_color_section(dialog):
         )
         dialog.widget_color_buttons[key] = swatch
         shows.append(show)
+
+    if dialog.type == "heatmap":
+        # the heatmap's other color choice (also in its right-click menu): one hue per level instead of shades
+        dialog.multi_hue_cb = QCheckBox(tr("Multicolor Intensity"))
+        dialog.multi_hue_cb.setChecked(bool(dialog.addon_config.get(Config.HEATMAP_MULTI_HUE_INTENSITY, False)))
+        box.addWidget(dialog.multi_hue_cb)
+        _heatmap_palette(dialog, box)
 
     def refresh():
         group.setToolTip(tr_name(_OWN_TIP if is_own() else _SHARED_TIP))

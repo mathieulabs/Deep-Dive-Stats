@@ -6,8 +6,18 @@ from .shared import Config, mw
 class DidLimitMixin:
     @staticmethod
     def _get_did_limit(addon_config, deck_id):
-        """Deck id limit string used in the queries."""
+        """Deck id limit string used in the queries (plus active Anki search filter, if any)."""
         from ....utils import sql_id_list
+        from ..search_filter import active_card_clause
+
+        clause = active_card_clause("cards")
+        base = DidLimitMixin._base_did_limit(addon_config, deck_id, sql_id_list)
+        if not clause:
+            return base
+        return f"{base} {clause}".strip() if base else clause
+
+    @staticmethod
+    def _base_did_limit(addon_config, deck_id, sql_id_list):
         if deck_id == -1:
              return "AND (CASE WHEN cards.odid > 0 THEN cards.odid ELSE cards.did END) IS NULL"
         elif deck_id in [0, "0", None]:

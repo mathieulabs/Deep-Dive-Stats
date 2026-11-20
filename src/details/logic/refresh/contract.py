@@ -57,24 +57,3 @@ def queue_ui_callback(callback, delay_ms=0, owner=None, reason=None):
     QTimer.singleShot(ms, lambda: invoke_callback_safe(callback, owner=owner, reason=reason))
 
 
-def request_details_runtime_refresh(
-    dialog,
-    *,
-    reason=None,
-    update_dashboard=False,
-    refresh_icons=False,
-):
-    """Single refresh adapter for Details runtime UI updates."""
-    if not is_qt_object_alive(dialog):
-        return
-    if refresh_icons and hasattr(dialog, "refresh_ui_icons"):
-        invoke_callback_safe(dialog.refresh_ui_icons, owner=dialog, reason=f"{reason}:icons")
-    if update_dashboard and hasattr(dialog, "update_dashboard_visibility"):
-        invoke_callback_safe(
-            dialog.update_dashboard_visibility,
-            owner=dialog,
-            reason=f"{reason}:dashboard",
-        )
-
-
-

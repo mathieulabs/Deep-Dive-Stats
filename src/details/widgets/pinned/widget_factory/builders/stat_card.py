@@ -2,28 +2,19 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 
 from ..utils import _history, _addon_config, _get_max_ids, cache_data_version
-from . import Config, Period, get_color
+from . import Config, Period
 from .....logic.data.section_fetchers import fetch_section_data
 from ....stats_cards import (
-    build_dashboard_history_totals,
-    resolve_effective_stat_card_config,
-    get_stat_card_info,
-    map_stat_fields_to_config_keys,
-    build_dashboard_stat_values,
-    HISTORY_DERIVED_STAT_KEYS,
-    DECK_STATE_STAT_KEYS,
-    deck_state_from_context,
+    build_dashboard_history_totals, map_stat_fields_to_config_keys, build_dashboard_stat_values, deck_state_from_context,
 )
 from ...context_access import get_pinned_context
-from ....chart_utils.own_colors import clean_own_colors
 from .....logic.data.section_fallbacks import resolve_card_counts_payload
-from ......i18n import tr, tr_name
 
 
 _STAT_VALUE_CACHE = {}
 
 def _time_stat_fields():
-    from ....stats_cards.logic.model import STAT_VALUE_FIELD_BINDINGS
+    from .....logic.stat_cards import STAT_VALUE_FIELD_BINDINGS
     from .time_units import TIME_RAW
     out = {}
     for field, dd_key, dash_key in STAT_VALUE_FIELD_BINDINGS:
@@ -52,18 +43,17 @@ def _stat_context_token(cfg):
         col_id = id(mw.col)
     except Exception:
         today, col_id = 0, 0
-    return (excluded, include_deleted, today, col_id)
+    try:
+        from .....logic.search_filter import active_search_query
+        search_q = active_search_query()
+    except Exception:
+        search_q = ""
+    return (excluded, include_deleted, today, col_id, search_q)
 
 
 def _prune_stat_value_cache():
     if len(_STAT_VALUE_CACHE) > 64:
         _STAT_VALUE_CACHE.clear()
-
-
-def _effective_stat_card_config(widget_def, cfg=None):
-    """Return effective style config for stat cards (global + optional unlinked overrides)."""
-    base_cfg = cfg.config if cfg is not None else _addon_config().config
-    return resolve_effective_stat_card_config(base_cfg, widget_def)
 
 
 def _build_stat_values_map(
@@ -198,6 +188,19 @@ def _build_stat_values_map(
             fetch_when_non_deleted_zero_total=False,
         )
 
+    # Streak and Longest Streak: over the whole history, whatever the period (a 200-day streak read 0 on "Today",
+    # and a record of at most 7 on "Week"); the current one still counts yesterday while today has no review yet.
+    if int(span) != int(Period.TOTAL):
+        whole = _history(deck_id, range_type=Period.TOTAL, cache=cache, fail_if_not_cached=fail_if_not_cached, cfg=cfg)
+        if whole:
+            from .....logic.data.core.streaks import current_streak_from_dates
+            from .....logic.stat_cards import history_day_stats
+
+            totals_payload["streak_current"] = current_streak_from_dates(
+                [h.get("logical_date") or h.get("date", "") for h in whole if (h.get("reviews") or 0) > 0]
+            )
+            totals_payload["longest_streak"] = history_day_stats(whole)["longest_streak"]
+
     values_by_field = build_dashboard_stat_values(
         totals_payload,
         use_decimal=True,
@@ -213,107 +216,13 @@ def _build_stat_values_map(
     _revs = totals_payload.get("rev", 0) or 0
     result["_raw_total_time_h"] = _hours
     result["_raw_time_per_day_h"] = (_hours / _days) if _days > 0 else None
+    from .....logic.stat_cards import active_days_of
+
+    _active = active_days_of(totals_payload)
+    result["_raw_time_per_active_day_h"] = (_hours / _active) if _active > 0 else None
     result["_raw_avg_time_s"] = (_hours * 3600.0 / _revs) if _revs > 0 else None
     _prune_stat_value_cache()
     _STAT_VALUE_CACHE[cache_key] = result
     return result
 
 
-def _get_stat_info(widget_def, deck_id, cache=None, fail_if_not_cached=False, cfg=None):
-    stat_key = widget_def.get("stat_key")
-    title, fallback_color = get_stat_card_info(stat_key)
-
-    from .....ui import STAT_KEY_TO_COLOR_KEY
-
-    if cfg is None:
-        cfg = _addon_config()
-    color_key = STAT_KEY_TO_COLOR_KEY.get(stat_key)
-    own = (clean_own_colors(widget_def.get("own_colors")) or {}).get(color_key)
-    if own:
-        base_color = own  # the card has its own colors
-    elif color_key:
-        base_color = get_color(cfg.config, color_key, "pinned")
-    else:
-        base_color = fallback_color
-
-    span = widget_def.get("time_span", Period.TOTAL)
-    days = widget_def.get("custom_days", 7)
-    stat_values = _build_stat_values_map(
-        deck_id,
-        span,
-        days,
-        cache=cache,
-        fail_if_not_cached=fail_if_not_cached,
-        cfg=cfg,
-        with_day_stats=stat_key in HISTORY_DERIVED_STAT_KEYS,
-        with_deck_state=stat_key in DECK_STATE_STAT_KEYS,
-    )
-    if stat_values is None:
-        return None
-    custom_label = widget_def.get("label")
-    if custom_label is not None:
-        title = tr_name(custom_label) if str(custom_label).strip() else ""
-
-    if not stat_values:
-        return (title, "...", base_color)
-
-    value = stat_values.get(stat_key, "...")
-    field = TIME_STAT_FIELDS.get(stat_key)
-    unit = widget_def.get("time_unit")
-    if field and unit and unit != "auto":
-        from .time_units import apply_time_unit
-        converted = apply_time_unit(field, unit, stat_values, int(cfg.config.get(Config.STATS_PRECISION, 2)))
-        if converted is not None:
-            value = converted
-    return (title, value, base_color)
-
-
-def _build_stat_card(widget_def, deck_id, cache=None, parent=None, cfg=None):
-    info = _get_stat_info(widget_def, deck_id, cache=cache, cfg=cfg)
-
-    wid = widget_def.get("id")
-    from ....stats_cards import StatCardWidget
-
-    if not info:
-        info = (tr("Loading..."), "...", "#808080")
-
-    effective_conf = _effective_stat_card_config(widget_def, cfg=cfg)
-    title, value, color = info
-    stat_key = widget_def.get("stat_key")
-    span = widget_def.get("time_span", Period.TOTAL)
-    card = StatCardWidget(
-        title,
-        value,
-        color=color,
-        is_pinned=True,
-        widget_id=wid,
-        parent=parent,
-        config_key=stat_key,
-        deck_id=deck_id,
-        time_span=span,
-        addon_config=effective_conf,
-    )
-    card.set_centered(True)
-    if not str(title).strip():
-        card.set_title_visible(False)
-
-    return card
-
-
-def _update_stat_card(widget, widget_def, deck_id, cache=None, fail_if_not_cached=False, cfg=None):
-    info = _get_stat_info(widget_def, deck_id, cache=cache, fail_if_not_cached=fail_if_not_cached, cfg=cfg)
-    if info is None:
-        return False
-
-    effective_conf = _effective_stat_card_config(widget_def, cfg=cfg)
-    title, value, color = info
-    payload_sig = (title, str(value), str(color), deck_id, effective_conf)
-    if getattr(widget, "_last_stat_runtime_payload", None) == payload_sig:
-        return True
-
-    widget.addon_config = effective_conf
-    if hasattr(widget, "update_val"):
-        widget.update_val(value, color=color, title=title, deck_id=deck_id)
-        widget._last_stat_runtime_payload = payload_sig
-        return True
-    return False

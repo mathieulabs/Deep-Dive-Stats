@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-import json
 
 from ..imports import Period, log_debug, mw
 from .....logic.logger import log_swallowed
@@ -76,53 +75,6 @@ def normalized_widget_def(widget_def):
     wtype = normalized.get("type", "")
     normalized["time_span"] = normalize_time_span(normalized.get("time_span"), wtype)
     return normalized
-
-
-# Widgets fed by card-state snapshots, which are refreshed after the review data
-# (and on card operations) without changing the max ids.
-_SNAPSHOT_WIDGET_TYPES = frozenset({
-    "card_counts", "future_due", "review_intervals", "hourly",
-    "stability", "difficulty", "retrievability",
-    "heatmap",  # its future (due) cells come from the future-due snapshot
-})
-
-
-def _anki_day_token():
-    try:
-        from datetime import datetime, timedelta
-        from ......utils import rollover_hour
-
-        return (datetime.now() - timedelta(hours=rollover_hour())).date().toordinal()
-    except Exception:
-        return None
-
-
-def widget_signature(widget_def, deck_id, max_ids):
-    try:
-        from ...widget_factory.utils import cache_data_version
-
-        data_version = cache_data_version()
-    except Exception:
-        data_version = None
-    snap_version = None
-    if widget_def.get("type") in _SNAPSHOT_WIDGET_TYPES:
-        try:
-            from .....logic.history_cache.population import snapshot_version
-
-            snap_version = snapshot_version()
-        except Exception:
-            snap_version = None
-    return (
-        deck_id,
-        int(max_ids[0]) if max_ids else 0,
-        int(max_ids[1]) if max_ids else 0,
-        data_version,
-        snap_version,
-        # Anki day: "Today", date ranges and the heatmap's today cell move at the
-        # day rollover without any new review (Anki left open overnight).
-        _anki_day_token(),
-        json.dumps(widget_def, sort_keys=True, ensure_ascii=True, default=str),
-    )
 
 
 def widget_allowed_in_context(widget_def, deck_id, is_deck_browser):

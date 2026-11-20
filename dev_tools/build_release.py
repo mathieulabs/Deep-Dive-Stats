@@ -33,8 +33,9 @@ DIST = os.path.join(ROOT, "dist")
 
 PACKAGE_NAME = "Deep Dive Stats"
 PACKAGE_ID = "deep_dive_stats"
-# Anki 23.10 is the first version with FSRS data on cards.
-MIN_POINT_VERSION = 231000
+# Anki 23.10 is the first version with FSRS data on cards; 23.10.1 the first with Qt 6.6 (Chromium 112)
+# on every platform, which the pages need (CSS color-mix: Chromium 111).
+MIN_POINT_VERSION = 231001
 OUTPUT_NAME = "Deep_Dive_Stats.ankiaddon"
 
 TERMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".personal_terms")

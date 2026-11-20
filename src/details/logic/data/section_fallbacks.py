@@ -12,14 +12,6 @@ CARD_COUNT_TOTAL_KEYS = (
 )
 
 
-def empty_distribution_payload():
-    return {
-        "learning": [0, 0, 0, 0],
-        "young": [0, 0, 0, 0],
-        "mature": [0, 0, 0, 0],
-    }
-
-
 def empty_card_counts_payload():
     payload = {key: 0 for key in CARD_COUNT_TOTAL_KEYS}
     payload["total"] = 0
@@ -36,30 +28,8 @@ def get_context_payload(context, key):
     return None
 
 
-def resolve_added_history_desc(context=None, is_skeleton=False, fetcher=None):
-    added = get_context_payload(context, "added")
-    if added is not None:
-        return list(added)
-    if is_skeleton:
-        return []
-    if callable(fetcher):
-        return fetcher() or []
-    return None
-
-
 def has_distribution_values(data):
     return bool(data) and any(any(value != 0 for value in counts) for counts in data.values())
-
-
-def resolve_distribution_payload(context=None, is_skeleton=False, fetcher=None):
-    distribution = get_context_payload(context, "distribution")
-    if distribution is not None:
-        return distribution
-    if is_skeleton:
-        return empty_distribution_payload()
-    if callable(fetcher):
-        return fetcher() or {}
-    return None
 
 
 def normalize_card_counts(counts):

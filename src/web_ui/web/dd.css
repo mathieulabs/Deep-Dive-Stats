@@ -1,0 +1,900 @@
+:root{--dd-bg:#15151c;--dd-card:#1e1e28;--dd-border:rgba(255,255,255,.1);--dd-text:#e8e8ee;--dd-text-dim:#9a9aa8;}
+html,body{margin:0;height:100%;background:var(--dd-bg);color:var(--dd-text);font:12px -apple-system,"Segoe UI",sans-serif;}
+body{overflow:auto;}
+#dd-root{min-height:100%;}
+.dd-bar{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:8px 12px;background:var(--dd-bg);border-bottom:1px solid var(--dd-border);}
+.dd-grp{display:flex;gap:4px;align-items:center}
+.dd-grp b{color:var(--dd-text-dim);font-weight:500;margin-right:2px}
+:root:root .dd-bar button,.dd-bar select{font:inherit;color:var(--dd-text);background:rgba(128,128,150,.18);border:1px solid var(--dd-border);border-radius:6px;padding:3px 9px;cursor:pointer}
+:root:root .dd-bar button:hover,:root:root .dd-bar button:active,:root:root .dd-bar button:focus,.dd-bar select:hover,.dd-bar select:active,.dd-bar select:focus{border:1px solid var(--dd-border);padding:3px 9px;transform:none;translate:none}
+
+:root:root .dd-bar button.on{background:#5b6cff;color:#fff;border-color:#5b6cff}
+.dd-stats{font:11px Consolas,monospace;color:var(--dd-text-dim);padding:4px 12px;min-height:16px}
+.dd-grid{display:grid;grid-template-columns:repeat(var(--dd-cols,3),1fr);gap:12px;padding:0 27px 16px 29px;grid-auto-rows:330px}
+.dd-card{background:var(--dd-card);border:1px solid var(--dd-card-border,var(--dd-border));border-radius:10px;padding:0 10px 6px;min-width:0;box-sizing:border-box;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif}
+.dd-head{display:flex;align-items:center;gap:6px;height:33px;padding-top:3px;margin-left:-2px;box-sizing:border-box;white-space:nowrap}
+.dd-chev{color:var(--dd-text-dim);flex:none}
+.dd-title{font-size:10px;letter-spacing:.06em;color:var(--dd-text-dim);font-weight:700;text-transform:uppercase}
+.dd-stat{font-size:11px;color:var(--dd-text-dim);margin-left:2px;white-space:pre}
+.dd-spacer{flex:1}
+:root:root .dd-pills{display:flex;gap:6px}
+:root:root .dd-pill{font:inherit;font-size:10px;font-weight:600;line-height:14px;padding:1px 7px;height:auto;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:transparent;color:color-mix(in srgb,var(--dd-text-dim) 55%,transparent);cursor:pointer;box-sizing:border-box;display:inline-flex;align-items:center}
+body.dd-light .dd-pill{border-color:rgba(0,0,0,.10)}
+:root:root .dd-pill:hover,:root:root .dd-pill:active,:root:root .dd-pill:focus{font-size:10px;line-height:14px;padding:1px 7px;height:auto;border:1px solid rgba(255,255,255,.08);color:var(--dd-text-dim);background:rgba(255,255,255,.06);box-sizing:border-box;transform:none;translate:none}
+body.dd-light .dd-pill:hover{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.05)}
+.dd-pill-chev{margin-left:5px;flex:none}
+
+:root:root .dd-pill.on,:root:root .dd-pill.on:hover{color:var(--dd-text-dim);background:color-mix(in srgb,var(--dd-ctl-accent,#58a6ff) 16%,transparent);border:1px solid color-mix(in srgb,var(--dd-ctl-accent,#58a6ff) 45%,transparent)}
+body.dd-light .dd-pill.on{background:color-mix(in srgb,var(--dd-ctl-accent,#3b82f6) 12%,transparent)}
+.dd-plot{position:relative;height:180px}
+.dd-plot canvas{width:100%;height:100%;display:block}
+/* a Time Machine: its slider under the bars (the day shown) */
+.dd-body.dd-tmb{display:flex;flex-direction:column}
+.dd-body.dd-tmb>.dd-plot{flex:1;min-height:0;height:auto}
+.dd-tm{flex:none;display:flex;align-items:center;height:10px;padding:0 12px 1px;opacity:.68;transition:opacity .15s}
+.dd-tm.dd-cv{height:12px;gap:4px}
+.dd-tm.dd-cv .dd-cv-l{font-size:10px!important;margin:0 4px 0 2px!important;opacity:.75}
+.dd-card:hover .dd-tm,.dd-tm:focus-within{opacity:1}
+.dd-tm[hidden]{display:none}
+:root:root .dd-tm input{-webkit-appearance:none;appearance:none;flex:1;min-width:0;height:10px;margin:0;padding:0;border:0;background:transparent;cursor:pointer;--p:0%}
+:root:root .dd-tm input:focus{outline:none}
+.dd-tm input::-webkit-slider-runnable-track{height:2px;border-radius:999px;background:linear-gradient(to right,color-mix(in srgb,var(--dd-ctl-accent,#58a6ff) 55%,transparent) var(--p),color-mix(in srgb,var(--dd-text-dim,#888) 18%,transparent) var(--p))}
+.dd-tm input:hover::-webkit-slider-runnable-track,.dd-tm input:active::-webkit-slider-runnable-track{background:linear-gradient(to right,color-mix(in srgb,var(--dd-ctl-accent,#58a6ff) 80%,transparent) var(--p),color-mix(in srgb,var(--dd-text-dim,#888) 26%,transparent) var(--p))}
+.dd-tm input::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;box-sizing:border-box;width:8px;height:8px;margin-top:-3px;border-radius:50%;background:var(--dd-ctl-accent,#58a6ff);border:1.5px solid var(--dd-card,#1e1e24);transition:transform .12s,box-shadow .12s}
+.dd-tm input:hover::-webkit-slider-thumb,.dd-tm input:active::-webkit-slider-thumb{transform:scale(1.35);box-shadow:0 0 0 3px color-mix(in srgb,var(--dd-ctl-accent,#58a6ff) 22%,transparent)}
+/* a Time Machine's calendar (its date pill) */
+:root:root .dd-cal{padding:8px;width:228px;font-size:12px;user-select:none;overflow:visible}
+.dd-cal-head{display:flex;align-items:center;gap:1px;margin-bottom:6px}
+.dd-cal-head span{flex:1;text-align:center;font-weight:600;text-transform:capitalize;white-space:nowrap}
+.dd-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.dd-cal-grid i{font-style:normal;text-align:center;font-size:10px;opacity:.5;padding:2px 0 4px;text-transform:uppercase}
+:root:root .dd-cal button,:root:root .dd-cal button:hover,:root:root .dd-cal button:active,:root:root .dd-cal button:focus{font:inherit;color:inherit;background:transparent;border:0;border-radius:5px;height:26px;min-width:0;padding:0;margin:0;cursor:pointer;transform:none;translate:none;outline:none;box-shadow:none}
+:root:root .dd-cal-head button,:root:root .dd-cal-head button:hover{width:22px;font-size:14px;opacity:.7}
+:root:root .dd-cal button:hover:not(:disabled){background:var(--dd-hover,rgba(127,127,127,.16));opacity:1}
+:root:root .dd-cal button:disabled{opacity:.25;cursor:default}
+:root:root .dd-cal button.today{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dd-ctl-accent,#58a6ff) 60%,transparent)}
+:root:root .dd-cal button.on,:root:root .dd-cal button.on:hover{background:var(--dd-ctl-accent,#58a6ff);color:#fff;font-weight:600}
+body.dd-glass{background:radial-gradient(circle at 15% 20%,#4b3fd1 0,transparent 40%),radial-gradient(circle at 85% 30%,#d1407a 0,transparent 38%),radial-gradient(circle at 50% 90%,#1fa5a5 0,transparent 45%),var(--dd-bg);background-attachment:fixed}
+body.dd-light.dd-glass{background:radial-gradient(circle at 15% 20%,#9aa8ff 0,transparent 40%),radial-gradient(circle at 85% 30%,#ffa0c4 0,transparent 38%),radial-gradient(circle at 50% 90%,#8fe0e0 0,transparent 45%),var(--dd-bg)}
+body.dd-glass .dd-card{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.22);backdrop-filter:blur(16px) saturate(1.3);box-shadow:0 6px 24px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.18)}
+body.dd-light.dd-glass .dd-card{background:rgba(255,255,255,.4);border-color:rgba(255,255,255,.7)}
+.dd-tip{position:absolute;left:0;top:0;pointer-events:none;z-index:20;border-radius:6px;border-width:.8px;border-style:solid;padding:5px 10px;font:11px -apple-system,"Segoe UI",sans-serif;white-space:nowrap;display:none;will-change:transform}
+.dd-tip .row{display:flex;align-items:center;gap:8px;line-height:15px}
+.dd-tip .row.header{font-weight:600;justify-content:space-between}
+.dd-tip .row.total{font-weight:600;justify-content:center}
+.dd-tip .swatch{width:8px;height:8px;flex:0 0 auto}
+.dd-tip .label{flex:1 1 auto}
+.dd-tip .value{flex:0 0 auto;margin-left:12px}
+.dd-avg{position:absolute;left:0;top:0;pointer-events:none;z-index:19;height:20px;line-height:18px;padding:0 4px;box-sizing:border-box;border:0.8px solid;border-radius:6px;font-size:12px;white-space:nowrap;display:none;will-change:transform}  /* as Retention's .dd-avg-label */
+.dd-card.dd-fixed{display:flex;flex-direction:column;box-sizing:border-box}
+.dd-card.dd-fixed .dd-body{flex:1;min-height:0}
+.dd-card.dd-fixed .dd-plot{height:100%}
+.dd-sc{position:relative;box-sizing:border-box;border-radius:14px;background:none;display:flex;flex-direction:column;justify-content:center;overflow:hidden;flex:none;padding:6px var(--sc-px)}
+/* the fill 0.5 px inside the border ring: drawn to the edge, its anti-aliased rim showed outside the ring */
+.dd-sc::before{content:'';position:absolute;inset:.5px;border-radius:13.5px;background:var(--sc-bg);pointer-events:none}
+.dd-sc-bd{position:absolute;inset:0;border-radius:inherit;opacity:0;pointer-events:none}
+.dd-sc-t{position:relative;z-index:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding-left:2px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;line-height:1.25;white-space:nowrap;overflow:hidden}
+.dd-sc-ico{pointer-events:none;transition:opacity .15s}
+.dd-sc-ico.inline{width:1.4em;height:1.4em;min-width:12px;min-height:12px;flex:none;opacity:.9}
+.dd-sc-ico.watermark{position:absolute;width:30px;height:30px;opacity:.16;z-index:0}
+.ddp .dd-sc-ico.watermark{width:24px;height:24px;opacity:.16}
+.dd-sc-ico.tl{left:10px;top:7px}.ddp .dd-sc-ico.tl{left:8px;top:6px}
+.dd-sc-ico.tr{right:10px;top:7px}.ddp .dd-sc-ico.tr{right:8px;top:6px}
+.dd-sc-ico.bl{left:10px;bottom:7px}.ddp .dd-sc-ico.bl{left:8px;bottom:6px}
+.dd-sc-ico.br{right:10px;bottom:7px}.ddp .dd-sc-ico.br{right:8px;bottom:6px}
+.dd-sc:hover .dd-sc-ico.tr{opacity:.04}
+.dd-sc-v{position:relative;z-index:1;margin-top:4px;font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden}
+.dd-sc-host{box-sizing:border-box}
+
+html,body{overflow:hidden}
+.dd-shell{display:flex;flex-direction:column;height:100vh;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;color:var(--dd-text)}
+.dd-sc-host{padding:18px 22px 0;flex:none}
+.dd-titlerow{display:flex;align-items:center;height:45px;padding:0 27px 0 29px;flex:none;gap:10px}
+.dd-dtitle{font-size:16px;font-weight:700;color:var(--dd-text)}
+.dd-spacer{flex:1}
+:root:root .dd-tb{display:flex;align-items:center;gap:4px;height:24px;padding:0 6px;background:transparent;border:none;color:var(--dd-text);font:inherit;font-size:12px;cursor:pointer;border-radius:6px}
+:root:root .dd-tb:hover,:root:root .dd-tb:active,:root:root .dd-tb:focus{height:24px;padding:0 6px;border:none;font-size:12px;transform:none;translate:none}
+
+:root:root .dd-tb:hover{background:var(--dd-hover,rgba(0,0,0,.05))}
+.dd-gridwrap{flex:1;min-height:0;overflow:hidden auto;scrollbar-width:none}
+/* Find chart: the gallery's charts not in Deep Dive yet that match, under the charts */
+.dd-cfind{margin:4px 27px 20px 29px;display:flex;flex-direction:column;gap:2px;max-width:560px}
+.dd-cfind-head{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--dd-text-dim);margin:0 0 6px}
+.dd-cfind-row{display:flex;align-items:center;gap:10px;padding:5px 6px 5px 10px;border-radius:8px}
+.dd-cfind-row:hover{background:var(--dd-hover,rgba(127,127,127,.08))}
+.dd-cfind-name{font-size:13px;color:var(--dd-text)}
+.dd-cfind-group{font-size:12px;color:var(--dd-text-dim);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dd-cfind-add{height:26px;padding:0 10px;font-size:12px;display:inline-flex;align-items:center;gap:5px}
+.dd-gridwrap::-webkit-scrollbar{display:none}
+.dd-todo{display:flex;align-items:center;justify-content:center;height:100%;color:var(--dd-text-dim);font-size:12px;opacity:.6}
+.dd-drawerrow{display:flex;align-items:center;gap:7px;margin:0 16px 10px 15px;flex:none}
+.dd-drawer{display:flex;align-items:center;gap:10px;flex:1;height:27px;border-radius:13px;background:var(--dd-drawer,rgba(0,0,0,.05));font-size:12px;padding:0 12px}
+:root:root .dd-autoclose{height:24px;padding:0 12px;font-size:12px}
+:root:root .dd-autoclose:hover,:root:root .dd-autoclose:active,:root:root .dd-autoclose:focus{height:24px;padding:0 12px;font-size:12px;transform:none;translate:none}
+
+.dd-dr-chev{background:none;border:none;color:var(--dd-text);display:flex;cursor:pointer;padding:0}
+/* Settings > Show Table off: the bar keeps the deck and the charts' buttons; what only the table uses is hidden */
+:root:root .dd-notable .dd-dr-chev,:root:root .dd-notable .dd-seg,:root:root .dd-notable .dd-table-btn,:root:root .dd-notable .dd-view,:root:root .dd-notable .dd-tblhost{display:none!important}
+.dd-notable .dd-drawer{pointer-events:none}
+/* the table's bar has no row of its own: its handle joins the bottom bar, after Deck / Time Span, and the charts'
+   buttons sit before Export (app.js toolsTo); Show Table off, no handle */
+.dd-shell .dd-drawerrow{display:none}
+/* the table's layout, one control on the bar: its three layouts (table alone, charts with the drawer and "Table",
+   charts alone); the separate handle it used to have in the middle of the bar did the same, it is gone */
+.dd-shell:not(.dd-notable) .dd-bottom .dd-spacer{display:block}
+@media (max-width:1100px){:root:root .dd-seg .dd-mid span{display:none}}
+/* View by Deck / Time with the table's buttons on its foot: it keeps its name (a mode, not an option) but in a narrow window */
+:root:root .dd-tbl-foot .dd-view .dd-view-l{display:grid}
+:root:root .dd-tbl-foot .dd-view .dd-view-l span{display:block;grid-area:1/1}
+:root:root .dd-tbl-foot .dd-view .dd-view-l .off{visibility:hidden}
+@media (max-width:1000px){:root:root .dd-tbl-foot .dd-view .dd-view-l{display:none}}
+/* and still short of room (the window's smallest width): the deck's and the period's names cut with "…" */
+:root:root .dd-bottom .dd-deck,:root:root .dd-bottom .dd-span{flex:0 1 auto;min-width:64px;overflow:hidden}
+:root:root .dd-bottom .dd-deck span,:root:root .dd-bottom .dd-span span{overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* the charts' buttons in the bottom bar: buttons as the bar's others (a border, its background), a little smaller */
+.dd-bottom .dd-tbgroup{display:flex;align-items:center;gap:6px;flex:none;margin-right:2px;padding-right:10px;border-right:1px solid var(--dd-btn-border,rgba(128,128,128,.3))}
+/* the table's search box: on the bar only while the table is shown (it filters the table), a line between it and the
+   charts' buttons */
+.dd-card.dd-cfilt-out{display:none!important}
+.dd-tblopen .dd-bottom .dd-tbgroup{padding-left:10px;border-left:1px solid var(--dd-btn-border,rgba(128,128,128,.3))}
+:root:root .dd-bottom .dd-tb,:root:root .dd-bottom .dd-tb:hover,:root:root .dd-bottom .dd-tb:active,:root:root .dd-bottom .dd-tb:focus{height:31px;padding:0 10px;gap:5px;border:1px solid var(--dd-btn-border,rgba(0,0,0,.2));border-radius:10px;box-sizing:border-box}
+:root:root .dd-bottom .dd-tb{background:var(--dd-btn-idle,transparent)}
+:root:root .dd-bottom .dd-tb:hover{background:var(--dd-btn-hover,var(--dd-hover,rgba(0,0,0,.05)));border-color:var(--dd-btn-hover-border,var(--dd-btn-border))}
+:root:root .dd-bottom .dd-tb:active{background:var(--dd-btn-press,rgba(0,0,0,.1))}
+@media (max-width:1500px){:root:root .dd-bottom .dd-tbgroup .dd-charts span,:root:root .dd-bottom .dd-tbgroup .dd-set span{display:none}}  /* icons only, as the bar's other buttons */
+.dd-bottom{display:flex;align-items:center;gap:8px;padding:0 17px 9px 23px;flex:none}
+:root:root .dd-btn{display:flex;align-items:center;gap:8px;height:31px;padding:0 12px;border-radius:10px;border:1px solid var(--dd-btn-border,rgba(0,0,0,.2));background:var(--dd-btn-idle,transparent);color:var(--dd-text);font:inherit;font-size:12px;cursor:pointer;box-sizing:border-box}
+:root:root .dd-btn:hover,:root:root .dd-btn:active,:root:root .dd-btn:focus{height:31px;padding:0 12px;border:1px solid var(--dd-btn-border,rgba(0,0,0,.2));font-size:12px;box-sizing:border-box;transform:none;translate:none}
+
+:root:root .dd-btn.on{border-color:var(--dd-accent,#d65d0e)}
+:root:root .dd-btn.dd-sq{width:32px;padding:0;justify-content:center;border-radius:16px}
+:root:root .dd-btn.dd-sq:hover,:root:root .dd-btn.dd-sq:active,:root:root .dd-btn.dd-sq:focus{width:32px;padding:0;transform:none;translate:none}
+
+:root:root .dd-seg button{cursor:pointer}
+
+:root:root .dd-search{height:31px;width:184px;box-sizing:border-box;border-radius:12px;border:1px solid var(--dd-btn-border,rgba(0,0,0,.2));background:transparent;color:var(--dd-text);font:inherit;font-size:12px;padding:0 14px;margin-right:6px}
+
+
+
+.dd-card{display:flex;flex-direction:column;overflow:hidden}
+.dd-card .dd-body{flex:1;min-height:0}
+.dd-fsrs-note{display:flex;align-items:center;justify-content:center;height:100%;min-height:80px;padding:12px 18px;box-sizing:border-box;text-align:center;font-size:13px;color:var(--dd-text-dim)}
+.dd-card .dd-plot{height:100%}
+.dd-head{flex:none}
+.dd-title{flex:none}
+.dd-stat{min-width:0;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
+:root:root .dd-pills{flex:none}
+.dd-bottom{overflow:hidden;white-space:nowrap}
+:root:root .dd-btn,:root:root .dd-seg,:root:root .dd-search{flex:none;white-space:nowrap}
+:root:root .dd-btn span{white-space:nowrap}
+:root:root .dd-search{flex:0 1 184px;min-width:90px}
+@media (max-width:1500px){:root:root .dd-bottom .dd-btn:not(.dd-trends):not(.dd-view):not(.dd-deck):not(.dd-span):not(.dd-table-btn) span{display:none}:root:root .dd-btn{padding:0 9px}:root:root .dd-btn:hover,:root:root .dd-btn:active,:root:root .dd-btn:focus{padding:0 9px}:root:root .dd-btn.dd-sq:hover,:root:root .dd-btn.dd-sq:active,:root:root .dd-btn.dd-sq:focus{padding:0}}
+.dd-hm-nav{display:flex;align-items:center;gap:0}
+:root:root .dd-hm-btn{font:inherit;font-size:10px;font-weight:700;line-height:20px;height:20px;width:20px;padding:0;margin:0;border:0;border-radius:3px;background:transparent;color:var(--dd-text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}
+:root:root .dd-hm-btn.w28{width:28px}
+:root:root .dd-hm-btn:hover,:root:root .dd-hm-btn:active,:root:root .dd-hm-btn:focus{font-size:10px;line-height:20px;height:20px;padding:0;margin:0;border:0;transform:none;translate:none}
+:root:root .dd-hm-btn:hover{background:var(--dd-hover,rgba(0,0,0,.05));color:var(--dd-text)}
+:root:root .dd-hm-btn.dd-hm-arrow:hover{color:var(--dd-text-dim)}
+:root:root .dd-hm-btn:active,:root:root .dd-hm-btn.on,:root:root .dd-hm-btn.on:hover{background:var(--dd-accent-f);color:var(--dd-text)}
+.dd-hm-sep{font-size:10px;line-height:20px;color:var(--dd-text-dim);margin:0 1px;background:transparent}
+.dd-hm-year{font-size:10px;font-weight:700;letter-spacing:1px;color:var(--dd-text-dim);margin:0 2px}
+
+
+.dd-avg-label{position:absolute;display:none;height:20px;line-height:18px;padding:0 4px;box-sizing:border-box;border:0.8px solid;border-radius:6px;font-size:12px;white-space:nowrap;pointer-events:none;z-index:6}
+
+/* deck table */
+.dd-shell{position:relative;overflow:hidden}
+.dd-tblhost{position:absolute;left:14px;right:14px;bottom:0;z-index:30;display:none;transform:translateY(100%)}
+.dd-tbl-panel{background:var(--dd-bg);border:1px solid var(--dd-border);border-radius:12px 12px 0 0;border-bottom:0;overflow:hidden;display:flex;flex-direction:column;height:100%;box-sizing:border-box}
+.dd-tbl-scroll{overflow:auto;flex:1;min-height:0;scrollbar-width:thin}
+.dd-tbl{width:100%;border-collapse:separate;border-spacing:0;table-layout:auto;font-size:12px;color:var(--dd-text)}
+.dd-tbl th{height:44px;padding:0 7px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dd-text-dim);cursor:pointer;white-space:nowrap;position:sticky;top:0;background:var(--dd-bg);z-index:1}
+.dd-tbl th s{text-decoration:none;font-size:8px;margin-left:4px}
+.dd-tbl td{height:var(--dd-row-h,30px);padding:0 7px;text-align:center;white-space:nowrap;border-bottom:1px solid rgba(128,128,128,.12);box-sizing:border-box}
+.dd-tbl td.deck{text-align:left;padding-left:16px;min-width:150px}
+.dd-tbl tr.total td{font-weight:700}
+.dd-tbl tr.odd td{background:var(--dd-tbl-alt,rgba(0,0,0,.045))}
+body:not(.dd-light) .dd-tbl tr.odd td{background:var(--dd-tbl-alt,rgba(255,255,255,.04))}
+.dd-tbl tr.total.total-bot td{position:sticky;bottom:0;background:var(--dd-bg);z-index:2;border-top:1px solid var(--dd-border)}
+.dd-tbl tr.total.total-top td{position:sticky;top:44px;background:var(--dd-bg);z-index:2;border-bottom:1px solid var(--dd-border)}
+body:not(.dd-light) .dd-tbl tr.total.total-bot td,body:not(.dd-light) .dd-tbl tr.total.total-top td{background:var(--dd-bg)}
+/* selected row: the theme accent at 22 % over the row */
+.dd-tbl tr.sel td,.dd-tbl tbody tr.sel:hover td{box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--dd-btn-accent,#3b82f6) 22%,transparent)}
+.dd-tbl tbody tr{cursor:pointer}
+.dd-tree{font-family:Consolas,monospace;color:var(--dd-text-dim)}
+.dd-tbl small{font-size:10px}
+.dd-seg-bar{position:relative;display:flex;height:16px;min-width:80px;border-radius:4px;overflow:hidden;background:rgba(60,60,60,.12);align-items:stretch}
+.dd-seg-bar span{display:block;height:100%}
+.dd-seg-bar b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#1b1b1f}
+body:not(.dd-light) .dd-seg-bar b{color:#f5f5f5}
+.dd-parts i{font-style:normal;color:#808080;margin:0 5px}
+.dd-tbl-foot{display:flex;align-items:center;gap:8px;padding:6px 8px 8px;flex:none}
+
+:root:root .dd-tbl-tabs{flex:1;display:flex;justify-content:center;gap:6px}
+:root:root .dd-tbl-tabs button.dd-tdrag,:root:root .dd-tbl-tabs button.dd-tdrag:hover{position:relative;z-index:2;cursor:grabbing}
+.dd-tbl th.dd-tdrag{position:relative;z-index:2;cursor:grabbing!important;background:color-mix(in srgb,var(--dd-accent,#3b82f6) 14%,var(--dd-card,#1e1e28));border-radius:6px}
+:root:root .dd-tbl-tabs button{height:30px;padding:0 20px;border:0;border-radius:15px;background:transparent;color:var(--dd-text-dim);font:inherit;font-size:13px;cursor:pointer}
+:root:root .dd-tbl-tabs button:hover,:root:root .dd-tbl-tabs button:active,:root:root .dd-tbl-tabs button:focus{height:30px;padding:0 20px;border:0;font-size:13px;transform:none;translate:none}
+
+:root:root .dd-tbl-tabs button.on{background:color-mix(in srgb,var(--dd-accent,#d65d0e) 24%,var(--dd-bg));color:var(--dd-text)}
+
+:root:root .dd-tbl-foot .dd-pill{border:1px solid color-mix(in srgb,var(--dd-accent,#d65d0e) 60%,transparent);height:24px;padding:0 12px;font-size:12px;color:var(--dd-text-dim)}
+:root:root .dd-tbl-foot .dd-pill:hover,:root:root .dd-tbl-foot .dd-pill:active,:root:root .dd-tbl-foot .dd-pill:focus{border:1px solid color-mix(in srgb,var(--dd-accent,#d65d0e) 60%,transparent);height:24px;padding:0 12px;font-size:12px;transform:none;translate:none}
+
+:root:root .dd-tbl-foot .dd-pill.on{background:color-mix(in srgb,var(--dd-accent,#d65d0e) 14%,transparent)}
+
+/* scrollbars: thin, the colour of the text at low opacity */
+*{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,.35) transparent}
+::-webkit-scrollbar{width:8px;height:8px;background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(128,128,128,.35);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:rgba(128,128,128,.55)}
+::-webkit-scrollbar-corner{background:transparent}
+.dd-gridwrap::-webkit-scrollbar{display:none}
+
+:root:root /* no shadows / focus halos on controls */
+button,input,select{-webkit-appearance:none;appearance:none;box-shadow:none!important;text-shadow:none!important;outline:none!important;filter:none}
+:root:root button:focus,:root:root button:focus-visible,input:focus{outline:none!important;box-shadow:none!important}
+
+:root:root .dd-btn:hover,:root:root .dd-tbl-tabs button:hover,:root:root .dd-pill:hover,:root:root .dd-search:hover{background:var(--dd-hover,rgba(0,0,0,.05))}
+:root:root .dd-tbl-tabs button.on:hover{background:color-mix(in srgb,var(--dd-accent,#d65d0e) 24%,var(--dd-bg))}
+:root:root .dd-btn.on:hover{background:var(--dd-accent-f)}
+:root:root .dd-tb{box-sizing:border-box;flex:none;margin:0;line-height:1;transition:none;transform:none}
+:root:root .dd-tb:hover,:root:root .dd-tb:active,:root:root .dd-tb:focus{box-sizing:border-box;margin:0;line-height:1;transform:none;translate:none}
+
+:root:root .dd-tb svg,:root:root .dd-btn svg,:root:root .dd-hm-btn svg{display:block;flex:none}
+:root:root .dd-tb:hover,:root:root .dd-tb:active{transform:none;top:0;margin:0;border:0}
+.dd-bottom{padding-top:8px;background:var(--dd-bg)}
+:root:root button{padding:0;margin:0;border:0}
+:root:root button:hover,:root:root button:active,:root:root button:focus{transform:none;translate:none;margin:0;padding:0;border:0}
+
+.dd-tbl-edge{position:absolute;left:0;right:0;top:-3px;height:7px;cursor:ns-resize;z-index:3}
+
+/* Menus: same look as the add-on's StyledMenu */
+:root:root .dd-menu{position:fixed;z-index:100;background:var(--dd-menu-bg,var(--dd-card));color:var(--dd-menu-text,var(--dd-text));border:1px solid var(--dd-menu-border,var(--dd-border));border-radius:6px;padding:4px 0;font:13px "Segoe UI",sans-serif;max-height:70vh;overflow:auto;box-sizing:border-box}
+:root:root .dd-mi{position:relative;display:flex;align-items:center;gap:8px;padding:6px 44px 6px 8px;border-radius:4px;margin:1px 4px;cursor:pointer;white-space:nowrap;user-select:none}
+:root:root .dd-mi:hover{background:var(--dd-menu-hover,var(--dd-hover))}
+.dd-mic{display:flex;align-items:center;justify-content:center;width:16px;flex:none}
+.dd-mswatch{display:inline-block;width:13px;height:13px;border-radius:50%;border:1px solid rgba(128,128,128,.45);box-sizing:border-box}
+.dd-mi .ind{position:absolute;right:14px;top:50%;width:14px;height:14px;margin-top:-7px;box-sizing:border-box;border:1.5px solid var(--dd-menu-strong,#aaa);border-radius:3px;background:transparent}
+.dd-mi.on .ind{background:var(--dd-menu-accent,#3b82f6);border-color:var(--dd-menu-accent,#3b82f6)}
+.dd-mi.on:hover .ind{border-color:var(--dd-menu-text)}
+.dd-msep{height:1px;background:var(--dd-menu-border,var(--dd-border));margin:4px 8px}
+
+/* Table toggle button on the bottom bar: lit with the accent tint while the table is open */
+:root:root .dd-table-btn span{font-weight:600}
+:root:root .dd-table-btn.on,:root:root .dd-table-btn.on:hover,:root:root .dd-table-btn.on:active{border-color:var(--dd-btn-accent,#3b82f6);background:color-mix(in srgb,var(--dd-btn-accent,#3b82f6) 20%,transparent)}
+body.dd-light .dd-table-btn.on,body.dd-light .dd-table-btn.on:hover{background:color-mix(in srgb,var(--dd-btn-accent,#3b82f6) 12%,transparent)}
+.dd-shell.tableonly .dd-titlerow,.dd-shell.tableonly .dd-gridwrap,.dd-shell.tableonly .dd-drawerrow{visibility:hidden}
+
+/* the pinned block's skeleton at Anki's start (pinned.js reveal): the cards and titles shown, the charts held */
+.ddp-skel .ddp-card:not(.ddp-skel-show) .dd-body{visibility:hidden}  /* the heatmap: its empty grid (pinned.js heatIntro) */
+.ddp-skel .dd-sc-v{visibility:hidden}  /* the stat cards: their titles, no value till they count up (a 0 read as a real one) */
+/* card collapse, fullscreen, toast */
+.dd-chev{cursor:pointer;transition:transform .15s}
+.dd-card.dd-collapsed .dd-chev{transform:rotate(-90deg)}
+.dd-card.dd-collapsed .dd-body{display:none}
+.dd-card.dd-collapsed{height:40px;align-self:start}
+.dd-card.dd-fs{position:fixed;inset:12px;z-index:90;height:auto!important;width:auto!important}
+/* the calendar: centered on the screen's height, as tall as its grid (fullscreen._HeatmapFit) */
+.dd-card.dd-fs.dd-fs-hm{top:50%;bottom:auto;transform:translateY(-50%);max-height:calc(100vh - 24px)}
+.dd-card.dd-fs.dd-fs-hm .dd-body{flex:none}
+:root:root .dd-fs-x{position:absolute;top:6px;right:8px;width:26px;height:26px;border:0;background:transparent;color:var(--dd-text-dim);cursor:pointer;border-radius:6px;padding:0;display:flex;align-items:center;justify-content:center}
+:root:root .dd-fs-x:hover{background:var(--dd-hover);color:var(--dd-text)}
+.dd-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:120;background:var(--dd-menu-bg,var(--dd-card));color:var(--dd-menu-text,var(--dd-text));border:1px solid var(--dd-menu-border,var(--dd-border));border-radius:8px;padding:10px 14px;font:13px "Segoe UI",sans-serif;max-width:420px;white-space:pre-line;display:flex;gap:12px;align-items:center}
+:root:root .dd-toast-u{border:0;background:transparent;color:var(--dd-menu-accent,#3b82f6);cursor:pointer;font:inherit;font-weight:600;padding:2px 6px}
+/* a chart shown fullscreen leaves the window's bottom bar under it, with only what acts on it: Deck, Time Span,
+   Settings (app.js fullscreen) */
+body.dd-fsbar .dd-card.dd-fs:not(.dd-fs-hm){bottom:52px}
+body.dd-fsbar .dd-card.dd-fs.dd-fs-hm{max-height:calc(100vh - 64px);margin-top:-20px}
+body.dd-fsbar .dd-bottom > :not(.dd-deck):not(.dd-span):not(.dd-spacer):not(.dd-settings){display:none!important}
+body.dd-fsbar .dd-bottom{position:relative;z-index:91}
+/* its header sized for the screen: larger title, pills and buttons */
+.dd-card.dd-fs .dd-head{height:40px;gap:8px}
+:root:root .dd-card.dd-fs .dd-title{font-size:12px}
+:root:root .dd-card.dd-fs .dd-stat{font-size:13px}
+:root:root .dd-card.dd-fs .dd-head .dd-pill{font-size:12px;line-height:18px}
+:root:root .dd-card.dd-fs .dd-hbtns button,:root:root .dd-card.dd-fs .dd-hbtns button:hover,:root:root .dd-card.dd-fs .dd-hbtns button:active,:root:root .dd-card.dd-fs .dd-hbtns button:focus{width:28px;height:28px}
+:root:root .dd-card.dd-fs .dd-zreset{width:24px;height:24px}
+:root:root .dd-fs-x{top:8px;right:10px;width:30px;height:30px}
+.dd-card.dd-fs .dd-head{padding-right:42px}
+:root:root .dd-tbl-tabs{overflow-x:auto;min-width:0;justify-content:flex-start;scrollbar-width:none}:root:root .dd-tbl-tabs button:first-child{margin-left:auto}:root:root .dd-tbl-tabs button:last-child{margin-right:auto}:root:root .dd-tbl-tabs button{flex:0 0 auto;white-space:nowrap}
+
+.dd-help{position:relative;width:0;height:14px;overflow:visible;flex:0 0 0;display:block;color:var(--dd-text-dim);opacity:0;transition:opacity .15s;cursor:default}
+.dd-help svg{position:absolute;left:8px;top:0}
+.dd-card:hover .dd-help{opacity:.55}
+.dd-card .dd-help:hover{opacity:1}
+/* no room for the "?" (dd-core.js fit: it would cover the next button; pinned.js placeMore: the "⋯" goes first) */
+.dd-head.dd-help-off .dd-help,.dd-card.dd-help-yield .dd-help{visibility:hidden}
+/* the "?" takes no room (it is drawn past its box): the space after it keeps room for it and the "⋯", or a long stat
+   squeezed the space to nothing and the "?" sat over the chart's buttons; on a narrow card it gives way down to the
+   "?" alone before anything goes past the card */
+/* the empty stretch gives up its room first, down to its least width: only then do the pills shrink (they shrank
+   with it, by their widths, and were cut while room was left) */
+.dd-head .dd-help + .dd-spacer,.dd-head .dd-help + .dd-zreset + .dd-spacer{flex:1 1000000000 52px;min-width:22px}
+/* a narrow card (pinned) with no stat to shorten: its pills shorten ("Sep. Su…") instead of going past the card */
+:root:root .dd-head .dd-pills{flex:0 1 auto;min-width:0;overflow:hidden}
+:root:root .dd-head .dd-pills .dd-pill{flex:0 1 auto;min-width:24px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* a narrow card: the title gives up its room too, before the pills (cut with an ellipsis, its full name in its
+   tooltip), so the period chip, the stats icon and the pills stay in the card (a long title pushed them out of it) */
+:root:root .dd-head .dd-title{flex:0 1000 auto;min-width:36px;overflow:hidden;text-overflow:ellipsis}
+:root:root .dd-head .dd-pills{flex-shrink:1;min-width:24px}
+/* the stats' text gives up its room right after the empty stretch (it turns into its icon, the list on hover), before
+   the title; the period chip is never cut */
+:root:root .dd-head .dd-stat:not(.dd-stat-ico){flex-shrink:1000000}
+/* and whatever the width, the header never draws past the card's edge: what is left over is cut at its end (the
+   heatmap's header keeps its own layout) */
+.dd-card:not([data-type=heatmap]) > .dd-head{overflow:hidden}
+/* an icon pill (First Answer Retention's Display): never cut, the text pills next to it shrink */
+:root:root .dd-head .dd-pills .dd-pill.dd-pill-ico,:root:root .dd-head .dd-pills .dd-pill.dd-pill-ico:hover{flex:none;min-width:0;padding:1px 6px;display:flex;align-items:center}
+.dd-pill-ico svg{display:block}
+/* no phantom gap from empty header slots */
+.dd-head .dd-stat:empty,.dd-head .dd-pills:empty{display:none}
+/* adaptive header pills (dd-core.js DD.watchStat): first tighten spacing & reclaim dead spacer width, then collapse
+   into one compact menu button when the card is too narrow (pinned / mobile) instead of truncating every pill to "..." */
+.dd-head.dd-pills-compact{gap:4px}
+.dd-head.dd-pills-compact .dd-spacer{min-width:0!important;flex:1 1000000000 0!important}
+.dd-head.dd-pills-compact .dd-help{margin-left:-4px}
+:root:root .dd-head.dd-pills-compact .dd-pills:not(.dd-hm-nav):not(.dd-ownopt){gap:3px}
+:root:root .dd-head.dd-pills-compact .dd-pills:not(.dd-hm-nav):not(.dd-ownopt) .dd-pill:not(.dd-pill-ico),
+:root:root .dd-head.dd-pills-compact .dd-pills:not(.dd-hm-nav):not(.dd-ownopt) .dd-pill:not(.dd-pill-ico):hover,
+:root:root .dd-head.dd-pills-compact .dd-pills:not(.dd-hm-nav):not(.dd-ownopt) .dd-pill:not(.dd-pill-ico):active,
+:root:root .dd-head.dd-pills-compact .dd-pills:not(.dd-hm-nav):not(.dd-ownopt) .dd-pill:not(.dd-pill-ico):focus{padding:1px 5px}
+.dd-head.dd-pills-menu .dd-pills:not(.dd-hm-nav){display:none}
+.dd-head.dd-pills-ovf .dd-ownopt{display:none!important}
+:root:root .dd-head .dd-pills-trig,
+:root:root .dd-head .dd-pills-trig:hover,
+:root:root .dd-head .dd-pills-trig:active,
+:root:root .dd-head .dd-pills-trig:focus{flex:none;min-width:0;padding:1px 6px;display:inline-flex;align-items:center;gap:3px}
+.dd-pills-trig svg{display:block;flex:none;pointer-events:none}
+.dd-pills-trig .dd-pill-chev{margin-left:1px}
+.dd-helptip{position:fixed;z-index:130;max-width:430px;background:var(--dd-menu-bg,var(--dd-card));color:var(--dd-menu-text,var(--dd-text));border:1px solid var(--dd-menu-border,var(--dd-border));border-radius:6px;padding:8px 10px;font:12px "Segoe UI",sans-serif;white-space:pre-line;pointer-events:none}
+.dd-zbar{position:absolute;left:0;right:0;bottom:0;height:6px;display:none;z-index:3}
+.dd-zthumb{position:absolute;top:0;bottom:0;border-radius:3px;background:color-mix(in srgb,var(--dd-text-dim) 45%,transparent)}
+.dd-zthumb:hover{background:color-mix(in srgb,var(--dd-text-dim) 70%,transparent)}
+
+.dd-nostats .dd-stat,.dd-nostats .dd-bstats{display:none!important}
+
+.dd-mi .dd-arr{position:absolute;right:14px;opacity:.7;font-size:16px;line-height:1}
+:root:root .dd-mi.off{opacity:.45;cursor:default}
+
+.dd-spacer{position:relative}
+.dd-hbtns{position:absolute;right:4px;top:50%;transform:translateY(-50%);display:flex;gap:2px;opacity:0;transition:opacity .15s}
+.dd-card:hover .dd-hbtns{opacity:.6}
+.dd-card.nomore .dd-hbtns{display:none}
+/* a chart's own options (app.js ownOpt, pinned.js ownOpt): after its pills; a header with no room leaves them to
+   the right click (the header's fit, dd-core.js) */
+:root:root .dd-head .dd-pills.dd-ownopt{flex:none;min-width:0}
+/* a chart brought into view (View on a Past Day: DD.flashCard): its own edge lit and a faint tint, fading out */
+.dd-card.dd-flash::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dd-ctl-accent,#58a6ff) 60%,transparent);
+  background:color-mix(in srgb,var(--dd-ctl-accent,#58a6ff) 5%,transparent);
+  opacity:0;animation:dd-flash var(--dd-flash-ms,1600ms) ease-out}
+@keyframes dd-flash{0%{opacity:0}18%{opacity:1}45%{opacity:1}100%{opacity:0}}
+:root:root .dd-hbtns button,:root:root .dd-hbtns button:hover,:root:root .dd-hbtns button:active,:root:root .dd-hbtns button:focus{width:22px;height:22px;padding:0;margin:0;border:0;border-radius:5px;background:transparent;color:var(--dd-text-dim);display:flex;align-items:center;justify-content:center;cursor:pointer;transform:none;font-size:inherit}
+:root:root .dd-hbtns button:hover{background:var(--dd-hover);color:var(--dd-text)}
+.dd-card .dd-hbtns:hover{opacity:1}
+
+/* Show Bottom Stats: the chart's stat line sits under the plot instead of the header */
+.dd-bottomstats .dd-card{position:relative}
+.dd-bstats{display:none}
+.dd-bottomstats .dd-card .dd-head .dd-stat{visibility:hidden;width:0;overflow:hidden}
+.dd-bottomstats .dd-card:not(.dd-collapsed) .dd-bstats:not(:empty){display:flex;flex-wrap:wrap;justify-content:center;flex:none;font-size:13px;line-height:18px;color:var(--dd-text);margin:0;padding:7px 0 8px;text-align:center}
+.dd-bstats span{white-space:pre}
+.dd-bstats b{font-weight:700}
+.dd-bstats i{font-style:normal;white-space:pre}
+/* the dark card is a translucent veil: the fullscreen card needs a solid base under it */
+.dd-card.dd-fs{background:linear-gradient(var(--dd-card),var(--dd-card)),var(--dd-bg)}
+
+/* stats reduced to their icon when the header is too narrow */
+.dd-stat.dd-stat-ico{font-size:0;width:20px;min-width:20px;height:20px;flex:none;cursor:default;border-radius:4px;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='18' y1='20' x2='18' y2='10'/%3E%3Cline x1='12' y1='20' x2='12' y2='4'/%3E%3Cline x1='6' y1='20' x2='6' y2='14'/%3E%3C/svg%3E") center no-repeat}
+.dd-stat.dd-stat-ico:hover{background-color:rgba(128,128,128,.18)}
+/* no room for its icon either: none, the stats show on the title's hover (DD.watchStat) */
+:root:root .dd-head .dd-stat.dd-stat-hid{display:none}
+
+.dd-card{position:relative}
+.dd-rsz{z-index:6;position:absolute;background:transparent}
+.dd-rsz-r{right:0;top:0;bottom:8px;width:8px;cursor:ew-resize}
+.dd-rsz-b{left:0;right:8px;bottom:0;height:8px;cursor:ns-resize}
+.dd-rsz-rb{right:0;bottom:0;width:10px;height:10px;cursor:nwse-resize;z-index:7}
+
+.dd-fs .dd-rsz{display:none}
+
+.dd-sc-lines{display:flex;flex-direction:column;gap:4px;width:100%}
+.dd-sc-line{display:flex;flex-wrap:wrap;gap:6px;width:100%;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif}
+
+.dd-sc-drag{opacity:.35}
+.dd-sc-ghost{position:fixed;z-index:9999;pointer-events:none;opacity:.9;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.dd-sc-mark{position:fixed;z-index:9998;display:none;background:var(--dd-accent,#3b82f6);border-radius:2px;pointer-events:none}
+.dd-sc,.dd-sc-ghost{user-select:none;-webkit-user-select:none}
+
+
+.dd-cdrag{opacity:.35}
+.dd-cghost{position:fixed;z-index:9999;pointer-events:none;border:2px solid var(--dd-accent,#3b82f6);border-radius:10px;background:color-mix(in srgb,var(--dd-accent,#3b82f6) 12%,transparent);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+body.dd-dragging,body.dd-dragging *{user-select:none;-webkit-user-select:none}
+
+.dd-bottom{position:relative;z-index:40}
+.dd-card .dd-head{user-select:none;-webkit-user-select:none}
+
+/* soft pill UI (design_overrides): hover = accent tint, accent border */
+:root:root .dd-btn:hover,:root:root .dd-search:hover{background:var(--dd-btn-hover,rgba(0,0,0,.05));border-color:var(--dd-btn-hover-border,var(--dd-btn-border))}
+:root:root .dd-btn:active{background:var(--dd-btn-press,rgba(0,0,0,.1));border-color:var(--dd-btn-accent,var(--dd-btn-border))}
+:root:root .dd-search{background:var(--dd-btn-idle,transparent)}
+/* layout toggle: sliding indicator is styled on .dd-seg::before */
+.dd-title{cursor:pointer}
+:root:root .dd-zreset{width:20px;height:20px;padding:0;margin:0 0 0 4px;border:0;border-radius:6px;background:transparent;color:var(--dd-text-dim);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none}
+/* the "?" takes no width (its icon is drawn 8 to 22 px past it): a reset button right after it kept clear of the icon */
+:root:root .dd-help + .dd-zreset,:root:root .dd-help + .dd-spacer + .dd-zreset{margin-left:26px}
+:root:root .dd-zreset:hover{background:var(--dd-hover,rgba(128,128,128,.12));transform:none;translate:none}
+/* a hovered row is lit over its deck colour too (the deck rows carry an inline background) */
+.dd-tbl tbody tr:hover td{box-shadow:inset 0 0 0 999px color-mix(in srgb,var(--dd-text-dim) 7%,transparent)}
+.dd-dr-text{white-space:pre;overflow:hidden;text-overflow:ellipsis}
+/* table_drawer: the closed table's bar is 30 px high, 8 px under the charts */
+.dd-drawerrow{margin-top:8px}
+.dd-drawer{height:30px}
+/* Auto-close: pill_checkbox_qss with font-size 12px, padding 4px 11px, radius 12 */
+:root:root .dd-autoclose,:root:root .dd-autoclose:hover,:root:root .dd-autoclose:active,:root:root .dd-autoclose:focus{height:auto;font-size:12px;line-height:16px;padding:4px 11px;border-radius:12px}
+html.dd-window,html.dd-window body{overflow:hidden}
+.dd-dots-on .dd-zbar{display:none!important}
+
+:root:root .dd-sc-more,:root:root .dd-sc-more:focus,:root:root .dd-sc-more:active{position:absolute;right:7px;top:4px;width:18px;height:16px;padding:0;margin:0;border:0;border-radius:5px;background:transparent;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s,background .15s;cursor:pointer;z-index:2}
+:root:root .ddp .dd-sc-more,:root:root .ddp .dd-sc-more:focus,:root:root .ddp .dd-sc-more:active{right:3px;top:3px;width:18px;height:15px}
+:root:root .dd-sc:hover .dd-sc-more{opacity:.9}
+:root:root .dd-sc-more:hover{opacity:1;background:color-mix(in srgb,currentColor 18%,transparent)}
+
+html.dd-exporting .dd-zbar,html.dd-exporting .dd-hbtns,html.dd-exporting .dd-help,html.dd-exporting .dd-zreset,html.dd-exporting .dd-sc-more,html.dd-exporting .dd-tip,html.dd-exporting .dd-rsz{display:none!important}
+
+/* floating above the bottom bar or the open table (app.js placeRate), over the charts: a shadow to lift it */
+.dd-rate{position:fixed;left:0;right:0;bottom:60px;z-index:35;display:flex;justify-content:center;pointer-events:none;padding:0 16px}
+.dd-rate-pill{pointer-events:auto;max-width:100%;box-sizing:border-box;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+.dd-rate-pill{display:flex;align-items:center;gap:6px;padding:6px 7px 6px 16px;border-radius:19px;background:var(--dd-rate-surface,#3a3a3a);border:1px solid var(--dd-rate-border,var(--dd-border));color:var(--dd-rate-text,var(--dd-text))}
+.dd-rate-ic{display:flex;color:var(--dd-rate-accent,#58a6ff);margin-right:5px}
+.dd-rate-t{font-size:14px;margin-right:16px}
+/* the buttons keep their size under the mouse and when pressed (the page's reset of every button set padding 0) */
+:root:root .dd-rate-b,:root:root .dd-rate-b:focus,:root:root .dd-rate-b:hover,:root:root .dd-rate-b:active{display:flex;align-items:center;gap:6px;background:transparent;border:0;border-radius:13px;color:var(--dd-rate-muted,var(--dd-text-dim));font:inherit;font-size:14px;padding:5px 13px;margin:0;min-width:0;cursor:pointer;transform:none}
+:root:root .dd-rate-b:hover{background:var(--dd-rate-hover,var(--dd-hover));color:var(--dd-rate-text,var(--dd-text))}
+:root:root .dd-rate-b.on,:root:root .dd-rate-b.on:focus{background:var(--dd-rate-accent,#58a6ff);color:var(--dd-rate-on-accent,#fff);font-weight:600}
+:root:root .dd-rate-b.on:hover,:root:root .dd-rate-b.on:active{background:var(--dd-rate-accent-hover,var(--dd-rate-accent,#58a6ff));color:var(--dd-rate-on-accent,#fff)}
+
+/* pinned widgets in Anki's page (pinned.js) */
+.ddp{font:12px -apple-system,"Segoe UI",sans-serif;color:var(--dd-text);text-align:left}
+.ddp .dd-pinb{display:none}
+.ddp-text{color:var(--dd-text);overflow:hidden}
+.ddp .ddp-card{background:var(--ddp-bg);border:var(--ddp-bd);border-radius:var(--ddp-rad,14px);padding:var(--ddp-pad);box-shadow:none;box-sizing:border-box;backdrop-filter:none}
+.ddp .ddp-card:hover{border:var(--ddp-bdh)}
+.ddp .ddp-card.ddp-noglass,.ddp .ddp-card.ddp-noglass:hover{background:transparent;border:none}
+/* frameless pinned cards (no box): pure backdrop blur behind controls, no border or dark box */
+.ddp .ddp-card.ddp-noglass .dd-hm-nav{border-radius:8px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+:root:root .ddp .ddp-card.ddp-noglass .dd-pill{-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.ddp .ddp-card.ddp-noglass .ddp-chip{-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+:root:root .ddp .ddp-card.ddp-noglass .dd-hbtns button{-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+/* the "⋯" (more_button): on hover, right before the title row's buttons; a card without a title row has none */
+.ddp .ddp-card[data-type="text_label"] .dd-hbtns{display:none}
+:root:root .ddp .dd-hbtns .dd-pinb{display:none}  /* already pinned */
+.ddp .dd-head.ddp-headless{display:none}
+.ddp-chip{position:relative;display:inline-flex;align-items:center;gap:4px;height:16px;padding:0 7px;margin-left:4px;border-radius:8px;font-size:9.5px;font-weight:500;letter-spacing:0;text-transform:none;white-space:nowrap;cursor:pointer;opacity:.8;flex:none}
+.ddp-chip::before{content:'';position:absolute;inset:0;border-radius:8px;background:currentColor;opacity:.086}
+.ddp-chip:hover{opacity:1}
+.ddp-chip:hover::before{opacity:.19}
+.ddp .dd-sc-host{padding:0}
+.ddp .ddp-card .dd-head{height:24px;padding-top:0;margin:0 0 2px 0;padding-left:8px}
+.ddp .ddp-card[data-type=heatmap] .dd-head{height:20px;padding-left:0}
+.ddp .ddp-chip{height:18px;border-radius:9px;gap:3px;margin-left:7px;font-size:9.5px}
+.ddp .ddp-chip::before{border-radius:9px}
+.ddp .ddp-text{display:flex;align-items:center}
+.ddp .ddp-text{box-sizing:border-box;font-weight:400;font-family:"Segoe UI",sans-serif}
+.ddp{position:relative}
+.ddp-gapbar,.ddp-linemark,.ddp-landbar,.ddp-spot,.ddp-plus,.ddp-gaphandle{position:absolute;z-index:50;box-sizing:border-box}
+.ddp-gapbar,.ddp-linemark,.ddp-landbar,.ddp-spot{pointer-events:none}
+.ddp-gapbar{background:var(--dd-accent,#3b82f6);border-radius:2px}
+.ddp-gapbar span{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:1px 8px;border-radius:8px;background:var(--dd-accent,#3b82f6);color:#fff;font:600 10px "Segoe UI",sans-serif;white-space:nowrap}
+.ddp-linemark{border:2px solid var(--dd-accent,#3b82f6);border-radius:8px;background:color-mix(in srgb,var(--dd-accent,#3b82f6) 13%,transparent)}
+.ddp-landbar{background:var(--dd-accent,#3b82f6);border-radius:2px}
+.ddp-spot{border:2px dashed var(--dd-accent,#3b82f6);border-radius:10px;background:color-mix(in srgb,var(--dd-accent,#3b82f6) 18%,transparent)}
+.ddp-plus{cursor:pointer;color:var(--dd-text);opacity:.8}
+.ddp-plus:hover{opacity:1}
+.ddp-plus svg{display:block}
+.ddp-plus circle{fill:currentColor;fill-opacity:.09;stroke:none}
+.ddp-plus:hover circle{fill-opacity:.19}
+.ddp-plus path{stroke:currentColor;stroke-width:1.6;stroke-linecap:round}
+.ddp-gaphandle{cursor:ns-resize;color:var(--dd-text)}
+.ddp-gaphandle i{position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;border-radius:1px;background:currentColor;opacity:0}
+.ddp-gaphandle.on i{opacity:.43}
+.ddp-gaphandle b{position:absolute;top:50%;width:26px;height:5px;margin:-2.5px 0 0 -13px;border-radius:2.5px;background:currentColor;opacity:.29}
+.ddp-gaphandle.on b{opacity:.55}
+.ddp-gaphandle em{position:absolute;right:0;top:50%;transform:translateY(-50%);font:600 10px "Segoe UI",sans-serif;font-style:normal;opacity:.75}
+.ddp .ddp-dragsrc{opacity:.35}
+.ddp-ghost{opacity:.85;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.ddp-grip{position:absolute;z-index:50;width:16px;height:26px;border-radius:5px;cursor:grab;color:var(--dd-text);display:none}
+.ddp-grip::before{content:'';position:absolute;inset:0;border-radius:5px;background:currentColor;opacity:.15}
+.ddp-grip:hover::before{opacity:.27}
+.ddp-grip i{position:absolute;width:3.2px;height:3.2px;border-radius:50%;background:currentColor;opacity:.78}
+.ddp-grip:hover i{opacity:1}
+.ddp-grip i:nth-child(1){left:3.9px;top:5.9px}.ddp-grip i:nth-child(2){left:8.9px;top:5.9px}
+.ddp-grip i:nth-child(3){left:3.9px;top:11.4px}.ddp-grip i:nth-child(4){left:8.9px;top:11.4px}
+.ddp-grip i:nth-child(5){left:3.9px;top:16.9px}.ddp-grip i:nth-child(6){left:8.9px;top:16.9px}
+.ddp-fs-win{position:fixed;inset:0;z-index:200;background:var(--dd-bg);display:flex;flex-direction:column;padding:12px 24px 24px;box-sizing:border-box;gap:8px}
+.ddp-fs-x{align-self:flex-end;width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:var(--dd-text);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex:none}
+.ddp-fs-x:hover{background:var(--dd-hover,rgba(128,128,128,.12))}
+/* a pinned chart fullscreen (z 200): its menus (period, deck, the ⋯), help tips and toasts open over it, not under */
+:root:root:has(.ddp-fs-win) .dd-menu,:root:root:has(.ddp-fs-win) .dd-helptip,:root:root:has(.ddp-fs-win) .dd-toast{z-index:210}
+.ddp .ddp-card{-webkit-backdrop-filter:var(--ddp-blur,none);backdrop-filter:var(--ddp-blur,none)}
+.ddp .ddp-card{box-shadow:var(--ddp-shadow,none)}
+.ddp .dd-sc{-webkit-backdrop-filter:var(--ddp-scblur,none);backdrop-filter:var(--ddp-scblur,none);box-shadow:var(--ddp-scshadow,none)}
+/* the stat cards' fill at half its opacity with the Auto glass over a background image (as the boxes' tint) */
+.ddp.ddp-sclight .dd-sc::before{opacity:.5}
+/* guided tour (pinned.js DDP.tour): the screen dimmed around the light, a dark card */
+.ddp-tour{position:fixed;inset:0;z-index:2147483000;font:13px "Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif;animation:ddp-tour-in .18s ease-out}
+.ddp-tour.out{opacity:0;transition:opacity .18s}
+@keyframes ddp-tour-in{from{opacity:0}to{opacity:1}}
+.ddp-tour-hole{position:fixed;box-sizing:border-box;border-radius:12px;border:2px solid var(--ddp-tour-acc,#58a6ff);box-shadow:0 0 0 200vmax rgba(0,0,0,.59);pointer-events:none;transition:left .18s cubic-bezier(.215,.61,.355,1),top .18s cubic-bezier(.215,.61,.355,1),width .18s cubic-bezier(.215,.61,.355,1),height .18s cubic-bezier(.215,.61,.355,1)}
+.ddp-tour-hole.snap{transition:none}
+.ddp-tour-card{position:fixed;width:358px;box-sizing:border-box;padding:12px 14px 10px;background:rgba(32,33,38,.96);border:1px solid rgba(255,255,255,.18);border-radius:10px;color:#f2f2f2;box-shadow:0 8px 28px rgba(0,0,0,.35);transition:opacity .15s}
+.ddp-tour-card.wait{opacity:.55}
+.ddp-tour-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ddp-tour-title{color:#a8a8a8;font-size:11px}
+.ddp-tour-dots{display:flex;gap:5px}
+.ddp-tour-dots{gap:6px}
+.ddp-tour-dots i{width:7px;height:7px;box-sizing:border-box;border-radius:3.5px;border:1.2px solid rgba(255,255,255,.43);cursor:pointer;transition:width .15s}
+.ddp-tour-dots i.seen{border:none;background:rgba(255,255,255,.55)}
+.ddp-tour-dots i.on{width:16px;border:none;background:var(--ddp-tour-acc,#58a6ff)}
+.ddp-tour-dots i:hover{border-color:rgba(255,255,255,.86);background:rgba(255,255,255,.16)}
+.ddp-tour-dots i.seen:hover{background:rgba(255,255,255,.78)}
+.ddp-tour-dots i.on:hover{background:var(--ddp-tour-acc,#58a6ff)}
+.ddp-tour-badge{position:fixed;padding:3px 10px;border-radius:9px;background:var(--ddp-tour-acc,#58a6ff);color:#fff;font:600 12px "Segoe UI",-apple-system,sans-serif;white-space:nowrap;pointer-events:none}
+.ddp-tour-text{line-height:1.45;margin-bottom:10px}
+.ddp-tour-row{display:flex;align-items:center;gap:6px}
+.ddp-tour-row span{flex:1}
+:root:root .ddp-tour button{font:inherit;color:#e8e8e8;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);border-radius:6px;padding:4px 12px;margin:0;cursor:pointer}
+:root:root .ddp-tour button:hover{background:rgba(255,255,255,.13)}
+:root:root .ddp-tour .ddp-tour-skip{background:transparent;border:none;color:#a8a8a8;padding:4px 6px}
+:root:root .ddp-tour .ddp-tour-skip:hover{color:#fff;background:transparent}
+:root:root .ddp-tour .ddp-tour-next{background:var(--ddp-tour-acc,#58a6ff);border:none;color:#fff;font-weight:600}
+/* what a step shows live (the "+", the grip of a box): above the dimmed screen, pulsing */
+.ddp-pulse{animation:ddp-pulse 1.1s ease-in-out infinite}
+@keyframes ddp-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+.ddp-tour-pic{position:fixed;display:none;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.35);border-radius:6px}
+.ddp-tour-ptr{position:fixed;width:20px;height:24px;opacity:0;pointer-events:none;z-index:6;transition:opacity .15s;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
+/* Deep Dive window: no chevron (room for the title and the stats); a click on the title folds the card */
+#dd-root .dd-card .dd-chev{display:none}
+#dd-root .dd-card .dd-head{margin-left:0}
+/* a card in full screen is moved out of #dd-root (into the body): the same, or its chevron came back */
+.dd-card.dd-fs .dd-chev{display:none}
+.dd-card.dd-fs > .dd-head{margin-left:0}
+/* folded: the chevron (pointing right) tells the card is folded; the header in the middle of the card's height */
+#dd-root .dd-card.dd-collapsed .dd-chev{display:block}
+#dd-root .dd-card.dd-collapsed{padding-bottom:0}
+#dd-root .dd-card.dd-collapsed .dd-head{height:100%;padding-top:0}
+/* a card or a stat card being dragged: no tooltip nor hover in the charts it passes over */
+body.dd-dragging .dd-tip,body.dd-dragging .dd-helptip{display:none!important}
+body.dd-dragging .dd-plot,body.dd-dragging .dd-plot *{pointer-events:none!important}
+.ddp-themefx .ddp-card,.ddp-themefx .dd-sc,.ddp-themefx .dd-head,.ddp-themefx .dd-sc *{transition:background-color .2s,border-color .2s,color .2s,box-shadow .2s}
+.ddp-tour-card.glide{transition:opacity .15s,left .22s cubic-bezier(.215,.61,.355,1),top .22s cubic-bezier(.215,.61,.355,1)}
+/* the card over everything the tour shows (pointer, pictures, copies, tag) */
+.ddp-tour-card{z-index:10}
+.ddp-tour-badge{z-index:4}
+
+/* web: the deck's title and the charts' buttons in the table's bar (app.js); the charts start under the stat cards */
+.dd-drawerrow .dd-dtitle{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30%;flex:none;margin:0 6px 0 12px}
+.dd-drawerrow .dd-tbgroup{display:flex;align-items:center;gap:2px;flex:none;margin-left:6px}
+.dd-shell .dd-gridwrap{margin-top:14px}
+/* web: the Deck / Time Span buttons carry the deck and the period (app.js setTitle): the title on the table's bar is not needed */
+.dd-drawerrow .dd-dtitle{display:none}
+:root:root .dd-bottom .dd-deck span,:root:root .dd-bottom .dd-span span{max-width:200px;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+/* TEST: the stat cards' coloured border toned down in Deep Dive (the colour stays on the number) */
+.dd-shell .dd-sc .dd-sc-bd{opacity:.35}
+/* web: the table's tabs apart from the buttons around them: a fade where they scroll */
+:root:root .dd-tbl-tabs.dd-over{-webkit-mask-image:linear-gradient(to right,transparent,#000 22px,#000 calc(100% - 22px),transparent);mask-image:linear-gradient(to right,transparent,#000 22px,#000 calc(100% - 22px),transparent);padding:0 14px}
+/* web: Auto-close off has the plain border of the buttons (the accent one is for on) */
+:root:root .dd-tbl-foot .dd-pill:not(.on),:root:root .dd-tbl-foot .dd-pill:not(.on):hover,:root:root .dd-tbl-foot .dd-pill:not(.on):active,:root:root .dd-tbl-foot .dd-pill:not(.on):focus{border-color:var(--dd-btn-border,rgba(128,128,128,.3))}
+/* web: a line after Hide / Auto-close too, as before the charts' buttons: the tabs sit between two lines */
+.dd-tbl-foot .dd-autoclose{margin-right:2px}
+/* the foot's sides as wide as each other while there is room: the tabs in the middle of the table, whatever the buttons
+   on each side; short of room, the sides keep their buttons and the tabs scroll */
+:root:root .dd-tbl-foot{display:grid;grid-template-columns:minmax(max-content,1fr) minmax(0,max-content) minmax(max-content,1fr)}
+.dd-tbl-fl,.dd-tbl-fr{display:flex;align-items:center;gap:8px}
+.dd-tbl-fr{justify-content:flex-end}
+/* web: the whole closed table's bar opens it (not only its arrow): the hand cursor all over it, and a light hover */
+.dd-drawer,.dd-drawer *{cursor:pointer}
+.dd-drawer:hover{background:color-mix(in srgb,var(--dd-text) 8%,var(--dd-drawer,rgba(0,0,0,.05)))}
+/* web: the stat cards' row has the charts' left and right edges (the grid's padding), see DD.statGap */
+/* web: one margin all around the window (16 px): the stat cards, the charts, the table's bar and the bottom bar share
+   their left and right edges (the charts had 27 / 29 px, the bars 15 / 17), and less room under the charts */
+.dd-shell{--dd-edge:16px}
+.dd-shell .dd-sc-host{padding:16px var(--dd-edge) 0}
+:root:root .dd-shell .dd-grid{padding:0 var(--dd-edge) 8px}
+.dd-shell .dd-drawerrow{margin:6px var(--dd-edge) 10px}
+.dd-shell .dd-bottom{padding-left:var(--dd-edge);padding-right:var(--dd-edge)}
+.dd-shell .dd-tblhost{left:var(--dd-edge);right:var(--dd-edge)}
+/* the "?" (drawn past its zero-wide box) and the hover buttons (pin, ⋯) both live in the header's free space: it keeps
+   room for both (they overlapped when the stats filled the header); the stats shrink to their icon first */
+.dd-shell .dd-card .dd-head .dd-spacer{min-width:76px}
+/* the zoom reset arrow on the right of the header (app.js updateRZoom), right after the hover buttons: the same small
+   gap as between them, and nothing that moves it on hover (a button's hover style changed its margin) */
+:root:root .dd-shell .dd-head .dd-zreset,:root:root .dd-shell .dd-head .dd-zreset:hover,:root:root .dd-shell .dd-head .dd-zreset:active,:root:root .dd-shell .dd-head .dd-zreset:focus{margin:0 4px 0 -4px;padding:0;width:20px;height:20px;border:0;transform:none;translate:none;top:0;box-shadow:none}
+:root:root .dd-shell .dd-card .dd-hbtns{right:0}
+/* web: a thin scroll bar on the charts when they do not all fit, so more below is visible;
+   discreet, brighter under the mouse */
+:root:root .dd-shell .dd-gridwrap{scrollbar-width:auto}
+:root:root .dd-shell .dd-gridwrap::-webkit-scrollbar{display:block;width:6px}
+:root:root .dd-shell .dd-gridwrap::-webkit-scrollbar-track{background:transparent}
+:root:root .dd-shell .dd-gridwrap::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--dd-text) 18%,transparent);border-radius:3px;border:1px solid transparent;background-clip:padding-box}
+:root:root .dd-shell .dd-gridwrap:hover::-webkit-scrollbar-thumb{background-color:color-mix(in srgb,var(--dd-text) 32%,transparent)}
+:root:root .dd-shell .dd-gridwrap::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--dd-text) 45%,transparent)}
+/* the scroll bar's room is always kept (scrollbar-gutter) and taken from the charts' right margin: the charts' right
+   edge stays under the stat cards' one, with or without the bar */
+:root:root .dd-shell .dd-gridwrap{scrollbar-gutter:stable}
+/* web: the deck chooser over the Deck button (app.js) */
+:root:root .dd-deckpick{width:320px;max-height:min(460px,70vh);display:flex;flex-direction:column;padding:6px;overflow:hidden}
+:root:root .dd-dp-search{box-sizing:border-box;width:100%;height:30px;margin:0 0 6px;padding:0 10px;border-radius:8px;border:1px solid var(--dd-btn-border,rgba(128,128,128,.3));background:transparent;color:inherit;font:inherit;font-size:13px;outline:none}
+:root:root .dd-dp-search:focus{border-color:color-mix(in srgb,var(--dd-accent,#3b82f6) 70%,transparent)}
+.dd-dp-list{overflow:auto;min-height:0;flex:1;scrollbar-width:thin}
+:root:root .dd-dp-row{margin:1px 0;padding-top:5px;padding-bottom:5px;padding-right:10px;overflow:hidden;text-overflow:ellipsis}
+:root:root .dd-dp-row.on{font-weight:700}
+:root:root .dd-dp-row.dd-dp-cur,:root:root .dd-dp-row:hover{background-color:var(--dd-hover,rgba(128,128,128,.14))}
+/* the tree: a thin line for each level above the deck (16 px apart), a caret on a deck with decks under it */
+:root:root .dd-dp-row{display:flex;align-items:center;gap:4px;background-image:repeating-linear-gradient(90deg,color-mix(in srgb,var(--dd-text) 14%,transparent) 0 1px,transparent 1px 16px);background-size:calc(var(--d,0) * 16px) 100%;background-position:15px 0;background-repeat:no-repeat}
+.dd-dp-caret{flex:none;width:12px;font-size:10px;color:var(--dd-text-dim);text-align:center}
+.dd-dp-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
+:root:root .dd-dp-row.dd-dp-parent .dd-dp-name{font-weight:600}
+:root:root .dd-dp-row.on .dd-dp-name,:root:root .dd-dp-all.on span{color:var(--dd-accent,#3b82f6);font-weight:700}
+/* Collection: apart, with its icon, over a line */
+:root:root .dd-dp-all{gap:8px;font-weight:600;padding-left:10px;background-image:none}
+:root:root .dd-dp-all svg{flex:none;opacity:.8}
+.dd-dp-hint{margin-left:auto;font-size:11px;font-weight:400;color:var(--dd-text-dim)}
+.dd-dp-sep{height:1px;margin:4px 6px;background:var(--dd-btn-border,rgba(128,128,128,.3))}
+.dd-dp-none{padding:10px;color:var(--dd-text-dim);font-size:12px}
+/* web: Hide and Auto-close side by side in the table's foot: the same button (height, corners, text); Auto-close on
+   keeps its tint and its accent border */
+:root:root .dd-tbl-foot .dd-autoclose,:root:root .dd-tbl-foot .dd-autoclose:hover,:root:root .dd-tbl-foot .dd-autoclose:active,:root:root .dd-tbl-foot .dd-autoclose:focus{height:26px;line-height:normal;padding:0 10px;border-radius:8px;font-size:12px;font-weight:400;display:flex;align-items:center;box-sizing:border-box;margin:0 2px 0 0}
+:root:root .dd-tbl-foot .dd-autoclose:not(.on){color:var(--dd-text-dim)}
+:root:root .dd-tbl-foot .dd-autoclose.on{color:var(--dd-text)}
+/* web: the Columns button, as Hide (the header's right-click menu, in sight) */
+:root:root .dd-tbl-cols{display:flex;align-items:center;gap:5px;height:26px;padding:0 10px;margin-right:2px;border:1px solid var(--dd-btn-border);border-radius:8px;background:transparent;color:var(--dd-text-dim);font:inherit;font-size:12px;cursor:pointer;box-sizing:border-box}
+:root:root .dd-tbl-cols:hover,:root:root .dd-tbl-cols:active,:root:root .dd-tbl-cols:focus{height:26px;padding:0 10px;border:1px solid var(--dd-btn-border);font-size:12px;transform:none;translate:none;background:var(--dd-hover,rgba(0,0,0,.05));color:var(--dd-text)}
+/* Visuals and Trends, the table's own options, beside Columns (as small); Trends on: lit as Auto-close */
+:root:root .dd-tbl-opt{display:flex;align-items:center;gap:5px;height:26px;padding:0 10px;margin-right:2px;border:1px solid var(--dd-btn-border);border-radius:8px;background:transparent;color:var(--dd-text-dim);font:inherit;font-size:12px;cursor:pointer;box-sizing:border-box;flex:none;white-space:nowrap}
+:root:root .dd-tbl-opt:hover,:root:root .dd-tbl-opt:active,:root:root .dd-tbl-opt:focus{height:26px;padding:0 10px;border:1px solid var(--dd-btn-border);font-size:12px;transform:none;translate:none;background:var(--dd-hover,rgba(0,0,0,.05));color:var(--dd-text)}
+:root:root .dd-tbl-opt.on,:root:root .dd-tbl-opt.on:hover{color:var(--dd-text);border-color:color-mix(in srgb,var(--dd-accent,#d65d0e) 60%,transparent);background:color-mix(in srgb,var(--dd-accent,#d65d0e) 14%,transparent)}
+/* hovered, pressed or clicked: the same 2 px after them (every button's hover took its margin off: the buttons that
+   follow moved by 2 px) */
+:root:root .dd-tbl-foot :is(.dd-autoclose,.dd-tbl-cols,.dd-tbl-opt):is(:hover,:active,:focus){margin:0 2px 0 0}
+/* a narrow window: their words go, the icons stay (as the bottom bar's buttons) */
+@media (max-width:1500px){:root:root .dd-tbl-opt span,:root:root .dd-tbl-cols span{display:none}}
+/* View by Deck: a folder's tab carries a small button that folds / unfolds it (a chip, not a faint character) */
+.dd-tcar{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin:0 6px 0 -10px;border-radius:5px;font-size:11px;line-height:1;vertical-align:middle;color:var(--dd-text);background:color-mix(in srgb,var(--dd-text) 10%,transparent);cursor:pointer;transition:background-color .12s}
+.dd-tcar:hover{background:color-mix(in srgb,var(--dd-text) 22%,transparent)}
+/* a folder that holds the deck shown (it can't fold): the same square as the others, dimmed */
+.dd-tcar.keep,.dd-tcar.keep:hover{opacity:.45;cursor:default;background:color-mix(in srgb,var(--dd-text) 10%,transparent)}
+/* an export (html.dd-exporting): a flat background (the export's), no scroll bars nor their room, the table without
+   its drawer look (the rounded top, its grip) */
+html.dd-exporting,html.dd-exporting body{background:var(--dd-export-bg,var(--dd-bg))!important}
+/* the stat cards' block too: the window's own background showed as a darker band behind them */
+html.dd-exporting .dd-shell,html.dd-exporting .dd-sc-host,html.dd-exporting .dd-sc-lines{background:var(--dd-export-bg,var(--dd-bg))!important}
+html.dd-exporting .dd-shell .dd-gridwrap,html.dd-exporting .dd-tbl-scroll{scrollbar-width:none!important;scrollbar-gutter:auto!important}
+html.dd-exporting .dd-gridwrap::-webkit-scrollbar,html.dd-exporting .dd-tbl-scroll::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
+html.dd-exporting .dd-tbl-edge{display:none!important}
+html.dd-exporting .dd-tbl-panel{border:0!important;border-radius:0!important;background:var(--dd-export-bg,var(--dd-bg))!important;box-shadow:none!important}
+
+/* web: the Deep Dive stat cards centered (as pinned), with a soft glow of the card's colour behind the number, so a wide card does not look empty */
+.dd-shell .dd-sc{align-items:center;text-align:center}
+.dd-shell .dd-sc-t,.dd-shell .dd-sc-v{z-index:1;text-align:center;max-width:100%}
+.dd-shell .dd-sc-t{padding-left:0}
+.dd-shell .dd-sc-v{font-variant-numeric:tabular-nums;margin-top:3px}
+/* TEST off: the glow behind the number
+.dd-shell .dd-sc::after{content:'';position:absolute;left:50%;top:62%;width:min(80%,260px);height:120%;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(closest-side,color-mix(in srgb,var(--sc-c,transparent) 11%,transparent),transparent);pointer-events:none;z-index:0} */
+/* the widget gallery's hidden preview page (gallery.js): each chart fills its picture, without its card */
+#ddg-root{position:relative;width:100%;height:100%}
+:root:root .ddg-card{width:100%;height:100%;background:transparent;border:0;border-radius:0;box-shadow:none;padding:2px 6px 0}
+
+/* Settings > General > Table > Zebra Rows off: no shading on every other row */
+:root:root .dd-nozebra .dd-tbl tr.odd td{background:transparent}
+
+/* Settings > General > Deep Dive > Collapsible Charts off: no chevron on the charts */
+.dd-nofold .dd-head .dd-chev{display:none}
+
+/* languages without capitals (ja, ko, zh_CN): the captions 20 % larger, no letter spacing (i18n.adapt_qss) */
+/* (the class is on <html> itself, dd-core.js DD.setI18n: ":root .dd-nocase" never matched, the captions stayed 10 px) */
+:root:root.dd-nocase .dd-title,:root:root.dd-nocase .dd-tbl th{letter-spacing:0;font-size:12px}
+:root:root.dd-nocase .dd-sc-t{letter-spacing:0;zoom:1.2}
+
+/* an image export going on (DD.exportProgress): a notice over the window, no click passes */
+.dd-exp-ov{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.28);opacity:0;transition:opacity .18s;cursor:progress}
+.dd-exp-ov.on{opacity:1}
+.dd-exp-box{min-width:260px;padding:16px 20px;border-radius:12px;background:var(--dd-menu-bg,var(--dd-card));color:var(--dd-menu-text,var(--dd-text));border:1px solid var(--dd-menu-border,var(--dd-border));box-shadow:0 10px 30px rgba(0,0,0,.35);font:13px "Segoe UI",-apple-system,sans-serif}
+.dd-exp-t{margin-bottom:10px;font-weight:600}
+.dd-exp-bar{height:4px;border-radius:2px;background:color-mix(in srgb,var(--dd-text) 14%,transparent);overflow:hidden}
+.dd-exp-bar i{display:block;height:100%;width:4%;background:var(--dd-accent,#3b82f6);border-radius:2px;transition:width .2s}
+html.dd-exporting .dd-exp-ov{display:none}
+
+/* a text of the Deep Dive (charts/text.js): no title row, its sentence centered in the card, dragged from anywhere
+   on it, its "..." in the top right corner on hover, only its width resized */
+.dd-card.dd-text{padding:10px 14px;cursor:grab;user-select:none;-webkit-user-select:none}
+.dd-card.dd-text .dd-body.dd-tx{display:flex;align-items:center;min-height:0;overflow:hidden}
+.dd-tx-in{width:100%;color:var(--dd-text);font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+.dd-tx-in p{margin:0}
+.dd-tx-in.dd-tx-blank{color:var(--dd-text-dim);font-style:italic;text-align:center}
+:root:root .dd-card.dd-text .dd-tx-more{position:absolute;top:6px;right:6px;z-index:5;width:22px;height:22px;padding:0;margin:0;border:0;border-radius:5px;background:transparent;color:var(--dd-text-dim);display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:opacity .15s}
+:root:root .dd-card.dd-text:hover .dd-tx-more{opacity:.6}
+:root:root .dd-card.dd-text .dd-tx-more:hover{opacity:1;background:var(--dd-hover);color:var(--dd-text)}
+html.dd-exporting .dd-tx-more{display:none}
+/* the texts' formatting (the text editor: titles, lists, lines, typed as Markdown or from its toolbar), the same
+   in the Deep Dive and on the deck list; the editor's own margins on them are taken back */
+:is(.dd-tx-in,.ddp-text) :is(h1,h2,h3,h4,h5,h6){margin:.15em 0 .3em!important;line-height:1.25;font-weight:700}
+:is(.dd-tx-in,.ddp-text) :is(h1,h2,h3,h4,h5,h6):first-child{margin-top:0!important}
+:is(.dd-tx-in,.ddp-text) :is(ul,ol){margin:.2em 0!important;padding-left:1.4em!important}
+:is(.dd-tx-in,.ddp-text) li{margin:.1em 0!important}
+/* a centered or right-aligned item: its bullet or number goes with its words (outside, it stayed at the left edge) */
+:is(.dd-tx-in,.ddp-text) li:is([align=center],[align=right],[style*="text-align: center"],[style*="text-align:center"],[style*="text-align: right"],[style*="text-align:right"]){list-style-position:inside}
+:is(.dd-tx-in,.ddp-text) :is(ul,ol):not(:has(> li:not([align=center],[align=right]))){padding-left:0!important}
+:is(.dd-tx-in,.ddp-text) hr{border:0;border-top:1px solid color-mix(in srgb,currentColor 22%,transparent);margin:.5em 0;height:0}
+:is(.dd-tx-in,.ddp-text) :is(table,thead,tbody,tfoot,tr,td,th){background:transparent!important;box-shadow:none!important}
+/* on the deck list, a text of several paragraphs (titles, lists, lines) stacks them, centered in its height */
+.ddp .ddp-text:has(> :is(p,h1,h2,h3,h4,h5,h6,ul,ol,hr)){flex-direction:column;justify-content:center;align-items:stretch}
+
+/* Anki search query filter button, popover, and pinned widget chip */
+:root:root .dd-btn.dd-filter.on{border-color:color-mix(in srgb,var(--dd-accent,#3b82f6) 55%,transparent);background:color-mix(in srgb,var(--dd-accent,#3b82f6) 16%,transparent);color:var(--dd-text)}
+:root:root .dd-btn.dd-filter .dd-flt-x{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:2px;margin-right:-4px;border-radius:4px;font-size:14px;line-height:1;opacity:.75;transition:opacity .12s,background .12s}
+:root:root .dd-btn.dd-filter .dd-flt-x:hover{opacity:1;background:color-mix(in srgb,var(--dd-text) 14%,transparent)}
+:root:root .dd-fltpop{width:350px;padding:12px;border-radius:10px;display:flex;flex-direction:column;gap:10px;overflow:hidden;box-shadow:0 10px 28px rgba(0,0,0,.38);font-family:"Segoe UI",-apple-system,sans-serif}
+:root:root .dd-flt-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dd-text-dim);padding:0 1px}
+:root:root .dd-flt-head svg{opacity:.8;flex:none}
+:root:root .dd-flt-row{display:flex;align-items:center;gap:7px}
+:root:root .dd-flt-inp{box-sizing:border-box;flex:1;min-width:0;height:32px;margin:0;padding:0 10px;border-radius:8px;border:1px solid var(--dd-btn-border,rgba(128,128,128,.3));background:color-mix(in srgb,var(--dd-bg,transparent) 60%,transparent);color:var(--dd-menu-text,var(--dd-text));font-family:"Segoe UI",-apple-system,sans-serif;font-size:13px;outline:none;transition:border-color .14s}
+:root:root .dd-flt-inp:focus{border-color:color-mix(in srgb,var(--dd-accent,#3b82f6) 75%,transparent)}
+:root:root .dd-flt-go,:root:root .dd-flt-go:hover,:root:root .dd-flt-go:active,:root:root .dd-flt-go:focus{box-sizing:border-box;flex:none;height:32px;min-width:0;width:auto;margin:0;padding:0 13px;border:0;border-radius:8px;background:var(--dd-accent,#3b82f6);color:#fff;font-family:"Segoe UI",-apple-system,sans-serif;font-size:12.5px;font-weight:600;line-height:1;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;transition:filter .12s,opacity .12s}
+:root:root .dd-flt-go:hover{filter:brightness(1.1)}
+:root:root .dd-flt-go:disabled{opacity:.5;cursor:default;filter:none}
+:root:root .dd-flt-status{font-size:12px;line-height:1.3;padding:0 2px;color:var(--dd-text-dim)}
+:root:root .dd-flt-status:empty{display:none}
+:root:root .dd-flt-status.err{color:#ef4444}
+:root:root .dd-flt-chips{display:flex;flex-wrap:wrap;gap:6px}
+:root:root .dd-flt-chip,:root:root .dd-flt-chip:hover,:root:root .dd-flt-chip:active,:root:root .dd-flt-chip:focus{box-sizing:border-box;height:24px;min-width:0;width:auto;margin:0;padding:0 9px;border-radius:999px;border:1px solid var(--dd-btn-border,rgba(128,128,128,.28));background:color-mix(in srgb,var(--dd-text) 6%,transparent);color:var(--dd-text-dim);font-family:ui-monospace,Consolas,monospace;font-size:11px;font-weight:500;line-height:1;cursor:pointer;display:inline-flex;align-items:center;transition:background .12s,color .12s,border-color .12s}
+:root:root .dd-flt-chip:hover{color:var(--dd-menu-text,var(--dd-text));border-color:color-mix(in srgb,var(--dd-accent,#3b82f6) 60%,transparent);background:color-mix(in srgb,var(--dd-accent,#3b82f6) 16%,transparent)}
+:root:root .dd-flt-recent{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--dd-btn-border,rgba(128,128,128,.22));padding-top:8px}
+:root:root .dd-flt-rlbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dd-text-dim);margin-bottom:3px;padding:0 6px}
+:root:root .dd-flt-ritem{font-family:ui-monospace,Consolas,monospace;font-size:12px;padding:5px 8px;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
+:root:root .dd-flt-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--dd-btn-border,rgba(128,128,128,.22));padding-top:8px}
+:root:root .dd-flt-hint{font-size:11px;color:var(--dd-text-dim);padding-left:2px}
+:root:root .dd-flt-clr,:root:root .dd-flt-clr:hover,:root:root .dd-flt-clr:active,:root:root .dd-flt-clr:focus{box-sizing:border-box;height:26px;min-width:0;width:auto;margin:0;padding:0 10px;border-radius:6px;border:1px solid var(--dd-btn-border,rgba(128,128,128,.28));background:transparent;color:var(--dd-text-dim);font-family:"Segoe UI",-apple-system,sans-serif;font-size:11.5px;font-weight:500;line-height:1;cursor:pointer;display:inline-flex;align-items:center;transition:background .12s,color .12s}
+:root:root .dd-flt-clr:hover{color:var(--dd-menu-text,var(--dd-text));background:var(--dd-hover,rgba(128,128,128,.16))}
+:root:root .ddp .ddp-flt-chip{display:inline-flex;align-items:center;gap:3px;max-width:130px;padding:1px 7px;border-radius:999px;border:1px solid color-mix(in srgb,var(--dd-accent,#3b82f6) 45%,transparent);background:color-mix(in srgb,var(--dd-accent,#3b82f6) 14%,transparent);color:var(--dd-text);font-family:ui-monospace,Consolas,monospace;font-size:10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+:root:root .ddp .ddp-flt-chip:hover{background:color-mix(in srgb,var(--dd-accent,#3b82f6) 24%,transparent)}
+
+/* ---- Responsive & Touch (Phone / Tablet / .dd-touch: no effect on desktop mouse) ---- */
+.dd-touch .dd-plot canvas{touch-action:pan-y}
+.dd-touch .dd-card .dd-hbtns,.dd-touch .dd-card.dd-text .dd-tx-more{opacity:.78}
+.dd-touch .dd-card .dd-help{opacity:.65}
+:root:root .dd-touch .dd-hbtns button,:root:root .dd-touch .dd-hbtns button:hover,:root:root .dd-touch .dd-hbtns button:active,:root:root .dd-touch .dd-hbtns button:focus,
+:root:root .dd-touch .dd-card.dd-text .dd-tx-more,:root:root .dd-touch .dd-card.dd-text .dd-tx-more:hover,:root:root .dd-touch .dd-card.dd-text .dd-tx-more:active,:root:root .dd-touch .dd-card.dd-text .dd-tx-more:focus{width:30px;height:30px}
+:root:root .dd-touch .dd-shell .dd-pill,:root:root .dd-touch .dd-shell .dd-pill:hover,:root:root .dd-touch .dd-shell .dd-pill:active,:root:root .dd-touch .dd-shell .dd-pill:focus{font-size:11px;line-height:18px;padding:4px 10px;border-radius:10px}
+html.dd-touch .dd-head .dd-spacer{min-width:34px!important}
+/* touch: the pin button goes (the ⋯ menu pins too): the ⋯ alone fits the spacer, which the two overflowed onto the "?" */
+html.dd-touch .dd-shell .dd-hbtns .dd-pinb{display:none!important}
+:root:root .dd-touch .dd-btn,:root:root .dd-touch .dd-btn:hover,:root:root .dd-touch .dd-btn:active,:root:root .dd-touch .dd-btn:focus,
+:root:root .dd-touch .dd-bottom .dd-tb,:root:root .dd-touch .dd-bottom .dd-tb:hover,:root:root .dd-touch .dd-bottom .dd-tb:active,:root:root .dd-touch .dd-bottom .dd-tb:focus{height:38px;padding:0 13px}
+:root:root .dd-touch .dd-btn.dd-sq,:root:root .dd-touch .dd-btn.dd-sq:hover,:root:root .dd-touch .dd-btn.dd-sq:active,:root:root .dd-touch .dd-btn.dd-sq:focus{width:38px;height:38px;padding:0;border-radius:19px}
+:root:root .dd-touch .dd-mi{min-height:38px;padding:8px 34px 8px 14px;font-size:13.5px}
+.dd-touch .dd-zbar{height:16px;right:52px;padding:3px 0;box-sizing:border-box;touch-action:none}
+.dd-touch .dd-zthumb{top:3px;bottom:3px;border-radius:5px}
+.dd-zctl{display:none;position:absolute;right:0;bottom:-2px;z-index:8;gap:2px}
+html.dd-touch .dd-zctl{display:flex}
+:root:root .dd-zbtn,:root:root .dd-zbtn:hover,:root:root .dd-zbtn:active,:root:root .dd-zbtn:focus{width:24px;height:22px;padding:0;margin:0;border:0;border-radius:5px;background:transparent;color:var(--dd-text-dim);font-size:16px;font-weight:600;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:.75;transform:none;translate:none}
+:root:root .dd-zbtn:active{background:var(--dd-hover,rgba(128,128,128,.16));opacity:1}
+:root:root .dd-zbtn:disabled{opacity:.25;cursor:default}
+/* Pinned widgets on touch: visible card menu buttons (stat cards use long-press, no permanent button) */
+html.dd-touch .ddp .dd-hbtns{opacity:.78}
+html.dd-touch .ddp-plus{display:none!important}
+/* touch: no line grip or gap handle (a hold lifts a card instead); the lifted card rises a little */
+html.dd-touch .ddp-grip,html.dd-touch .ddp-gaphandle{display:none!important}
+/* a phone's main screen: the block takes the width (Anki's page has its own margin) and sits closer to the deck list */
+@media (max-width:600px){
+  html.dd-touch #ddp-root.ddp{padding-left:min(var(--ddp-mx,20px),6px)!important;padding-right:min(var(--ddp-mx,20px),6px)!important;margin-top:0!important}
+}
+html.dd-touch .ddp-card,html.dd-touch .dd-card,html.dd-touch .dd-sc{-webkit-touch-callout:none}
+html .dd-lift-edge.dd-lift-edge{outline:2px solid var(--dd-accent,#3b82f6);outline-offset:2px}
+html .dd-lifted.dd-lifted{transform:scale(1.03)!important;box-shadow:0 10px 28px rgba(0,0,0,.4)!important;z-index:5;transition:transform var(--dd-lift-ms,140ms) ease,box-shadow var(--dd-lift-ms,140ms) ease!important}
+body.dd-lifting,body.dd-lifting *{user-select:none;-webkit-user-select:none}
+.ddp-touch-add-wrap{display:none;text-align:center;padding:8px 0 2px}
+html.dd-touch .ddp-touch-add-wrap{display:block}
+:root:root .ddp-touch-add,:root:root .ddp-touch-add:hover,:root:root .ddp-touch-add:active,:root:root .ddp-touch-add:focus{display:inline-flex;align-items:center;justify-content:center;height:32px;padding:0 16px;border-radius:16px;border:1px dashed var(--dd-btn-border,rgba(128,128,128,.38));background:transparent;color:var(--dd-text-dim);font-size:12px;font-weight:600;cursor:pointer;transform:none;translate:none}
+:root:root .ddp-touch-add:active{background:var(--dd-hover,rgba(128,128,128,.14));color:var(--dd-text)}
+/* Give "?" real inline width on touch & compact headers so it never draws behind Today / pills */
+html.dd-touch .dd-head .dd-help,.dd-head.dd-pills-compact .dd-help{width:16px;flex:0 0 16px;margin-left:0}
+html.dd-touch .dd-head .dd-help svg,.dd-head.dd-pills-compact .dd-help svg{left:1px}
+.dd-touch .dd-tm{opacity:1;height:24px;padding:0 10px}
+:root:root .dd-touch .dd-tm input{height:24px}
+.dd-touch .dd-tm input::-webkit-slider-runnable-track{height:4px}
+.dd-touch .dd-tm input::-webkit-slider-thumb{width:16px;height:16px;margin-top:-6px}
+.dd-touch .dd-stat.dd-stat-ico{width:28px;min-width:28px;height:28px}
+html.dd-touch .dd-shell .dd-head{height:38px}
+.dd-touch .dd-tbl td{height:max(38px,var(--dd-row-h,30px))}
+:root:root .dd-touch .dd-tbl-tabs button,:root:root .dd-touch .dd-tbl-tabs button:hover{height:36px;padding:0 16px}
+.dd-tbl-mbar{display:none;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--dd-border);flex:none}
+.dd-tbl-mtitle{font-size:14px;font-weight:700;color:var(--dd-text)}
+:root:root .dd-tbl-close,:root:root .dd-tbl-close:hover,:root:root .dd-tbl-close:active,:root:root .dd-tbl-close:focus{width:34px;height:34px;padding:0;margin:0;border:0;border-radius:8px;background:color-mix(in srgb,var(--dd-text) 8%,transparent);color:var(--dd-text);font-size:20px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transform:none;translate:none}
+
+@media (max-width:1080px){
+  html.dd-touch .dd-shell .dd-sc-host{padding:12px 14px 0}
+  html.dd-touch .dd-grid{padding:0 14px 14px;gap:10px}
+  html.dd-touch .dd-titlerow{padding:0 14px}
+  html.dd-touch .dd-bottom{padding:6px 12px 8px;gap:6px}
+}
+@media (max-width:720px){
+  /* Strictly scoped to html.dd-touch so Desktop PC is 100% untouched even on narrow windows */
+  html.dd-touch .dd-shell{display:block!important;height:100vh;overflow-x:hidden!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;padding-bottom:68px;box-sizing:border-box}
+  html.dd-touch .dd-gridwrap{overflow:visible!important;height:auto!important;flex:none!important}
+  /* a phone scrolls with the finger: no scroll bar taking the charts' right margin (they sit centered) */
+  html.dd-touch .dd-shell{scrollbar-width:none}
+  html.dd-touch .dd-shell::-webkit-scrollbar{display:none}
+  html.dd-touch .dd-shell .dd-sc-host{padding:8px 10px 4px}
+  /* Compact horizontal swipeable stat cards strip in Deep Dive on phone (keeps pinned widgets in their natural proportions) */
+  html.dd-touch .dd-shell .dd-sc-lines{flex-direction:row!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;gap:8px!important;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px}
+  html.dd-touch .dd-shell .dd-sc-lines::-webkit-scrollbar{display:none}
+  html.dd-touch .dd-shell .dd-sc-line{display:contents!important}
+  html.dd-touch .dd-shell .dd-sc{flex:0 0 auto!important;width:auto!important;min-width:116px!important;max-width:168px!important;height:62px!important;padding:6px 14px!important}
+  html.dd-touch .dd-shell .dd-sc-t{font-size:9.5px!important}
+  html.dd-touch .dd-shell .dd-sc-v{font-size:17px!important;margin-top:2px!important}
+  html.dd-touch .dd-grid{padding:4px 10px 16px;gap:10px}
+  html.dd-touch .dd-card{padding:0 8px 6px}
+  html.dd-touch .dd-card .dd-rsz{display:none}
+  html.dd-touch .dd-titlerow{height:36px;padding:0 10px;gap:6px}
+  html.dd-touch .dd-dtitle{font-size:14px}
+  /* Fixed, clean, readable mobile bottom bar */
+  html.dd-touch .dd-bottom{position:fixed!important;left:0;right:0;bottom:0;z-index:40;padding:8px 10px max(12px,env(safe-area-inset-bottom));gap:8px;border-top:1px solid var(--dd-border);overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  html.dd-touch .dd-bottom::-webkit-scrollbar{display:none}
+  html.dd-touch .dd-shell.dd-tblopen .dd-bottom{display:none!important}
+  html.dd-touch .dd-bottom .dd-spacer{display:none!important}
+  :root:root.dd-touch .dd-bottom .dd-deck,:root:root.dd-touch .dd-bottom .dd-span{flex:0 0 auto!important;min-width:0!important;max-width:155px}
+  :root:root.dd-touch .dd-bottom .dd-deck span,:root:root.dd-touch .dd-bottom .dd-span span{display:inline!important;overflow:hidden;text-overflow:ellipsis}
+  html.dd-touch .dd-bottom .dd-cols,html.dd-touch .dd-bottom .dd-autoclose,html.dd-touch .dd-bottom .dd-cfilt,html.dd-touch .dd-bottom .dd-search,html.dd-touch .dd-bottom .dd-export,html.dd-touch .dd-bottom .dd-seg{display:none!important}
+  /* the links (Quick Tour, Support, Rate, GitHub) stay, last on the bar that scrolls: the tour is seen again from there */
+  html.dd-touch .dd-bottom .dd-tbgroup{border:none!important;padding:0!important;margin:0!important;gap:8px}
+  html.dd-touch .dd-card.dd-fs{inset:6px;border-radius:10px;z-index:130}
+  html.dd-touch .dd-helptip{max-width:calc(100vw - 16px)}
+  :root:root.dd-touch .dd-fltpop{width:min(350px,calc(100vw - 16px))}
+  html.dd-touch .dd-menu{max-width:calc(100vw - 16px);max-height:70vh;overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:150}
+  /* over a chart shown fullscreen (z-index 130): the base rule's :root:root (z-index 100) outweighed the one above */
+  :root:root.dd-touch .dd-menu,:root:root.dd-touch .dd-helptip{z-index:150}
+  /* Mobile table: full-screen overlay strictly above bottom bar, opaque sticky first column & 2-row footer */
+  html.dd-touch .dd-shell .dd-tblhost{position:fixed!important;inset:0!important;left:0!important;right:0!important;top:0!important;bottom:0!important;height:100vh!important;max-height:none!important;z-index:120!important}
+  html.dd-touch .dd-tbl-panel{border-radius:0;border:0}
+  html.dd-touch .dd-tbl-mbar{display:flex}
+  html.dd-touch .dd-tbl-edge,html.dd-touch .dd-tbl-full,html.dd-touch .dd-tbl-foot .dd-autoclose,html.dd-touch .dd-tbl-fl{display:none!important}
+  html.dd-touch .dd-tbl-scroll{-webkit-overflow-scrolling:touch}
+  html.dd-touch .dd-tbl th:first-child,html.dd-touch .dd-tbl td:first-child{position:sticky;left:0;z-index:2;background:var(--dd-bg)!important;max-width:155px;overflow:hidden;text-overflow:ellipsis;box-shadow:2px 0 6px -2px rgba(0,0,0,.18)}
+  html.dd-touch .dd-tbl tr.odd td:first-child{background:color-mix(in srgb,var(--dd-text) 4.5%,var(--dd-bg))!important}
+  html.dd-touch .dd-tbl tr.sel td:first-child{background:color-mix(in srgb,var(--dd-btn-accent,#3b82f6) 22%,var(--dd-bg))!important;box-shadow:2px 0 6px -2px rgba(0,0,0,.18)!important}
+  html.dd-touch .dd-tbl th:first-child{z-index:4}
+  html.dd-touch .dd-tbl tr.total td:first-child{z-index:3}
+  html.dd-touch .dd-tbl td.deck{min-width:120px;padding-left:10px}
+  :root:root.dd-touch .dd-tbl-foot{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:6px;padding:8px 10px max(14px,env(safe-area-inset-bottom));border-top:1px solid var(--dd-border)}
+  :root:root.dd-touch .dd-tbl-tabs{display:flex!important;justify-content:flex-start!important;flex:none;overflow-x:auto!important;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;-webkit-mask-image:none!important;mask-image:none!important;padding:0!important}
+  :root:root.dd-touch .dd-tbl-tabs::-webkit-scrollbar{display:none}
+  html.dd-touch .dd-tbl-fr{display:flex;justify-content:flex-start;gap:8px;overflow-x:auto;scrollbar-width:none}
+  html.dd-touch .dd-tbl-fr::-webkit-scrollbar{display:none}
+}
+.dd-loading{position:relative;width:100%;height:100%;overflow:hidden;pointer-events:none}
+.dd-loading::after{content:"";position:absolute;inset:0;width:45%;background:linear-gradient(100deg,transparent,color-mix(in srgb,var(--dd-text) 5%,transparent) 50%,transparent);transform:translateX(-110%);animation:dd-shimmer var(--dd-shimmer,1.8s) ease-in-out infinite}
+@keyframes dd-shimmer{0%{transform:translateX(-110%)}70%,100%{transform:translateX(330%)}}
+.dd-loading-still{display:flex;align-items:center;justify-content:center;gap:6px}
+.dd-loading-still::after{display:none}
+.dd-loading-still i{width:5px;height:5px;border-radius:50%;background:var(--dd-text-dim);opacity:.35}
+
+/* a fullscreen chart turned to landscape on a phone held upright (dd-core.js DD.rot), at any width (a phone turned
+   to landscape is wider than the phone layout's 720px): the layer's own width and
+   height for what used the screen's (--dd-vw / --dd-vh), the chart's gestures all its own (no pan of the page,
+   which would run across them), over the bottom bar */
+.dd-rot-wrap{position:fixed;inset:0;background:var(--dd-bg);z-index:140}
+/* its deck and period (app.js fsChips), the bottom bar's under the layer */
+:root:root .dd-fs-chip{height:20px;border-radius:10px;font-size:11px;margin-left:6px}
+:root:root .dd-fs-chip::before{border-radius:10px}
+:root:root .dd-rot-wrap .dd-card.dd-fs{inset:6px!important}
+.dd-rot .dd-plot,.dd-rot .dd-plot *,.dd-rot canvas{touch-action:none!important}
+:root:root .dd-rot .dd-menu{max-width:calc(var(--dd-vw) * 100 - 16px)!important;max-height:calc(var(--dd-vh) * 70)!important}
+:root:root .dd-rot .dd-helptip{max-width:calc(var(--dd-vw) * 100 - 16px)!important}
+:root:root .dd-fs-turn{position:absolute;top:8px;right:44px;width:30px;height:30px;border:0;background:transparent;color:var(--dd-text-dim);cursor:pointer;border-radius:6px;padding:0;display:flex;align-items:center;justify-content:center}
+:root:root .dd-fs-turn.on,:root:root .ddp-fs-turn.on{color:var(--dd-accent,var(--dd-text))}
+html.dd-touch .dd-card.dd-fs .dd-head{padding-right:78px}
+:root:root .ddp-fs-turn{position:absolute;top:12px;right:60px}
+/* the phone already turned to landscape: nothing for the button to turn */
+@media (orientation:landscape){:root:root .dd-fs-turn,:root:root .ddp-fs-turn{display:none}html.dd-touch .dd-card.dd-fs .dd-head{padding-right:42px}}

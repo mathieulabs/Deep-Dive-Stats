@@ -4,8 +4,8 @@
 a new one is pinned, and the "Add Widget..." entry of the right-click menu."""
 from aqt.qt import QAction, QTimer
 
-from ..imports import Config, Period
-from ...store.registry import WidgetRegistry
+from ..imports import Period
+from .....logic.widget_registry import WidgetRegistry
 from ......i18n import tr, N_
 
 CHARTS = (
@@ -40,7 +40,8 @@ def chart_groups():
 # Config attribute names of the stat cards, by group.
 STAT_GROUPS = (
     (N_("Study"), ("DASH_SHOW_TIME", "DASH_SHOW_REVIEWS", "DASH_SHOW_AVG_TIME", "DASH_SHOW_REVIEWS_PER_DAY",
-               "DASH_SHOW_TIME_PER_DAY", "DASH_SHOW_BEST_DAY", "DASH_SHOW_AGAIN")),
+               "DASH_SHOW_REVIEWS_PER_ACTIVE_DAY", "DASH_SHOW_TIME_PER_DAY", "DASH_SHOW_TIME_PER_ACTIVE_DAY",
+               "DASH_SHOW_BEST_DAY", "DASH_SHOW_AGAIN")),
     (N_("Retention"), ("DASH_SHOW_RET_ALL", "DASH_SHOW_RET_YOUNG", "DASH_SHOW_RET_MAT", "DASH_SHOW_RET_TRUE",
                    "DASH_SHOW_REV_YOUNG", "DASH_SHOW_REV_MATURE")),
     (N_("Streaks"), ("DASH_SHOW_STREAK", "DASH_SHOW_LONGEST_STREAK", "DASH_SHOW_ACTIVE_DAYS", "DASH_SHOW_DAYS_LEARNED")),
@@ -50,18 +51,6 @@ STAT_GROUPS = (
     (N_("Schedule and memory"), ("DASH_SHOW_DUE_TODAY", "DASH_SHOW_BACKLOG", "DASH_SHOW_LAPSES",
                              "DASH_SHOW_AVG_RETRIEVABILITY", "DASH_SHOW_AVG_STABILITY")),
 )
-
-
-def stat_groups_by_key():
-    """(group names in order, {stat config key: group name})."""
-    names = [group for group, _ in STAT_GROUPS]
-    by_key = {}
-    for group, attrs in STAT_GROUPS:
-        for attr in attrs:
-            key = getattr(Config, attr, None)
-            if key is not None:
-                by_key[key] = group
-    return names, by_key
 
 
 def default_span(widget_type, stat_key=None):
@@ -112,19 +101,14 @@ def pin_new(manager, choice, after_id=None, fields=None, refresh=True):
         choice.widget_type, choice.label, stat_key=choice.stat_key,
         time_span=span, after_id=after_id, **extra,
     )
-    manager._last_state = None
-    manager._last_widget_set = None
     if refresh:
         manager.refresh()
     return new_id
 
 
-def _pin(manager, widget_type, label, stat_key=None, after_id=None):
-    pin_new(manager, Choice(widget_type, label, stat_key=stat_key), after_id=after_id)
-
-
-def ask_text_template(manager, parent):
-    """The text of a new text widget, from a themed dialog, or None when cancelled."""
+def ask_text_template(manager, parent, template="", title=None, ok_label=None):
+    """The text of a new text widget, from a themed dialog, or None when cancelled. template: the text to start from
+    (a text edited), title / ok_label: the window's title and its button (the Deep Dive's texts)."""
     from aqt.qt import QCoreApplication, QDialog, QHBoxLayout, QPushButton, QVBoxLayout
     from aqt.theme import theme_manager
     from .....ui.theme import get_settings_dialog_style
@@ -134,7 +118,9 @@ def ask_text_template(manager, parent):
     from ......qss import set_qss
 
     dlg = QDialog(parent)
-    dlg.setWindowTitle(tr("Add Text Widget"))
+    dlg.setWindowTitle(title or tr("Add Text Widget"))
+    from ......window_icon import addon_icon
+    addon_icon(dlg)
     dlg.setMinimumWidth(500)
 
     cfg = {}
@@ -152,12 +138,14 @@ def ask_text_template(manager, parent):
     layout.setContentsMargins(20, 20, 20, 16)
 
     editor = TextLabelEditor(dlg, theme_config=cfg)
+    if template:
+        editor.set_template(template)
     layout.addWidget(editor)
 
     btn_row = QHBoxLayout()
     btn_row.addStretch()
     cancel_btn = QPushButton(tr("Cancel"))
-    ok_btn = QPushButton(tr("Add"))
+    ok_btn = QPushButton(ok_label or tr("Add"))
     ok_btn.setDefault(True)
     cancel_btn.clicked.connect(dlg.reject)
     ok_btn.clicked.connect(dlg.accept)
@@ -183,7 +171,7 @@ def add_widget_actions(menu, manager, icon_fn=None, after_def=None):
         act.setIcon(icon_fn("plus"))
     target = None
     if isinstance(after_def, dict) and after_def.get("id"):
-        from .drag_move import box_of, family, row_of
+        from .....logic.pinned_layout import box_of, family, row_of
 
         target = {"kind": "after", "id": after_def["id"], "family": family(after_def),
                   "box": box_of(after_def), "row": row_of(after_def)}

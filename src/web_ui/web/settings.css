@@ -1,0 +1,435 @@
+/* Settings (settings.js, settings_decks.js). Colors: the theme's --dd-* variables.
+   Every rule is under #dds-root: an id outweighs the resets of dd.css (":root:root button:hover{padding:0;border:0}")
+   and Anki's own button styles, so a control keeps its size, border and padding on hover, press and focus.
+   Hover only changes colors. (box-shadow and outline on buttons are cut by dd.css: rings are ::after.) */
+html,body{height:100%;margin:0}
+body{background:var(--dd-bg);overflow:hidden}
+
+#dds-root{
+  --s-line:color-mix(in srgb,var(--dd-text) 11%,transparent);
+  --s-card-border:color-mix(in srgb,var(--dd-text) 13%,transparent);
+  --s-ctl-border:color-mix(in srgb,var(--dd-text) 18%,transparent);
+  --s-ctl-bg:var(--dd-card);
+  --s-raised:var(--dd-card);
+  --s-track:color-mix(in srgb,var(--dd-text) 6%,transparent);
+  --s-hover:color-mix(in srgb,var(--dd-text) 6%,transparent);
+  --s-active:color-mix(in srgb,var(--dd-text) 10%,transparent);
+  --s-dim:var(--dd-text-dim);
+  --s-r:7px;
+  --s-h:28px;
+  height:100%;
+  font:13px/1.4 'Segoe UI',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  color:var(--dd-text);
+}
+#dds-root *{box-sizing:border-box}
+/* dark themes: their card is see-through, controls get a solid tone of their own */
+:root.dds-dark #dds-root{
+  --s-ctl-bg:color-mix(in srgb,var(--dd-text) 5%,var(--dd-bg));
+  --s-raised:color-mix(in srgb,var(--dd-text) 15%,var(--dd-bg));
+  --s-ctl-border:color-mix(in srgb,var(--dd-text) 16%,transparent);
+}
+
+/* every button, in every state: no movement, no inherited margins or weights */
+#dds-root button,#dds-root button:hover,#dds-root button:active,#dds-root button:focus{
+  margin:0;transform:none;translate:none;top:auto;font:inherit;line-height:normal;letter-spacing:normal;text-shadow:none;
+  -webkit-appearance:none;appearance:none;cursor:pointer;
+  transition:background-color .12s,border-color .12s,color .12s,opacity .12s
+}
+#dds-root button:disabled{cursor:default}
+#dds-root input,#dds-root select{margin:0;font:inherit}
+
+/* ---- the window: pages on the left, the page, Cancel / Save at the bottom ---- */
+#dds-root .dds-app{display:grid;grid-template-columns:188px 1fr;grid-template-rows:1fr auto;height:100vh}
+#dds-root .dds-nav{grid-row:1/3;display:flex;flex-direction:column;gap:2px;padding:14px 10px;border-right:1px solid var(--s-line);background:color-mix(in srgb,var(--dd-text) 2.5%,var(--dd-bg));overflow-y:auto}
+#dds-root .dds-nav button.dds-tab,#dds-root .dds-nav button.dds-tab:hover,#dds-root .dds-nav button.dds-tab:active,#dds-root .dds-nav button.dds-tab:focus{position:relative;display:flex;align-items:center;gap:9px;width:100%;height:32px;padding:0 10px;border:0;border-radius:var(--s-r);background:transparent;color:var(--s-dim);text-align:left;font-size:13px;transition:none}
+#dds-root .dds-nav button.dds-tab:hover{background:var(--s-hover);color:var(--dd-text)}
+#dds-root .dds-nav button.dds-tab.on,#dds-root .dds-nav button.dds-tab.on:hover{background:var(--s-active);color:var(--dd-text);font-weight:600}
+#dds-root .dds-nav .dds-nav-ico{flex:none;opacity:.75}
+#dds-root .dds-nav button.dds-tab.on .dds-nav-ico{opacity:1;color:var(--dd-accent)}
+#dds-root .dds-subnav{display:flex;flex-direction:column;gap:1px;margin:2px 0 6px 17px;padding-left:9px;border-left:1px solid var(--s-line)}
+#dds-root .dds-nav button.dds-subitem,#dds-root .dds-nav button.dds-subitem:hover,#dds-root .dds-nav button.dds-subitem:active,#dds-root .dds-nav button.dds-subitem:focus{position:relative;display:flex;align-items:center;width:100%;min-height:24px;padding:3px 8px;border:0;border-radius:5px;background:transparent;color:var(--s-dim);text-align:left;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dds-root .dds-nav button.dds-subitem:hover{background:var(--s-hover);color:var(--dd-text)}
+#dds-root .dds-nav button.dds-subitem.on{color:var(--dd-text);font-weight:500}
+#dds-root .dds-nav button.dds-subitem.on::before{content:'';position:absolute;left:-10px;top:5px;bottom:5px;width:2px;border-radius:1px;background:var(--dd-accent)}
+#dds-root .dds-main{overflow-y:auto;overflow-x:hidden;min-height:0}
+#dds-root .dds-page{max-width:780px;margin:0 auto;padding:20px 24px 28px}
+#dds-root .dds-foot{display:flex;justify-content:flex-end;gap:8px;padding:10px 24px;border-top:1px solid var(--s-line)}
+#dds-root .dds-foot .dds-btn{min-width:92px}
+@media (max-width:640px){
+  #dds-root .dds-app{grid-template-columns:1fr;grid-template-rows:auto 1fr auto}
+  #dds-root .dds-nav{grid-row:auto;flex-direction:row;gap:4px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--s-line);padding:8px 12px}
+  #dds-root .dds-nav button.dds-tab{width:auto;white-space:nowrap}
+  #dds-root .dds-subnav{display:none}
+  #dds-root .dds-page{padding:14px 16px 20px}
+  #dds-root .dds-foot{padding:10px 16px}
+}
+
+/* ---- sections: a quiet card, its title, the settings in rows ---- */
+#dds-root .dds-sec{background:var(--dd-card);border:1px solid var(--s-card-border);border-radius:10px;padding:14px 16px 6px;margin-bottom:16px}
+#dds-root .dds-sec h2{margin:0 0 2px;font-size:14px;font-weight:600;color:var(--dd-text)}
+#dds-root .dds-sec h3{margin:14px 0 6px;font-size:12px;font-weight:600;color:var(--s-dim)}
+#dds-root .dds-sec > h2 + .dds-bar,#dds-root .dds-sec > h2 + div{margin-top:10px}
+
+/* one setting: its name and what it does, the control on the right */
+#dds-root .dds-field{display:flex;align-items:center;gap:20px;min-height:44px;padding:7px 0;border-top:1px solid var(--s-line)}
+#dds-root .dds-sec > h2 + .dds-field,#dds-root .dds-span-edit > .dds-field:first-child{border-top:0}
+#dds-root .dds-field.off .dds-field-text{opacity:.5}
+#dds-root .dds-field-text{flex:1;min-width:0}
+#dds-root .dds-label{font-weight:500}
+/* the (i) after a name: its explanation is the tooltip */
+#dds-root .dds-tip{display:inline-flex;vertical-align:-1px;margin-left:6px;color:var(--s-dim);opacity:.65;cursor:help;transition:opacity .12s}
+#dds-root .dds-tip:hover,#dds-root .dds-tip.pinned{opacity:1;color:var(--dd-text)}
+body .dds-helptip{max-width:360px;line-height:1.45;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+#dds-root .dds-tip svg{display:block}
+#dds-root .dds-sec h2{display:flex;align-items:center}
+#dds-root .dds-sec > h2{margin-bottom:6px}
+#dds-root .dds-sub{margin-top:1px;color:var(--s-dim);font-size:12px;line-height:1.4;max-width:58ch}
+#dds-root .dds-ctl{flex:none;display:flex;align-items:center;gap:8px;max-width:60%;flex-wrap:wrap;justify-content:flex-end}
+#dds-root .dds-note{margin:-2px 0 10px;color:var(--s-dim);font-size:12px;line-height:1.4}
+#dds-root .dds-note.warn{color:var(--dd-accent)}
+#dds-root .dds-warn-row{display:flex;align-items:center;gap:14px;margin:-2px 0 10px}
+#dds-root .dds-warn-row .dds-note{flex:1;margin:0}
+#dds-root .dds-warn-row .dds-btn{flex:none}
+#dds-root .dds-a{color:var(--dd-accent);text-decoration:none}
+#dds-root .dds-a:hover{text-decoration:underline}
+@media (max-width:640px){
+  #dds-root .dds-field{flex-wrap:wrap;gap:8px 16px}
+  #dds-root .dds-ctl{max-width:100%;justify-content:flex-start}
+}
+
+/* ---- controls ---- */
+#dds-root .dds-btn,#dds-root .dds-btn:hover,#dds-root .dds-btn:active,#dds-root .dds-btn:focus{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:var(--s-h);padding:0 12px;border:1px solid var(--s-ctl-border);border-radius:var(--s-r);color:var(--dd-text);font-size:12.5px;white-space:nowrap}
+#dds-root .dds-btn{background:var(--s-ctl-bg)}
+#dds-root .dds-btn:hover{background:color-mix(in srgb,var(--dd-text) 5%,var(--s-ctl-bg))}
+#dds-root .dds-btn:active{background:color-mix(in srgb,var(--dd-text) 9%,var(--s-ctl-bg))}
+#dds-root .dds-btn.primary,#dds-root .dds-btn.primary:hover,#dds-root .dds-btn.primary:active,#dds-root .dds-btn.primary:focus{border-color:var(--dd-accent);color:var(--dds-on-accent,#fff);font-weight:500}
+#dds-root .dds-btn.primary{background:var(--dd-accent)}
+#dds-root .dds-btn.primary:hover{background:color-mix(in srgb,#fff 10%,var(--dd-accent))}
+#dds-root .dds-btn.primary:active{background:color-mix(in srgb,#000 8%,var(--dd-accent))}
+#dds-root .dds-btn.danger,#dds-root .dds-btn.danger:hover,#dds-root .dds-btn.danger:active,#dds-root .dds-btn.danger:focus{border-color:#d93d42;color:#fff}
+#dds-root .dds-btn.danger{background:#d93d42}
+#dds-root .dds-btn.danger:hover{background:#e5484d}
+#dds-root .dds-btn.small,#dds-root .dds-btn.small:hover,#dds-root .dds-btn.small:active,#dds-root .dds-btn.small:focus{height:26px;padding:0 10px;font-size:12px}
+#dds-root .dds-btn:disabled,#dds-root .dds-btn:disabled:hover{opacity:.45;background:var(--s-ctl-bg)}
+
+/* a quiet text button (Reset, Clear, Auto, Expand all) */
+#dds-root .dds-link,#dds-root .dds-link:hover,#dds-root .dds-link:active,#dds-root .dds-link:focus{height:24px;padding:0 7px;border:0;border-radius:6px;color:var(--s-dim);font-size:12px}
+#dds-root .dds-link{background:transparent}
+#dds-root .dds-link:hover{background:var(--s-hover);color:var(--dd-text)}
+#dds-root .dds-link:disabled,#dds-root .dds-link:disabled:hover{opacity:.4;background:transparent;color:var(--s-dim)}
+
+#dds-root .dds-input{height:var(--s-h);min-width:0;padding:0 10px;border:1px solid var(--s-ctl-border);border-radius:var(--s-r);background:var(--s-ctl-bg);color:var(--dd-text);outline:none;transition:border-color .12s}
+#dds-root .dds-input:hover{border-color:color-mix(in srgb,var(--dd-text) 28%,var(--s-ctl-border))}
+#dds-root .dds-input:focus{border-color:var(--dd-accent)}
+#dds-root .dds-input::placeholder{color:var(--s-dim);opacity:.8}
+#dds-root .dds-bar .dds-input{flex:1}
+#dds-root .dds-ctl .dds-input{width:220px;flex:none}
+#dds-root .dds-ctl .dds-num{width:84px}
+#dds-root .dds-date,#dds-root .dds-ctl .dds-date{width:auto;color-scheme:var(--dds-scheme,light)}
+#dds-root input[type=number]::-webkit-inner-spin-button{opacity:.6}
+
+#dds-root .dds-select{height:var(--s-h);max-width:260px;padding:0 30px 0 10px;border:1px solid var(--s-ctl-border);border-radius:var(--s-r);color:var(--dd-text);cursor:pointer;outline:none;
+  background:var(--s-ctl-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center;
+  transition:border-color .12s}
+#dds-root .dds-select:hover{border-color:color-mix(in srgb,var(--dd-text) 28%,var(--s-ctl-border))}
+#dds-root .dds-select:focus{border-color:var(--dd-accent)}
+#dds-root .dds-select:disabled{opacity:.5;cursor:default}
+#dds-root .dds-select option{background:var(--dd-menu-bg,var(--dd-bg));color:var(--dd-menu-text,var(--dd-text))}
+
+/* segmented control: a track, the chosen one raised */
+#dds-root .dds-seg{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--s-track);flex-wrap:wrap}
+#dds-root .dds-seg button,#dds-root .dds-seg button:hover,#dds-root .dds-seg button:active,#dds-root .dds-seg button:focus{height:24px;min-width:28px;padding:0 10px;border:1px solid transparent;border-radius:6px;color:var(--s-dim);font-size:12.5px;white-space:nowrap}
+#dds-root .dds-seg button{background:transparent}
+#dds-root .dds-seg button:not(.on):not(:disabled):hover{color:var(--dd-text);background:var(--s-hover)}
+#dds-root .dds-seg button.on,#dds-root .dds-seg button.on:hover{background:var(--s-raised);border-color:var(--s-ctl-border);color:var(--dd-text);font-weight:500}
+#dds-root .dds-seg.disabled{opacity:.5}
+
+/* the on / off switch */
+#dds-root .dds-sw,#dds-root .dds-sw:hover,#dds-root .dds-sw:active,#dds-root .dds-sw:focus{position:relative;flex:none;width:32px;height:18px;padding:0;border:0;border-radius:9px}
+#dds-root .dds-sw{background:color-mix(in srgb,var(--dd-text) 22%,transparent)}
+#dds-root .dds-sw:hover{background:color-mix(in srgb,var(--dd-text) 30%,transparent)}
+#dds-root .dds-sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s,background-color .15s}
+#dds-root .dds-sw.on::after{background:var(--dds-on-accent,#fff)}
+#dds-root .dds-sw.on,#dds-root .dds-sw.on:hover{background:var(--dd-accent)}
+#dds-root .dds-sw.on::after{left:16px}
+#dds-root .dds-sw:disabled{opacity:.45}
+#dds-root .dds-nosw{width:32px;flex:none}
+
+#dds-root .dds-slider{display:inline-flex;align-items:center;gap:10px}
+#dds-root .dds-slider input{width:160px;margin:0;accent-color:var(--dd-accent);appearance:auto;-webkit-appearance:auto}
+#dds-root .dds-val{display:inline-flex;align-items:center;justify-content:flex-end;gap:4px;min-width:72px;text-align:right;color:var(--s-dim);font-size:12px;font-variant-numeric:tabular-nums}
+
+#dds-root .dds-keybox{display:inline-flex;align-items:center;gap:4px}
+#dds-root .dds-key,#dds-root .dds-key:hover,#dds-root .dds-key:active,#dds-root .dds-key:focus{min-width:104px;height:var(--s-h);padding:0 12px;border:1px solid var(--s-ctl-border);border-radius:var(--s-r);color:var(--dd-text);font-family:ui-monospace,Consolas,monospace;font-size:12px}
+#dds-root .dds-key{background:var(--s-ctl-bg)}
+#dds-root .dds-key:hover{background:color-mix(in srgb,var(--dd-text) 5%,var(--s-ctl-bg))}
+#dds-root .dds-key.empty{color:var(--s-dim)}
+#dds-root .dds-key.wait,#dds-root .dds-key.wait:hover{border-color:var(--dd-accent);color:var(--dd-accent);font-family:inherit}
+
+#dds-root .dds-check{display:flex;align-items:center;gap:8px;padding:3px 0;cursor:pointer}
+#dds-root .dds-check input,#dds-root .dds-pick input[type=checkbox]{appearance:auto;-webkit-appearance:checkbox;width:14px;height:14px;margin:0;flex:none;accent-color:var(--dd-accent)}
+
+#dds-root .dds-bar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+#dds-root .dds-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:10px 0}
+#dds-root .dds-actions.start{justify-content:flex-start;flex-wrap:wrap}
+#dds-root .dds-actions.start .dds-input{flex:0 1 240px}
+#dds-root .dds-sec > .dds-actions:last-child{border-top:1px solid var(--s-line);margin-top:4px}
+#dds-root .dds-err{color:#e5484d;font-size:12px;min-height:16px;flex:1}
+#dds-root .dds-tag{flex:none;font-size:11.5px;color:var(--s-dim)}
+#dds-root .dds-tag.warn{color:var(--dd-accent)}
+#dds-root .dds-empty{padding:16px;text-align:center;color:var(--s-dim);font-size:12.5px}
+
+/* an inline confirmation */
+#dds-root .dds-confirm{border:1px solid var(--s-line);background:var(--s-track);border-radius:9px;padding:12px 14px 0;margin:4px 0 12px}
+#dds-root .dds-confirm-text{white-space:pre-line;line-height:1.45}
+#dds-root .dds-confirm .dds-actions{padding:10px 0 12px}
+
+body .dds-toast{position:fixed;left:50%;bottom:64px;transform:translate(-50%,6px);max-width:80vw;padding:8px 14px;border-radius:8px;background:var(--dd-card);border:1px solid var(--dd-border);color:var(--dd-text);font:13px 'Segoe UI',sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.2);opacity:0;pointer-events:none;transition:opacity .15s,transform .15s}
+body .dds-toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* small icon buttons: ↑ ↓ in the span list, × resets */
+#dds-root .dds-mini,#dds-root .dds-mini:hover,#dds-root .dds-mini:active,#dds-root .dds-mini:focus,
+#dds-root .dds-x,#dds-root .dds-x:hover,#dds-root .dds-x:active,#dds-root .dds-x:focus{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;border:0;border-radius:5px;color:var(--s-dim)}
+#dds-root .dds-mini,#dds-root .dds-x{background:transparent}
+#dds-root .dds-mini:hover:not(:disabled),#dds-root .dds-x:hover{background:var(--s-active);color:var(--dd-text)}
+#dds-root .dds-mini:disabled{opacity:.3}
+#dds-root .dds-mini svg,#dds-root .dds-x svg{display:block}
+#dds-root .dds-x{visibility:hidden}
+#dds-root .dds-x.set{visibility:visible}
+
+/* ---- time spans: the list, the selected one's settings ---- */
+#dds-root .dds-spans{display:grid;grid-template-columns:250px 1fr;gap:20px;margin-top:10px}
+@media (max-width:640px){#dds-root .dds-spans{grid-template-columns:1fr}}
+#dds-root .dds-span-list{border:1px solid var(--s-line);border-radius:9px;overflow:hidden}
+#dds-root .dds-span-item{display:flex;align-items:center;gap:2px;height:34px;padding:0 6px 0 12px;cursor:pointer;border-bottom:1px solid var(--s-line);transition:background-color .12s}
+#dds-root .dds-span-item:last-child{border-bottom:0}
+#dds-root .dds-span-item:hover{background:var(--s-hover)}
+#dds-root .dds-span-item.on{background:var(--s-active);font-weight:600}
+#dds-root .dds-span-item.off .dds-span-name{opacity:.45}
+#dds-root .dds-span-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dds-root .dds-span-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+#dds-root .dds-span-btns .dds-btn,#dds-root .dds-span-btns .dds-btn:hover,#dds-root .dds-span-btns .dds-btn:active,#dds-root .dds-span-btns .dds-btn:focus{flex:1;min-width:0;padding:0 8px}
+#dds-root .dds-h2-act,#dds-root .dds-h2-act:hover,#dds-root .dds-h2-act:active,#dds-root .dds-h2-act:focus{margin-left:auto;font-weight:400}
+#dds-root .dds-span-edit{min-width:0}
+#dds-root .dds-span-edit .dds-field{min-height:44px}
+#dds-root .dds-span-edit .dds-ctl{max-width:65%}
+#dds-root .dds-cols{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px 18px;margin:10px 0 8px}
+#dds-root .dds-colgroup-title{font-size:12px;font-weight:600;color:var(--s-dim);margin-bottom:6px}
+
+/* ---- colors: the theme cards, the color rows ---- */
+#dds-root .dds-themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;max-height:300px;overflow-y:auto;padding:3px;margin:0 -3px 6px}
+#dds-root .dds-theme,#dds-root .dds-theme:hover,#dds-root .dds-theme:active,#dds-root .dds-theme:focus{position:relative;display:flex;flex-direction:column;gap:7px;height:70px;padding:8px;border:1px solid;border-radius:9px;text-align:left;font-size:12px}
+#dds-root .dds-theme::after{content:"";position:absolute;inset:-3px;border:2px solid transparent;border-radius:11px;pointer-events:none;transition:border-color .12s}
+#dds-root .dds-theme:hover::after{border-color:color-mix(in srgb,var(--dd-text) 25%,transparent)}
+#dds-root .dds-theme.on::after,#dds-root .dds-theme.on:hover::after{border-color:var(--dd-accent)}
+#dds-root .dds-theme-prev{display:flex;align-items:flex-end;gap:4px;height:30px;padding:5px 7px;border-radius:5px}
+#dds-root .dds-theme-prev i{display:block;width:8px;border-radius:2px}
+#dds-root .dds-theme-prev i:nth-child(1){height:100%}
+#dds-root .dds-theme-prev i:nth-child(2){height:65%}
+#dds-root .dds-theme-prev i:nth-child(3){height:40%;opacity:.6}
+#dds-root .dds-theme-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+#dds-root .dds-colorlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 20px;margin-bottom:6px}
+#dds-root .dds-crow{display:flex;align-items:center;gap:10px;height:32px}
+#dds-root .dds-swatch,#dds-root .dds-swatch:hover,#dds-root .dds-swatch:active,#dds-root .dds-swatch:focus{position:relative;flex:none;width:20px;height:20px;padding:0;border:1px solid color-mix(in srgb,var(--dd-text) 18%,transparent);border-radius:6px}
+#dds-root .dds-swatch::after{content:"";position:absolute;inset:-4px;border:1.5px solid transparent;border-radius:8px;pointer-events:none;transition:border-color .12s}
+#dds-root .dds-swatch:hover::after{border-color:color-mix(in srgb,var(--dd-text) 30%,transparent)}
+#dds-root .dds-clabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dds-root .dds-dgroups{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px 20px;margin:10px 0 4px}
+
+/* ---- decks (settings_decks.js) ---- */
+#dds-root .dds-tree{border:1px solid var(--s-line);border-radius:9px;max-height:420px;overflow-y:auto;margin-bottom:10px}
+#dds-root .dds-row{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px 0 6px;border-bottom:1px solid var(--s-line);transition:background-color .12s}
+#dds-root .dds-row:last-child{border-bottom:0}
+#dds-root .dds-row:hover{background:var(--s-hover)}
+#dds-root .dds-row.off .dds-name{opacity:.45;text-decoration:line-through;text-decoration-thickness:1px}
+#dds-root .dds-chev,#dds-root .dds-chev:hover,#dds-root .dds-chev:active,#dds-root .dds-chev:focus{display:flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;padding:0;border:0;border-radius:5px;color:var(--s-dim)}
+#dds-root .dds-chev{background:transparent}
+#dds-root .dds-chev:hover{background:var(--s-active);color:var(--dd-text)}
+#dds-root .dds-chev svg{transition:transform .15s}
+#dds-root .dds-chev.open svg{transform:rotate(90deg)}
+#dds-root .dds-chev.none{visibility:hidden}
+#dds-root .dds-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dds-root .dds-count{flex:none;font-size:11.5px;color:var(--s-dim);min-width:64px;text-align:right;font-variant-numeric:tabular-nums}
+#dds-root .dds-color{display:flex;align-items:center;gap:2px;flex:none}
+#dds-root .dds-dot,#dds-root .dds-dot:hover,#dds-root .dds-dot:active,#dds-root .dds-dot:focus{position:relative;display:flex;align-items:center;justify-content:center;width:18px;height:18px;padding:0;color:var(--s-dim);border:1px solid color-mix(in srgb,var(--dd-text) 22%,transparent);border-radius:50%}
+#dds-root .dds-dot.auto,#dds-root .dds-dot.auto:hover,#dds-root .dds-dot.auto:active,#dds-root .dds-dot.auto:focus{border-color:transparent;border-radius:5px}
+#dds-root .dds-dot svg{display:none;flex:none}
+#dds-root .dds-dot.auto svg{display:block;opacity:.6;transition:opacity .12s}
+#dds-root .dds-row:hover .dds-dot.auto svg{opacity:1;color:var(--dd-text)}
+#dds-root .dds-dot.auto::after{border-radius:7px}
+#dds-root .dds-dot::after{content:"";position:absolute;inset:-4px;border:1.5px solid transparent;border-radius:50%;pointer-events:none;transition:border-color .12s}
+#dds-root .dds-dot:hover::after{border-color:color-mix(in srgb,var(--dd-text) 30%,transparent)}
+#dds-root .dds-row .dds-x.set{visibility:hidden}
+#dds-root .dds-row:hover .dds-x.set{visibility:visible}
+
+/* the excluded days */
+#dds-root .dds-rules{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+#dds-root .dds-rule{display:flex;align-items:center;gap:10px;padding:8px 10px 8px 12px;border:1px solid var(--s-line);border-radius:9px}
+#dds-root .dds-rule-when{font-weight:600;white-space:nowrap}
+#dds-root .dds-rule-what{flex:1;min-width:0;color:var(--s-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dds-root .dds-form{border:1px solid var(--s-line);background:var(--s-track);border-radius:10px;padding:12px 14px 0;margin:10px 0}
+#dds-root .dds-form-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+#dds-root .dds-form-row label{color:var(--s-dim);min-width:80px}
+#dds-root .dds-form input[type=date]{height:var(--s-h);padding:0 8px;border:1px solid var(--s-ctl-border);border-radius:var(--s-r);background:var(--s-ctl-bg);color:var(--dd-text);color-scheme:var(--dds-scheme,light)}
+#dds-root .dds-pick{border:1px solid var(--s-line);border-radius:8px;max-height:200px;overflow-y:auto;margin:0 0 10px;width:100%;background:var(--s-ctl-bg)}
+#dds-root .dds-pick label{display:flex;align-items:center;gap:8px;padding:5px 10px;cursor:pointer;min-width:0}
+#dds-root .dds-pick label:hover{background:var(--s-hover)}
+#dds-root .dds-pick span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dds-root .dds-sec > .dds-rules + .dds-btn,#dds-root .dds-sec > .dds-tree:last-child{margin-bottom:10px}
+
+/* ---- a widget's settings (widget_settings.js): one column, Reset on the left of the footer ---- */
+#dds-root .dws-app{display:grid;grid-template-rows:1fr auto;height:100vh}
+#dds-root .dws-main{position:relative;padding:18px 20px 8px}
+#dds-root .dws-main > .dds-sec{max-width:640px;margin-left:auto;margin-right:auto;margin-bottom:14px}
+#dds-root .dws-loose{padding-top:6px}
+#dds-root .dws-loose > .dds-field:first-child{border-top:0}
+#dds-root .dws-note{margin:-4px 0 10px;color:var(--s-dim);font-size:12px;line-height:1.45}
+#dds-root .dws-foot{padding:10px 20px}
+#dds-root .dws-foot .dws-reset,#dds-root .dws-foot .dws-reset:hover,#dds-root .dws-foot .dws-reset:active,#dds-root .dws-foot .dws-reset:focus{margin-right:auto;min-width:0;display:inline-flex;align-items:center;gap:6px}
+#dds-root .dws-num{display:inline-flex;align-items:center;gap:6px}
+#dds-root .dws-unit{color:var(--s-dim);font-size:12px}
+#dds-root .dws-text{color:var(--s-dim);font-size:12px}
+#dds-root .dws-strip{display:block;flex:1 1 160px;min-width:120px;height:16px;border-radius:5px;border:1px solid color-mix(in srgb,var(--dd-text) 18%,transparent);background-origin:border-box;background-repeat:no-repeat}
+#dds-root .dws-wide .dds-ctl{flex:1;max-width:none}
+#dds-root .dws-icon:disabled{opacity:.35}
+#dds-root .dws-pic{display:block}
+
+/* ---- the widget gallery (gallery_page.js): the categories on the left, the tiles, where and how they are added ---- */
+#dds-root .dg-app{display:grid;grid-template-rows:auto 1fr auto;height:100vh}
+#dds-root .dg-head{display:flex;align-items:center;gap:12px;padding:16px 20px 12px}
+#dds-root .dg-titles{flex:1;min-width:0}
+#dds-root .dg-title{margin:0;font-size:16px;font-weight:600;line-height:1.3}
+#dds-root .dg-where{margin-top:2px;color:var(--s-dim);font-size:12px}
+#dds-root .dg-search{position:relative;display:flex;align-items:center;flex:none;color:var(--s-dim)}
+#dds-root .dg-search svg{position:absolute;left:9px;pointer-events:none}
+#dds-root .dg-search .dds-input{width:210px;padding-left:28px}
+#dds-root .dg-search .dds-input::-webkit-search-cancel-button{cursor:pointer}
+#dds-root .dg-body{display:grid;grid-template-columns:168px 1fr;gap:18px;min-height:0;padding:0 0 0 20px}
+#dds-root .dg-nav{display:flex;flex-direction:column;gap:1px;overflow-y:auto;padding:2px 0 12px}
+#dds-root .dg-navbtn,#dds-root .dg-navbtn:hover,#dds-root .dg-navbtn:active,#dds-root .dg-navbtn:focus{display:flex;align-items:center;gap:8px;width:100%;height:28px;padding:0 10px 0 12px;border:0;border-radius:6px;color:color-mix(in srgb,var(--dd-text) 84%,transparent);text-align:left;font-size:12.5px;flex:none}
+#dds-root .dg-navbtn{background:transparent}
+#dds-root .dg-navbtn:not(:disabled):hover{background:var(--s-hover)}
+#dds-root .dg-navbtn.on,#dds-root .dg-navbtn.on:hover{background:var(--s-active);color:var(--dd-text);font-weight:600}
+#dds-root .dg-navbtn:disabled{color:var(--s-line);cursor:default}
+#dds-root .dg-navname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dds-root .dg-navcount{flex:none;color:var(--s-dim);font-weight:400;font-size:12px}
+#dds-root .dg-rule{height:1px;margin:6px 8px;background:var(--s-line);flex:none}
+#dds-root .dg-group{padding:2px 8px 2px;color:var(--s-dim);font-size:11px;flex:none}
+#dds-root .dg-main{overflow-y:auto;overflow-x:hidden;min-height:0;padding:0 14px 0 0}
+#dds-root .dg-sec{margin-bottom:8px}
+#dds-root .dg-sechead{margin:0;padding:10px 0 8px;color:var(--s-dim);font-size:11px;font-weight:700;letter-spacing:.6px;white-space:pre}
+#dds-root .dg-grid{display:grid;gap:14px;justify-content:start}
+/* as many columns as the window holds (maximized, full screen): the tiles keep their size (their previews are drawn at it) */
+#dds-root .dg-grid-chart,#dds-root .dg-grid-text{grid-template-columns:repeat(auto-fill,236px)}
+#dds-root .dg-grid-stat{grid-template-columns:repeat(auto-fill,172px)}
+#dds-root .dg-empty{padding:40px 0;text-align:center;color:var(--s-dim)}
+#dds-root .dg-foot{align-items:center;padding:10px 20px}
+#dds-root .dg-foot-left{display:flex;align-items:center;gap:8px;margin-right:auto;min-width:0}
+#dds-root .dg-added{color:var(--s-dim);font-size:12px;white-space:nowrap}
+#dds-root .dg-pickbtn svg{opacity:.6;margin-right:-3px}
+#dds-root .dg-reset,#dds-root .dg-reset:hover,#dds-root .dg-reset:active,#dds-root .dg-reset:focus{min-width:0}
+#dds-root .dg-foot-left .dg-reset{margin-left:8px}
+
+/* a tile: its picture in a quiet frame (a stat card is a card itself), its name under it */
+#dds-root .dg-tile{position:relative;cursor:pointer;user-select:none}
+#dds-root .dg-pic{position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:6px;background:var(--dg-card);box-shadow:inset 0 0 0 1px var(--dg-line)}
+#dds-root .dg-f-stat.has-pic .dg-pic{background:transparent;box-shadow:none}
+/* a live preview: the chart drawn at a widget's size (data-dd-scale), shrunk into its tile; no hover, no click */
+#dds-root .dg-live{position:absolute;pointer-events:none}
+#dds-root .dg-live .dg-stage{position:absolute;left:0;top:0;transform-origin:0 0}
+#dds-root .dg-live .ddg-card{position:absolute;inset:0}
+#dds-root .dg-f-stat .dg-live{inset:0}
+/* the host is .ddp itself: '.ddp .dd-sc-host' (no padding) does not reach it, the Deep Dive padding pushed the card out */
+#dds-root .dg-f-stat .dg-live .dd-sc-host{padding:0}
+#dds-root .dg-f-stat .dg-live .dd-sc{box-sizing:border-box}
+#dds-root .dg-live:not(.in){opacity:0}
+#dds-root .dg-live.in{opacity:1;transition:opacity var(--dg-fade,.18s)}
+#dds-root .dg-span{width:auto;max-width:200px}
+#dds-root .dg-ask{display:flex;align-items:center;gap:8px;min-width:0}
+#dds-root .dg-ask-text{min-width:0;max-width:440px;font-size:12px;line-height:1.35}
+#dds-root .dg-pic img{display:block;flex:none;pointer-events:none}
+#dds-root .dg-pic::after{content:'';position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1.5px var(--dd-accent);opacity:0;transition:opacity .12s;pointer-events:none}
+#dds-root .dg-tile:hover .dg-pic::after,#dds-root .dg-tile.dg-hot .dg-pic::after{opacity:1}
+#dds-root .dg-name{margin-top:6px;text-align:center;font-size:12.5px;color:color-mix(in srgb,var(--dd-text) 82%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dds-root .dg-tile:hover .dg-name,#dds-root .dg-tile.dg-hot .dg-name{color:var(--dd-text)}
+#dds-root .dg-text{padding:8px 14px;text-align:center;font-weight:600;line-height:1.35}
+/* waiting for its picture: a grey block, a light sweeping across it */
+#dds-root .dg-skel{position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,color-mix(in srgb,var(--dd-text) 8%,transparent) 50%,transparent 100%) no-repeat,color-mix(in srgb,var(--dd-text) 7%,transparent);background-size:45% 100%,100% 100%;background-position:-60% 0,0 0;animation:dg-sweep 1.4s linear infinite}
+#dds-root.dg-still .dg-skel{animation:none}
+#dds-root .dg-skel.out{animation:none;opacity:0;transition:opacity var(--dg-fade,.18s)}
+@keyframes dg-sweep{to{background-position:180% 0,0 0}}
+/* on the main screen already: a check mark (with how many from 2); the Deep Dive's unchecked ones: an empty circle */
+#dds-root .dg-mark{position:absolute;top:6px;right:6px;display:flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;color:#fff;font-size:10px;font-weight:700;line-height:1;pointer-events:none}
+#dds-root .dg-mark.none{display:none}
+#dds-root .dg-mark.check,#dds-root .dg-mark.count{background:rgba(0,0,0,.47)}
+#dds-root .dg-mark.accent{background:var(--dd-accent);color:var(--dds-on-accent,#fff)}
+#dds-root .dg-mark.empty{width:14px;height:14px;top:7px;right:7px;background:rgba(0,0,0,.24);box-shadow:inset 0 0 0 1.2px rgba(255,255,255,.67)}
+#dds-root .dg-minus,#dds-root .dg-minus:hover,#dds-root .dg-minus:active,#dds-root .dg-minus:focus{position:absolute;top:6px;left:6px;display:none;align-items:center;justify-content:center;width:18px;height:18px;padding:0;border:0;border-radius:50%;color:#fff}
+#dds-root .dg-minus{background:rgba(0,0,0,.59)}
+#dds-root .dg-minus:hover{background:rgba(0,0,0,.8)}
+#dds-root .dg-tile.can-minus:hover .dg-minus,#dds-root .dg-tile.can-minus.dg-hot .dg-minus{display:flex}
+#dds-root .dg-name.dg-name-row{display:flex;align-items:center;justify-content:space-between;gap:6px;text-align:left;padding:0 2px}
+#dds-root .dg-name.dg-name-row .dg-ntxt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#dds-root .dg-vsw{flex:none;display:inline-flex;align-items:center;gap:1px;padding:2px;border-radius:7px;background:color-mix(in srgb,var(--dd-text,#fff) 7%,transparent);border:1px solid color-mix(in srgb,var(--dd-text,#fff) 10%,transparent)}
+#dds-root .dg-vsw button,#dds-root .dg-vsw button:hover,#dds-root .dg-vsw button:active,#dds-root .dg-vsw button:focus{border:0;margin:0;padding:0 6px;height:16px;border-radius:5px;background:transparent;color:var(--dd-text-dim,#9a9aa8);font-family:inherit;font-size:10px;font-weight:600;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transform:none;translate:none;transition:background .12s,color .12s}
+#dds-root .dg-vsw button:hover{color:var(--dd-text,#fff)}
+#dds-root .dg-vsw button.on,#dds-root .dg-vsw button.on:hover{background:color-mix(in srgb,var(--dd-accent,#3b82f6) 24%,transparent);color:var(--dd-text,#fff)}
+body .dg-tip{max-width:320px}
+body .dg-tip .dg-tip-act{margin-top:6px;font-style:italic;opacity:.85}
+
+/* ---- the decks a widget reads (deck_picker.js) ---- */
+#dds-root .ddk-veil{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
+#dds-root .ddk-box{display:flex;flex-direction:column;width:min(440px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:16px 16px 0;border:1px solid var(--s-card-border);border-radius:12px;background:var(--dd-bg);box-shadow:0 12px 40px rgba(0,0,0,.35)}
+#dds-root .ddk-title{margin:0 0 4px;font-size:15px;font-weight:600}
+#dds-root .ddk-intro{margin-bottom:10px;color:var(--s-dim);font-size:12px}
+#dds-root .ddk-search{width:100%;flex:none;margin-bottom:10px}
+#dds-root .ddk-tree{flex:1;min-height:80px;max-height:none;margin-bottom:0}
+#dds-root .ddk-row{height:30px;cursor:pointer;user-select:none}
+#dds-root .ddk-ck{flex:none;width:15px;height:15px;margin:0;border:1.5px solid var(--s-ctl-border);border-radius:4px;background:var(--s-ctl-bg) center/11px 11px no-repeat;cursor:pointer;transition:background-color .12s,border-color .12s}
+#dds-root .ddk-ck:hover{border-color:color-mix(in srgb,var(--dd-text) 40%,transparent)}
+#dds-root .ddk-ck:checked{border-color:var(--dd-accent);background-color:var(--dd-accent);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.8 6.3l2.2 2.2 4.2-4.6' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+#dds-root .dg-tile.dg-failed .dg-skel{animation:none}
+#dds-root .ddk-del .dds-name{font-style:italic;opacity:.8}
+#dds-root .ddk-dyn .dds-name{color:var(--dd-accent)}
+#dds-root .ddk-sep{height:1px;background:var(--s-line)}
+#dds-root .ddk-tree .ddk-row{border-bottom:0}
+#dds-root .ddk-foot{display:flex;align-items:center;gap:8px;padding:12px 0 14px}
+#dds-root .ddk-gap{flex:1}
+
+/* ---- Responsive & Touch (Settings, Gallery, Deck Picker) ---- */
+.dd-touch #dds-root .dds-btn,.dd-touch #dds-root .dds-sel,.dd-touch #dds-root .dds-input{height:36px;min-height:36px}
+.dd-touch #dds-root .dds-seg button{min-height:32px;padding:0 12px}
+.dd-touch #dds-root .dds-tab{min-height:36px}
+.dd-touch #dds-root .dg-tile.can-minus .dg-minus{display:flex}
+.dd-touch #dds-root .dds-mini,.dd-touch #dds-root .dds-x,.dd-touch #dds-root .dds-chev{width:32px;height:32px}
+.dd-touch #dds-root .ddk-row{height:38px}
+@media (max-width:720px){
+  html.dd-touch #dds-root .dds-field{flex-wrap:wrap;gap:6px 10px;padding:8px 0}
+  html.dd-touch #dds-root .dds-ctl,html.dd-touch #dds-root .dds-span-edit .dds-ctl{max-width:100%}
+  html.dd-touch #dds-root .dds-page{padding:12px 12px 24px}
+  html.dd-touch #dds-root .ddk-box{width:calc(100vw - 16px);max-height:calc(100vh - 20px)}
+  /* Widget Gallery (Add / Remove) mobile layout: strict viewport width, horizontal category chips, full-width grid */
+  html.dd-touch #dds-root .dg-app{grid-template-columns:minmax(0,1fr);width:100vw;max-width:100vw;overflow:hidden}
+  html.dd-touch #dds-root .dg-head,html.dd-touch #dds-root .dg-body,html.dd-touch #dds-root .dg-foot{min-width:0;max-width:100%;box-sizing:border-box}
+  html.dd-touch #dds-root .dg-head{flex-wrap:wrap;gap:8px;padding:10px 12px 8px}
+  html.dd-touch #dds-root .dg-title,html.dd-touch #dds-root .dg-where{display:none}
+  html.dd-touch #dds-root .dg-titles{display:none}
+  html.dd-touch #dds-root .dg-search{flex:1;min-width:120px}
+  html.dd-touch #dds-root .dg-search .dds-input{width:100%}
+  html.dd-touch #dds-root .dg-body{display:flex;flex-direction:column;gap:0;padding:0;min-height:0;overflow:hidden}
+  html.dd-touch #dds-root .dg-nav{width:100%;box-sizing:border-box;flex-direction:row;overflow-x:auto;overflow-y:hidden;gap:6px;padding:4px 12px 10px;border-bottom:1px solid var(--s-line);flex:none;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  html.dd-touch #dds-root .dg-nav::-webkit-scrollbar{display:none}
+  html.dd-touch #dds-root .dg-rule,html.dd-touch #dds-root .dg-group{display:none}
+  html.dd-touch #dds-root .dg-navbtn,html.dd-touch #dds-root .dg-navbtn:hover,html.dd-touch #dds-root .dg-navbtn:active,html.dd-touch #dds-root .dg-navbtn:focus{width:auto;height:32px;padding:0 12px;border-radius:16px;border:1px solid var(--s-line);white-space:nowrap}
+  html.dd-touch #dds-root .dg-navbtn.on,html.dd-touch #dds-root .dg-navbtn.on:hover{border-color:color-mix(in srgb,var(--dd-accent) 55%,transparent)}
+  html.dd-touch #dds-root .dg-main{flex:1;min-width:0;padding:8px 12px 14px}
+  html.dd-touch #dds-root .dg-grid-chart,html.dd-touch #dds-root .dg-grid-text{grid-template-columns:minmax(0,1fr);justify-items:center}
+  html.dd-touch #dds-root .dg-grid-stat{grid-template-columns:repeat(2,minmax(0,1fr));justify-content:stretch}
+  html.dd-touch #dds-root .dg-live .dd-zctl{display:none!important}
+  html.dd-touch #dds-root .dg-foot{padding:8px 12px max(12px,env(safe-area-inset-bottom));gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  html.dd-touch #dds-root .dg-foot-left{display:contents}
+  html.dd-touch #dds-root .dg-added{display:none}
+  html.dd-touch #dds-root .dg-span,html.dd-touch #dds-root .dg-pickbtn{order:1;flex:1 1 calc(50% - 6px);max-width:none}
+  html.dd-touch #dds-root .dg-foot-left .dg-reset{order:2;margin-left:0;margin-right:auto}
+  html.dd-touch #dds-root .dg-foot > .dds-btn{order:3}
+}

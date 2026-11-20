@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from .. import ThemePalettes
-from .palette import get_theme_palette
+from ...logic.theme.palette import get_theme_palette
 from .theme_mode import get_theme_base_mode, get_theme_effective_is_dark
 from .main_dialog_qss import get_main_dialog_style
 from .design_overrides import get_design_overrides

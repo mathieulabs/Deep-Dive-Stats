@@ -3,27 +3,19 @@
 from .transition import (
     build_adaptive_fetch_bounds,
     compute_transition_align_right,
-    extract_series_date_bounds,
-    freeze_chart_transition_state,
-    get_timespan_transition_meta,
     resolve_adaptive_zoom_window,
     should_use_timespan_transition,
     timespan_transition_mode,
     rows_on_new_days,
-    update_chart_for_transition,
     widen_zoom_window,
 )
 
 __all__ = [
     "build_adaptive_fetch_bounds",
     "compute_transition_align_right",
-    "extract_series_date_bounds",
-    "freeze_chart_transition_state",
-    "get_timespan_transition_meta",
     "resolve_adaptive_zoom_window",
     "should_use_timespan_transition",
     "timespan_transition_mode",
     "rows_on_new_days",
-    "update_chart_for_transition",
     "widen_zoom_window",
 ]

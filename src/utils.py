@@ -196,11 +196,11 @@ def format_hours(hours: float, precision: int = None, use_decimal=True, hrs_text
     under an hour. hrs_text and min_text are optional unit suffixes.
     """
     if precision is None:
-        from .details.widgets.chart_utils.formatting import stats_precision
+        from .details.logic.formatting import stats_precision
         precision = stats_precision()
 
     if use_decimal:
-        from .details.widgets.chart_utils.formatting import fmt_num
+        from .details.logic.formatting import fmt_num
         # Units may come with their own leading space (" min"): one space only.
         hrs_text, min_text = str(hrs_text or "").strip(), str(min_text or "").strip()
         # Units come from the tab settings, saved in English ("hrs"): shown translated.

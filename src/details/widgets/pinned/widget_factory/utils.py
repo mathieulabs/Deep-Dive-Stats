@@ -1,11 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 from aqt import mw
-from aqt.qt import QColor
 
 from ....ui import Period, ConfigManager
-from ...common import create_checkbox, create_radio_group
-from ...common.pill_toggles import pill_checkbox_qss, pill_radio_qss
 from ...chart_utils.theme import (
     ThemeContext,
     coerce_theme_context,
@@ -22,10 +19,7 @@ from ....logic.data.context_payloads import (
     get_default_history_payload,
 )
 from ....logic.data.section_fetchers import fetch_section_data
-from ....logic import log_debug
-from ..context_access import fetch_pinned_context_data, get_pinned_context
-from .....qss import set_qss
-from ....logic.logger import log_error
+from ..context_access import get_pinned_context
 from ....logic.logger import log_swallowed
 
 def _theme_ref_for_controls(parent=None):
@@ -77,109 +71,35 @@ def _theme_vars(widget_or_context=None):
         "surface_hex": _hex_or_default(t_colors.get("surface"), None),
     }
 
-def _apply_checkbox_style(cb):
-    """Re-apply theme-aware stylesheet to an existing QCheckBox."""
-    theme_ref = _theme_ref_for_controls(cb)
-    t_colors = get_theme_colors(theme_ref)
-    is_dark = bool(t_colors.get("is_dark"))
-    text_col = t_colors.get("text_secondary", t_colors.get("text"))
-    accent_col = t_colors.get("accent")
-    text_hex = text_col.name() if text_col is not None else ("#a1a1aa" if is_dark else "#71717a")
-    if accent_col is not None:
-        accent_rgba = f"rgba({accent_col.red()}, {accent_col.green()}, {accent_col.blue()}, 180)"
-    else:
-        accent_rgba = "rgba(59, 130, 246, 180)"
-
-    try:
-        text_override = cb.property("deepdivestats_text_color")
-    except Exception:
-        text_override = None
-    if text_override:
-        text_hex = str(text_override)
-
-    try:
-        accent_override = cb.property("deepdivestats_accent_rgba")
-    except Exception:
-        accent_override = None
-    if accent_override:
-        accent_rgba = str(accent_override)
-
-    chart_ref = getattr(cb, "_deepdivestats_retention_chart_ref", None)
-    try:
-        series_key = cb.property("deepdivestats_retention_series_key")
-    except Exception:
-        series_key = None
-    from ...charts.retention.series import SERIES_KEYS
-
-    series_key = str(series_key or "").strip().lower()
-    if series_key in SERIES_KEYS:
-        try:
-            from ...charts.retention import RetentionChart
-
-            color_ctx = chart_ref if chart_ref is not None else cb
-            c = QColor(RetentionChart._get_series_color(series_key, color_ctx))
-            if c.isValid():
-                series_rgba = f"rgba({c.red()}, {c.green()}, {c.blue()}, 180)"
-                text_hex = series_rgba
-                accent_rgba = series_rgba
-        except Exception:
-            log_swallowed()
-
-    try:
-        font_weight_override = cb.property("deepdivestats_font_weight")
-    except Exception:
-        font_weight_override = None
-
-    try:
-        padding_right = cb.property("deepdivestats_padding_right")
-    except Exception:
-        padding_right = None
-    padding_css = ""
-    if padding_right is not None and str(padding_right).strip() != "":
-        try:
-            padding_css = f"padding-right: {int(padding_right)}px;"
-        except Exception:
-            padding_css = f"padding-right: {str(padding_right)};"
-
-    # Pill toggle (shared with the Deep Dive): no tick box, the pill lights up.
-    margin_css = padding_css.replace("padding-right", "margin-right")
-    set_qss(cb, pill_checkbox_qss(
-        text_hex, accent_rgba, is_dark,
-        font_weight=str(font_weight_override or "600"),
-        extra_css=margin_css,
-    ))
-
-
-def _apply_radio_style(rb):
-    """Re-apply theme-aware stylesheet to an existing QRadioButton."""
-    theme_ref = _theme_ref_for_controls(rb)
-    t_colors = get_theme_colors(theme_ref)
-    is_dark = bool(t_colors.get("is_dark"))
-    text_col = t_colors.get("text_secondary", t_colors.get("text"))
-    accent_col = t_colors.get("accent")
-    color_text = text_col.name() if text_col is not None else ("#a1a1aa" if is_dark else "#71717a")
-    if accent_col is not None:
-        accent_rgba = f"rgba({accent_col.red()}, {accent_col.green()}, {accent_col.blue()}, 180)"
-    else:
-        accent_rgba = "rgba(59, 130, 246, 180)"
-    # Segmented-control look (shared with the Deep Dive).
-    set_qss(rb, pill_radio_qss(color_text, accent_rgba, is_dark))
-
-
-def _make_checkbox(text, checked=True, parent=None):
-    return create_checkbox(text, checked=checked, parent=parent, setup=_apply_checkbox_style)
-
-def _make_radio_group(options, default_idx, callback, parent=None):
-    return create_radio_group(
-        options,
-        default_idx,
-        callback,
-        parent=parent,
-        setup_button=_apply_radio_style,
-    )
 
 def _addon_config():
     return ConfigManager(mw)
+
+
+def _resolve_deck_ids(deck_ids, context_deck_id):
+    """Turn a widget's deck_ids into the deck id used to fetch data.
+
+    deck_ids:
+      None  -> all decks, following the context deck
+      []    -> all standard decks (no deleted)
+      list  -> explicit int deck ids and/or "deleted"
+
+    If the context deck is in the explicit selection, the widget shows just that
+    deck.
+    """
+    if deck_ids is None or deck_ids == []:
+        return context_deck_id
+
+    numeric_ids = [d for d in deck_ids if isinstance(d, int)]
+    include_deleted = "deleted" in deck_ids
+
+    if include_deleted and not numeric_ids:
+        return -1
+
+    if context_deck_id and isinstance(context_deck_id, int) and context_deck_id in numeric_ids:
+        return context_deck_id
+
+    return deck_ids
 
 import time
 import threading
@@ -534,99 +454,6 @@ class PinnedDataManager:
         PinnedDataManager._context_cache.clear()
         PinnedDataManager._pending_fetches.clear()
 
-    @staticmethod
-    def fetch_context_async(deck_id, range_type, callback, cfg=None, custom_days=7, custom_type="relative", start_date_str="", end_date_str=""):
-        max_ids = _get_max_ids()
-        key = (deck_id, int(range_type), int(custom_days) if custom_days is not None else 0, custom_type, start_date_str, end_date_str, max_ids)
-
-        ctx = PinnedDataManager._context_cache.get(key)
-        if ctx:
-            callback(ctx)
-            return
-
-        from ....logic.history_cache import GlobalHistoryCache
-        global_ctx = GlobalHistoryCache.get_context(
-            deck_id, range_type, cfg=cfg,
-            custom_days=custom_days, custom_type=custom_type,
-            start_date_str=start_date_str, end_date_str=end_date_str,
-            allow_sync_check=False
-        )
-        if global_ctx:
-            if deck_id == -1:
-                from ....logic.history_provider.deleted_states import enrich_deleted_context
-                global_ctx = enrich_deleted_context(global_ctx)
-            PinnedDataManager._context_cache[key] = global_ctx
-            callback(global_ctx)
-            return
-
-        if key in PinnedDataManager._pending_fetches:
-            PinnedDataManager._pending_fetches[key].append(callback)
-            return
-
-        log_debug(f"> [PINNED] Calling fetch_context_async: deck={deck_id}, range={range_type}", tag="PINNED")
-        PinnedDataManager._pending_fetches[key] = [callback]
-
-        def worker(passed_cfg=cfg):
-            return fetch_pinned_context_data(
-                deck_id,
-                range_type,
-                cfg=passed_cfg,
-                custom_days=custom_days,
-                custom_type=custom_type,
-                start_date_str=start_date_str,
-                end_date_str=end_date_str,
-            )
-
-        def on_done(future):
-            try:
-                ctx = future.result()
-            except Exception:
-                callbacks = PinnedDataManager._pending_fetches.pop(key, [])
-                for cb in callbacks:
-                    try:
-                        cb({})
-                    except Exception:
-                        log_swallowed()
-                return
-            PinnedDataManager._context_cache[key] = ctx
-
-            callbacks = PinnedDataManager._pending_fetches.pop(key, [])
-            for cb in callbacks:
-                try:
-                    cb(ctx)
-                except Exception as e:
-                    log_error(f"Error in context callback: {e}")
-
-        mw.taskman.run_in_background(worker, on_done=on_done)
-
-def fetch_history_async(deck_id, range_type, callback, cache=None, history_type="reviews", custom_days=7, custom_type="relative", start_date_str="", end_date_str=""):
-    """
-    Fetch history in a background thread and call callback with the result.
-    """
-    ctx = get_pinned_context(
-        deck_id,
-        range_type,
-        custom_days=custom_days,
-        custom_type=custom_type,
-        start_date_str=start_date_str,
-        end_date_str=end_date_str,
-    )
-    if ctx:
-        data = get_context_history_payload(ctx, history_type, heatmap_mode="cache_probe")
-        if data:
-            callback(data)
-            return
-
-    def on_context_ready(ctx):
-        if history_type == "heatmap":
-            # The heatmap needs both history and future data; the builder reads them from the PinnedDataManager cache, which fetch_context_async already filled in on_done.
-            callback(get_context_history_payload(ctx, history_type, heatmap_mode="raw_reviews"))
-            return
-
-        data = get_context_history_payload(ctx, history_type)
-        callback(data)
-
-    PinnedDataManager.fetch_context_async(deck_id, range_type, on_context_ready, custom_days=custom_days, custom_type=custom_type, start_date_str=start_date_str, end_date_str=end_date_str)
 
 def _history(deck_id, range_type=None, cache=None, fail_if_not_cached=False, history_type="reviews", cfg=None, custom_days=7, custom_type="relative", start_date_str="", end_date_str=""):
     if range_type is None: range_type = Period.TOTAL

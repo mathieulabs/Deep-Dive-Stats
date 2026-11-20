@@ -51,11 +51,20 @@ def reset_heatmap_pinned(dialog) -> None:
         dialog.vibrance_slider.setValue(defaults.get(Config.HEATMAP_VIBRANCE, 100))
     if hasattr(dialog, "intensity_curve_slider"):
         dialog.intensity_curve_slider.setValue(defaults.get(Config.HEATMAP_INTENSITY_CURVE, 100))
+    if hasattr(dialog, "invert_intensity_cb"):
+        dialog.invert_intensity_cb.setChecked(defaults.get(Config.HEATMAP_INVERT_INTENSITY, False))
+    if hasattr(dialog, "multi_hue_cb"):
+        dialog.multi_hue_cb.setChecked(defaults.get(Config.HEATMAP_MULTI_HUE_INTENSITY, False))
+    if hasattr(dialog, "hm_palette_reset"):
+        dialog.hm_palette_reset()
     if hasattr(dialog, "hm_levels_slider"):
         dialog.hm_levels_slider.setValue(defaults.get(Config.HEATMAP_COLOR_LEVELS, 20))
 
     if hasattr(dialog, "hm_glass_cb"):
         dialog.hm_glass_cb.setChecked(defaults.get(Config.HEATMAP_SHOW_GLASS, False))
+    from .web_glass import reset_web_glass
+
+    reset_web_glass(dialog, "hm_")
     if hasattr(dialog, "hm_int_slider"):
         dialog.hm_int_slider.setValue(defaults.get(Config.HEATMAP_GLASS_INTENSITY, Config.DEFAULT_CONFIG[Config.HEATMAP_GLASS_INTENSITY]))
     if hasattr(dialog, "hm_border_slider"):
@@ -103,6 +112,12 @@ def reset_heatmap_grid(dialog) -> None:
         dialog.vibrance_slider.setValue(100)
     if hasattr(dialog, "intensity_curve_slider"):
         dialog.intensity_curve_slider.setValue(100)
+    if hasattr(dialog, "invert_intensity_cb"):
+        dialog.invert_intensity_cb.setChecked(False)
+    if hasattr(dialog, "multi_hue_cb"):
+        dialog.multi_hue_cb.setChecked(False)
+    if hasattr(dialog, "hm_palette_reset"):
+        dialog.hm_palette_reset()
     if hasattr(dialog, "hm_levels_slider"):
         dialog.hm_levels_slider.setValue(20)
 

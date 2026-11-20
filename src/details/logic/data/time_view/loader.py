@@ -18,7 +18,7 @@ from ...logger import log_swallowed
 def _add_day_stats(totals, range_type, custom_days, custom_type, start_date_str, end_date_str):
     """Add the day-level figures the extra stat cards need (read from the cached daily history)."""
     from ...history_cache import GlobalHistoryCache
-    from ....widgets.stats_cards.logic.model import deck_state_from_context, history_day_stats
+    from ...stat_cards import deck_state_from_context, history_day_stats
 
     try:
         ctx = GlobalHistoryCache.get_context(

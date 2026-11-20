@@ -1,45 +1,31 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+"""Anki's hooks the pinned widgets follow: a sync, an edit (card, note, deck), a profile opened, the theme."""
 from aqt import mw, gui_hooks
-from aqt.qt import QTimer, QCheckBox, QRadioButton, QWidget, QDialog
+from aqt.qt import QTimer
 
-from ..imports import sync_theme_manager_from_config, sync_theme_manager_and_notify
 from .....logic.logger import log_info, log_swallowed
 
 
 def register_hooks(manager):
-    gui_hooks.deck_browser_will_render_content.append(manager._on_deck_browser_will_render)
-    gui_hooks.overview_will_render_content.append(manager._on_overview_will_render)
-
     if hasattr(gui_hooks, "reviewer_did_init"):
         gui_hooks.reviewer_did_init.append(manager._on_reviewer_did_init)
     elif hasattr(gui_hooks, "reviewer_will_init"):
         gui_hooks.reviewer_will_init.append(manager._on_reviewer_did_init)
-
-    if hasattr(gui_hooks, "reviewer_will_end"):
-        gui_hooks.reviewer_will_end.append(manager._on_reviewer_will_end)
-    elif hasattr(gui_hooks, "reviewer_did_end"):
-        gui_hooks.reviewer_did_end.append(manager._on_reviewer_will_end)
-
-    gui_hooks.webview_did_receive_js_message.append(manager._on_js_message)
-    gui_hooks.webview_did_inject_style_into_page.append(manager._on_webview_did_inject_style)
-
     if hasattr(gui_hooks, "theme_did_change"):
         gui_hooks.theme_did_change.append(manager._on_theme_change)
-
     if hasattr(gui_hooks, "state_did_change"):
         gui_hooks.state_did_change.append(manager._on_state_did_change)
-
     if hasattr(gui_hooks, "sync_did_finish"):
         gui_hooks.sync_did_finish.append(manager._on_sync_did_finish)
     if hasattr(gui_hooks, "operation_did_execute"):
         gui_hooks.operation_did_execute.append(manager._on_operation_did_execute)
-
     gui_hooks.profile_did_open.append(manager._on_profile_did_open)
 
     try:
-        cm = manager._get_config_manager()
-        sync_theme_manager_and_notify(cm.config, source="pinned_register")
+        from ..imports import sync_theme_manager_and_notify
+
+        sync_theme_manager_and_notify(manager._get_config_manager().config, source="pinned_register")
     except Exception:
         log_swallowed()
 
@@ -89,7 +75,7 @@ def on_operation_did_execute(manager, changes, handler):
             return
         if (
             handler_name == "Reviewer"
-            and getattr(manager, "_review_return_t0", None) is not None
+            and manager._review_return_t0 is not None
             and mw.state in ("overview", "deckBrowser")
         ):
             return
@@ -103,6 +89,8 @@ def on_operation_did_execute(manager, changes, handler):
 
 
 def run_operation_refresh(manager):
+    """An edit: the history cache reads what changed (only the card states when nothing else did), then the pinned
+    data is dropped so what is read next is fresh."""
     if not manager._op_force_refresh:
         return
     manager._op_force_refresh = False
@@ -112,14 +100,13 @@ def run_operation_refresh(manager):
         from ...widget_factory.utils import PinnedDataManager, invalidate_max_ids_cache, _get_max_ids
         from ..imports import GlobalHistoryCache
         from .....logic.history_cache.ops.refresh_monitoring import capture_db_fingerprint
+
         ghc = GlobalHistoryCache()
         current_max = _get_max_ids(allow_db=True)
         last_max = (int(getattr(ghc, "last_max_rev_id", 0) or 0), int(getattr(ghc, "last_max_card_id", 0) or 0))
         max_ids_decreased = current_max[0] < last_max[0] or current_max[1] < last_max[1]
         max_ids_increased = current_max[0] > last_max[0] or current_max[1] > last_max[1]
         fingerprint_prev = getattr(ghc, "_last_db_fingerprint", None)
-        fingerprint_curr = None
-        fingerprint_changed = False
 
         if max_ids_decreased:
             force_full = True
@@ -146,142 +133,41 @@ def run_operation_refresh(manager):
         log_swallowed()
     try:
         from ..imports import GlobalHistoryCache
+
         ghc = GlobalHistoryCache()
-
-        def _after_op_refresh():
-            try:
-                manager._last_state = None
-                manager._widget_update_signatures = {}
-                manager._last_op_callback_rebuild_ts = __import__("time").perf_counter()
-                manager._schedule_rebuild(manager._current_deck_id, force=True)
-            except Exception:
-                log_swallowed()
-
+        # a callback, even one doing nothing: refresh_incremental skips the refreshes without one while reviewing
         if states_only:
-            ghc.refresh_card_states(callback=_after_op_refresh)
+            ghc.refresh_card_states(callback=_noop)
         else:
-            ghc.refresh_incremental(
-                callback=_after_op_refresh,
-                force_full=force_full,
-            )
-
-        def _maybe_safety_rebuild():
-            elapsed_ms = round((__import__("time").perf_counter() - float(getattr(manager, "_last_op_callback_rebuild_ts", 0.0) or 0.0)) * 1000, 1)
-            if 0.0 <= elapsed_ms < 1200.0:
-                return
-            manager._schedule_rebuild(manager._current_deck_id, force=True)
-
-        QTimer.singleShot(900, _maybe_safety_rebuild)
+            ghc.refresh_incremental(callback=_noop, force_full=force_full)
     except Exception:
         log_swallowed()
 
 
-def _drop_previous_profile_widgets(manager):
-    """The widgets on screen belong to the profile that was open before. They have to go:
-    the default widgets keep the same id in every profile, so the next rebuild reused them
-    as they were (another profile's box, which the new profile hides with everything in it,
-    and its data in their headers). The overlay goes too, so the boxes are built again."""
-    widgets = list((getattr(manager, "_active_widgets", None) or {}).values())
-    for scope_widgets in (getattr(manager, "_preserved_widgets_by_scope", None) or {}).values():
-        widgets.extend((scope_widgets or {}).values())
-    seen = set()
-    for widget in widgets:
-        if widget is None or id(widget) in seen:
-            continue
-        seen.add(id(widget))
-        try:
-            widget.hide()
-            widget.setParent(None)
-            widget.deleteLater()
-        except RuntimeError:
-            pass
-    manager._active_widgets = {}
-    manager._preserved_widgets_by_scope = {}
-    manager._widget_update_signatures = {}
-    manager._last_render_scope_key = None
-    overlay = getattr(manager, "_overlay", None)
-    manager._overlay = None
-    if overlay is not None:
-        try:
-            overlay.hide()
-            overlay.deleteLater()
-        except RuntimeError:
-            pass
-    # What pointed into the old overlay (built again with the new one, see overlay_state).
-    manager._stats_container = None
-    manager._stats_containers = {}
-    manager._stats_box_order = []
-    manager._charts_container = None
-    manager._chart_boxes = {}
-    manager._chart_box_order = []
-    manager._texts_container = None
-    manager._text_boxes = {}
-    manager._text_box_order = []
-    manager._masonry_layout = None
-    manager._chart_masonry_rows = []
-    manager._charts_vbox = None
-    manager._text_masonry_rows = []
-    manager._texts_vbox = None
+def _noop():
+    pass
 
 
 def on_profile_did_open(manager):
-    try:
-        _drop_previous_profile_widgets(manager)
-    except Exception:
-        log_swallowed()
     manager._mark_config_dirty()
-    manager._last_state = None
-    manager._last_widget_set = None
     manager.__class__._last_max_ids = None
-
     try:
-        # Ids and browsed heatmap years belong to the previous profile.
+        # Ids belong to the previous profile.
         from ...widget_factory import utils as _wf_utils
-        from ...widget_factory.builders import heatmap as _wf_heatmap
+
         _wf_utils._last_max_ids_cache.update({"rev_id": 0, "card_id": 0, "time": 0})
-        _wf_heatmap._SESSION_YEARS.clear()
+        _wf_utils.PinnedDataManager.clear()
     except Exception:
         log_swallowed()
-
     try:
-        from ...widget_factory.utils import PinnedDataManager
-        PinnedDataManager.clear()
+        from ..imports import sync_theme_manager_and_notify
+
+        sync_theme_manager_and_notify(manager._get_config_manager().config, source="pinned_profile_open")
     except Exception:
         log_swallowed()
-
-    cm = manager._get_config_manager()
-    sync_theme_manager_and_notify(cm.config, source="pinned_profile_open")
-    if mw.state in ("deckBrowser", "overview"):
-        manager._last_state = None
-        QTimer.singleShot(0, lambda: manager.refresh(clear_cache=False))
-
-
-def on_internal_theme_changed(manager, _source=None):
-    if manager._overlay and manager._overlay.isVisible():
-        manager.update_styles()
-        from ...widget_factory.utils import _apply_checkbox_style, _apply_radio_style
-        for cb in (w for w in manager._overlay.findChildren(QCheckBox) if not isinstance(w.window(), QDialog)):
-            try:
-                _apply_checkbox_style(cb)
-            except Exception:
-                log_swallowed()
-        for rb in (w for w in manager._overlay.findChildren(QRadioButton) if not isinstance(w.window(), QDialog)):
-            try:
-                _apply_radio_style(rb)
-            except Exception:
-                log_swallowed()
-        for widget in manager._overlay.findChildren(QWidget):
-            try:
-                widget.update()
-            except Exception:
-                continue
 
 
 def on_theme_change(manager):
-    cm = manager._get_config_manager()
-    sync_theme_manager_from_config(cm.config, emit=True, source="anki_theme_change")
+    from ..imports import sync_theme_manager_from_config
 
-
-
-
-
+    sync_theme_manager_from_config(manager._get_config_manager().config, emit=True, source="anki_theme_change")

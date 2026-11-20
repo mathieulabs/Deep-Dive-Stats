@@ -84,7 +84,8 @@ def _refresh_cards(by_card, cids):
 
 
 def _all_events():
-    max_id, count = mw.col.db.first("SELECT max(id), count() FROM revlog") or (None, 0)
+    from .revlog_stamp import revlog_stamp
+    max_id, count = revlog_stamp()  # (kept: one read of the history for all the charts)
     max_id, count = int(max_id or 0), int(count or 0)
     with _LOCK:
         st = dict(_STATE)
@@ -122,3 +123,25 @@ def introduction_events(addon_config, deck_id=None, is_deleted=False):
         events.extend(by_card.get(cid, ()))
     events.sort()
     return events
+
+
+def introduced_loads(addon_config, deck_id=None, is_deleted=False):
+    """Introduced Load: the load each card brings now (1 / its interval,
+    review cards only, as Interval Load), placed on the day the card was last introduced (its
+    first answer, or the first after its last reset: the life it is in now).
+    [(review id in ms, load, mature)], oldest first; deleted cards bring no load."""
+    if is_deleted:
+        return []
+    from .review_intervals import INTERVAL_CARDS_COND
+
+    by_card = _all_events()
+    did_limit = HistoryProvider._get_did_limit(addon_config, deck_id)
+    out = []
+    for cid, ivl in mw.col.db.all(
+            f"SELECT cards.id, cards.ivl FROM cards AS cards WHERE {INTERVAL_CARDS_COND} {did_limit}"):
+        evs = by_card.get(int(cid))
+        if not evs or not ivl:
+            continue
+        out.append((evs[-1][0], 1.0 / int(ivl), int(ivl) >= 21))
+    out.sort()
+    return out

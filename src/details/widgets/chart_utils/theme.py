@@ -14,7 +14,6 @@ from ....const import ThemePalettes
 from ...logic.logger import log_swallowed
 
 
-
 def relative_luminance(c):
     """Relative luminance of a QColor, 0 (black) to 1 (white), as used for text contrast."""
     def f(v):
@@ -520,6 +519,20 @@ class _ThemeManager:
                 except Exception:
                     log_swallowed()
 
+            # Pinned context without the active theme: the native palette, as the Deep Dive's
+            # native preset (its grey Total / Avg line, its background and borders), not the
+            # hardcoded colors with the accent as the Total / Avg line.
+            elif context == ThemeContext.PINNED:
+                tpal = ThemePalettes.ANKI_LIKE_PALETTE if is_dark else ThemePalettes.ANKI_LIKE_PALETTE_LIGHT
+                text_primary = QColor(tpal["text_primary"])
+                text_secondary = QColor(tpal["text_secondary"])
+                bg = QColor(tpal["bg_root"])
+                surface = theme_card_surface(tpal)
+                border = QColor(tpal["border_strong"])
+                accent = QColor(tpal["accent"])
+                _tpal_total_line = tpal.get("total_line") or None
+                theme_palette_applied = True
+
             if theme_palette_applied:
                 try:
                     text_secondary = ensure_contrast(text_secondary, bg, 4.0)
@@ -637,19 +650,6 @@ _THEME_MANAGER = _ThemeManager()
 # While an animation redraws a chart every frame, the palette of a widget is looked up once
 # (the theme cannot change within 300 ms); see palette_memo().
 _PALETTE_MEMO = [None]
-_PALETTE_USERS = [0]
-
-
-def palette_memo(on):
-    """Turn the per-widget palette memo on (nested calls are counted) or off."""
-    if on:
-        _PALETTE_USERS[0] += 1
-        if _PALETTE_MEMO[0] is None:
-            _PALETTE_MEMO[0] = {}
-    else:
-        _PALETTE_USERS[0] = max(0, _PALETTE_USERS[0] - 1)
-        if _PALETTE_USERS[0] == 0:
-            _PALETTE_MEMO[0] = None
 
 
 def get_theme_manager():
@@ -666,12 +666,6 @@ def is_night_mode(widget_or_context=None):
 
 def get_theme_colors(widget_or_context=None):
     return get_palette(widget_or_context)
-
-
-def is_details_context(widget_or_context=None):
-    """Return True if the widget is in the Details (non-pinned) theme context."""
-    ctx, _ = _THEME_MANAGER._resolve(widget_or_context)
-    return ctx != ThemeContext.PINNED
 
 
 def _qt_deleted(obj):
@@ -737,6 +731,7 @@ _NON_STYLE_KEYS = frozenset((
     Config.DETAILS_LAYOUT_STATE,
     Config.DETAILS_TABLE_DRAWER_AUTO_CLOSE,
     Config.DETAILS_TABLE_DRAWER_SHORTCUT,
+    Config.DETAILS_TABLE_SHOW,
     Config.DEEP_DIVE_FILL_HEIGHT,
     Config.DEEP_DIVE_SHARED_ROW_HEIGHT,
     Config.DETAILS_TABLE_DRAWER_OPEN,
@@ -772,7 +767,8 @@ def theme_already_synced(conf):
 def sync_theme_manager_from_config(conf, emit=False, source=None):
     """Sync theme manager runtime state from a config dict."""
     cfg = conf if isinstance(conf, dict) else {}
-    _LAST_SYNCED_THEME_SIGNATURE[0] = theme_config_signature(cfg)
+    _new_sig = theme_config_signature(cfg)
+    _LAST_SYNCED_THEME_SIGNATURE[0] = _new_sig
     _THEME_MANAGER.set_details_theme_mode(resolve_details_theme_mode_from_config(cfg))
     _THEME_MANAGER.set_pinned_use_active_theme(bool(cfg.get(Config.PINNED_USE_ACTIVE_THEME, False)))
     _THEME_MANAGER.set_pinned_use_separate_theme(bool(cfg.get(Config.PINNED_USE_SEPARATE_THEME, False)))

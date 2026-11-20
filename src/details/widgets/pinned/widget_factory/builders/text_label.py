@@ -11,14 +11,11 @@ from ..utils import _addon_config
 from . import Config, Period
 from .stat_card import _build_stat_values_map
 from .time_units import apply_time_unit as _apply_time_unit
-from ....chart_utils.formatting import fmt_num
-from ....stats_cards.logic.constants import ANIM_DISABLED_DURATION_MS, ROLL_ANIM_DURATION_MS
-from ....stats_cards.logic.model import DECK_STATE_FIELDS, HISTORY_DERIVED_FIELDS, STAT_VALUE_FIELD_BINDINGS
-from .....animations.effect_guard import effect_nested
-from .....animations.motion import animations_enabled
+from .....logic.stat_cards import DECK_STATE_FIELDS, HISTORY_DERIVED_FIELDS, STAT_VALUE_FIELD_BINDINGS
+animations_enabled = lambda *_a, **_k: False
 from .....logic.tabs import DEFAULT_DETAILS_TABS
 from .....logic.logger import log_swallowed
-from ......i18n import num, tr, tr_n, tr_name
+from ......i18n import tr, tr_n, tr_name
 
 
 _CONFIG_KEY_TO_FIELD: dict = {}
@@ -340,409 +337,92 @@ def _build_runtime_payload(
     return payload
 
 
-def _only_static_changes(old_payload, new_payload):
-    """True when every variable whose value changed is marked static ({var~})."""
-    if str(old_payload.get("template", "")) != str(new_payload.get("template", "")):
-        return False
-    old_entries = list(old_payload.get("entries", []) or [])
-    new_entries = list(new_payload.get("entries", []) or [])
-    if len(old_entries) != len(new_entries):
-        return False
-    changed = [n for o, n in zip(old_entries, new_entries) if str(o.get("value")) != str(n.get("value"))]
-    return bool(changed) and all(n.get("static") for n in changed)
+# safe_html: an allow-list (what the editor writes), not a list of what to take out: anything else is left out.
+_SAFE_TAGS = frozenset({
+    "p", "div", "span", "br", "hr", "b", "strong", "i", "em", "u", "s", "strike", "del", "ins", "sub", "sup",
+    "small", "big", "font", "center", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "pre",
+    "code", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "col", "colgroup",
+})
+_VOID_TAGS = frozenset({"br", "hr", "col"})
+_SAFE_ATTRS = frozenset({
+    "style", "align", "dir", "color", "face", "size", "start", "type", "value", "colspan", "rowspan", "valign",
+    "width", "height", "bgcolor", "border", "cellspacing", "cellpadding",
+})
+# left out with all they hold (their words are not text to show: code, a picture, a frame...)
+_DROPPED_WITH_CONTENT = frozenset({
+    "script", "style", "iframe", "object", "embed", "applet", "svg", "math", "template", "noscript", "noembed",
+    "noframes", "frame", "frameset", "textarea", "select", "title", "head", "xmp", "plaintext", "audio", "video",
+})
+# a style's declaration that could load something or run something (or hide it behind CSS escapes)
+_UNSAFE_CSS_RE = re.compile(r"url\s*\(|image-set|image\s*\(|expression|@import|javascript:|behavior|binding|\\",
+                            re.IGNORECASE)
 
 
-def _format_roll_value(kind, value, decimals, prefix, suffix):
-    if kind == "percent":
-        return num(f"{value:.{decimals}f}%")
-    if decimals > 0:
-        number_text = fmt_num(value, decimals)
-    else:
-        number_text = fmt_num(int(round(value)))
-    return f"{prefix}{number_text}{suffix}"
+def _safe_style(value):
+    value = re.sub(r"/\*.*?\*/", "", value, flags=re.DOTALL)
+    kept = [d.strip() for d in value.split(";") if d.strip() and not _UNSAFE_CSS_RE.search(d)]
+    return "; ".join(kept)
 
 
-_FONT_SIZE_RE = re.compile(r"(font-size\s*:\s*)([0-9]*\.?[0-9]+)(\s*)(pt|px)", re.IGNORECASE)
+def safe_html(text):
+    """A text's sentence as the web pages show it: the editor's formatting kept (titles, lists, lines, alignment,
+    sizes, colors), nothing that runs, loads or leaves the page. Only the tags and attributes the editor writes are
+    kept; a link is its words only, a picture, a script, an SVG or a frame is left out."""
+    from html.parser import HTMLParser
 
+    out = []
+    skip = []  # the dropped-with-content tags open
 
-class AutoSizeRichLabel:
-    """Mixin: makes a QLabel auto-size its height to fit rich text content."""
+    class _Clean(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            self._tag(tag, attrs, closed=False)
 
-    def zoomed_text(self, text):
-        """The text at Anki's interface zoom (set_zoom): its font sizes, and the label's
-        own size for the text that has none, times the zoom. At 100 % it is unchanged."""
-        z = float(getattr(self, "_zoom", 1.0) or 1.0)
-        if abs(z - 1.0) < 1e-3 or not text or not str(text).strip():
-            return text
-        text = _FONT_SIZE_RE.sub(lambda m: f"{m.group(1)}{float(m.group(2)) * z:.2f}{m.group(3)}{m.group(4)}", str(text))
-        if not text.lstrip().startswith("<"):
-            text = html.escape(text).replace("\n", "<br>")
-        font = self.font()
-        if font.pointSizeF() > 0:
-            base = f"{font.pointSizeF() * z:.2f}pt"
-        else:
-            base = f"{max(1, font.pixelSize()) * z:.2f}px"
-        return f'<div style="font-size:{base};">{text}</div>'
+        def handle_startendtag(self, tag, attrs):
+            self._tag(tag, attrs, closed=True)
 
-    def set_zoom(self, zoom):
-        """Follow Anki's interface zoom like the other pinned widgets (see zoomed_text)."""
-        try:
-            z = min(3.0, max(0.5, float(zoom or 1.0)))
-        except (TypeError, ValueError):
-            z = 1.0
-        if abs(z - float(getattr(self, "_zoom", 1.0) or 1.0)) < 1e-3:
-            return
-        try:
-            self.ensurePolished()  # the base size is the stylesheet font, not the app default
-        except Exception:
-            log_swallowed()
-        self._zoom = z
-        raw = getattr(self, "_raw_text", None)
-        if raw is not None:
-            self.setText(raw)
-        self.updateGeometry()
-
-    def _build_text_document(self):
-        from aqt.qt import QTextDocument
-
-        # Before the widget is shown it may not be polished: font() is then the app
-        # default, not the stylesheet font, so the text is measured too small and the
-        # label wraps and cuts off the second line.
-        try:
-            self.ensurePolished()
-        except Exception:
-            log_swallowed()
-        doc = QTextDocument()
-        doc.setDefaultFont(self.font())
-        doc.setDocumentMargin(0)
-        text = getattr(self, "_measurement_text", None)
-        text = self.text() if text is None else self.zoomed_text(text)
-        if text.strip().startswith("<"):
-            doc.setHtml(text)
-        else:
-            doc.setPlainText(text)
-        return doc
-
-    def hasHeightForWidth(self):
-        return True
-
-    def preferredTextWidth(self):
-        from aqt.qt import QLabel, Qt
-
-        measurement_text = getattr(self, "_measurement_text", None)
-        if measurement_text is None:
-            measurement_text = self.text() or " "
-        else:
-            measurement_text = self.zoomed_text(measurement_text)
-
-        candidates = []
-        try:
-            self.ensurePolished()
-        except Exception:
-            log_swallowed()
-
-        try:
-            probe = QLabel()
-            probe.setFont(self.font())
-            probe.setTextFormat(Qt.TextFormat.RichText)
-            probe.setAlignment(self.alignment())
-            probe.setContentsMargins(self.contentsMargins())
-            probe.setWordWrap(False)
-            probe.setText(measurement_text)
-            candidates.append(float(probe.sizeHint().width()))
-            candidates.append(float(probe.minimumSizeHint().width()))
-        except Exception:
-            log_swallowed()
-
-        doc = self._build_text_document()
-        try:
-            doc.setTextWidth(1000000)
-        except Exception:
-            log_swallowed()
-        doc.adjustSize()
-        try:
-            candidates.append(float(doc.idealWidth()))
-        except Exception:
-            log_swallowed()
-        try:
-            candidates.append(float(doc.size().width()))
-        except Exception:
-            log_swallowed()
-
-        ideal = int(max(candidates) if candidates else 0) + 10
-        return max(96, min(ideal, 4096))
-
-    def heightForWidth(self, width):
-        margins = self.contentsMargins()
-        doc = self._build_text_document()
-        doc.setTextWidth(max(width - margins.left() - margins.right(), 1))
-        h = int(doc.size().height()) + margins.top() + margins.bottom()
-        # Also ask QLabel itself: it lays the text out the way it is painted, so
-        # the box is never shorter than what is drawn (no clipped last line).
-        try:
-            native_h = int(super().heightForWidth(int(width)))
-        except Exception:
-            native_h = -1
-        return max(h, native_h, 20)
-
-    def sizeHint(self):
-        from aqt.qt import QSize
-
-        w = self.width() if self.width() > 10 else self.preferredTextWidth()
-        return QSize(w, self.heightForWidth(w))
-
-    def minimumSizeHint(self):
-        return self.sizeHint()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.updateGeometry()
-
-
-def _make_text_label_widget(text, parent=None):
-    """Create the display QLabel with auto-height and rich text support."""
-    from aqt.qt import (
-        QLabel,
-        Qt,
-        QSizePolicy,
-        QEasingCurve,
-        QPropertyAnimation,
-        QTimer,
-        QGraphicsOpacityEffect,
-        pyqtProperty,
-    )
-
-    class _RichLabel(AutoSizeRichLabel, QLabel):
-        def __init__(self, parent=None):
-            super().__init__(parent)
-            self._runtime_payload = None
-            self._pending_payload = None
-            self._roll_entries = []
-            self._roll_progress = 1.0
-            self._roll_active = False
-            self._fade_progress = 1.0
-            self._fade_active = False
-            self._fade_swapped_text = False
-            self._fade_payload = None
-            self._measurement_text = None
-            # Only while the text fades (see _set_fade_opacity): left on, it drew the text off
-            # screen at every repaint, and it nested inside the fades of the line around it.
-            self._fade_effect = None
-            self._roll_anim = QPropertyAnimation(self, b"rollProgress")
-            self._roll_anim.setDuration(ROLL_ANIM_DURATION_MS if animations_enabled("pinned") else ANIM_DISABLED_DURATION_MS)
-            self._roll_anim.setStartValue(0.0)
-            self._roll_anim.setEndValue(1.0)
-            self._roll_anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
-            self._roll_anim.finished.connect(self._finish_payload_roll)
-            self._fade_anim = QPropertyAnimation(self, b"fadeProgress")
-            self._fade_anim.setDuration(ROLL_ANIM_DURATION_MS if animations_enabled("pinned") else ANIM_DISABLED_DURATION_MS)
-            self._fade_anim.setStartValue(0.0)
-            self._fade_anim.setEndValue(1.0)
-            self._fade_anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
-            self._fade_anim.finished.connect(self._finish_payload_fade)
-
-        @pyqtProperty(float)
-        def rollProgress(self):
-            return self._roll_progress
-
-        @rollProgress.setter
-        def rollProgress(self, value):
-            self._roll_progress = float(value)
-            if self._roll_active:
-                self._apply_roll_progress(self._roll_progress)
-
-        @pyqtProperty(float)
-        def fadeProgress(self):
-            return self._fade_progress
-
-        @fadeProgress.setter
-        def fadeProgress(self, value):
-            self._fade_progress = float(value)
-            if self._fade_active:
-                self._apply_fade_progress(self._fade_progress)
-
-        def setText(self, text):
-            self._raw_text = text
-            super().setText(self.zoomed_text(text))
-            # Roll animation frames change the digits only; the box is refitted on
-            # the final text (setText is called again when the roll ends).
-            if not getattr(self, "_roll_active", False):
-                self._schedule_wrapper_refit()
-
-        def _schedule_wrapper_refit(self):
-            if getattr(self, "_refit_pending", False):
+        def _tag(self, tag, attrs, closed):
+            tag = tag.lower()
+            if tag in _DROPPED_WITH_CONTENT:
+                if not closed:
+                    skip.append(tag)
                 return
-            self._refit_pending = True
-            QTimer.singleShot(0, self._refit_wrapper)
-
-        def _refit_wrapper(self):
-            # The card around the label has a fixed size computed from the text. Any text
-            # change (live edit, new values, font or theme change) must resize it, or the
-            # text wraps and gets cut off or leaves empty space.
-            self._refit_pending = False
-            try:
-                card = self.parentWidget()
-                while card is not None and card.objectName() != "pinned_widget_card":
-                    card = card.parentWidget()
-                if card is not None and hasattr(card, "refit_text_label"):
-                    card.refit_text_label()
-            except RuntimeError:
-                pass
-
-        def changeEvent(self, event):
-            super().changeEvent(event)
-            try:
-                from aqt.qt import QEvent
-
-                if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
-                    self._schedule_wrapper_refit()
-            except Exception:
-                log_swallowed()
-
-        def setResolvedPayload(self, payload, animate=True):
-            payload = payload or {"template": "", "entries": [], "resolved": ""}
-            final_text = str(payload.get("resolved", "") or " ")
-            self._measurement_text = final_text
-
-            if animate and self._start_payload_fade(payload):
-                self.updateGeometry()
+            if skip or tag not in _SAFE_TAGS:
                 return
-
-            self._roll_anim.stop()
-            self._fade_anim.stop()
-            self._roll_active = False
-            self._fade_active = False
-            self._fade_payload = None
-            self._fade_swapped_text = False
-            self._set_fade_opacity(1.0)
-            self._roll_entries = []
-            self._pending_payload = None
-            self._runtime_payload = payload
-            self.setText(final_text)
-            self.updateGeometry()
-            QTimer.singleShot(0, self.updateGeometry)
-
-        def _start_payload_fade(self, new_payload):
-            old_payload = getattr(self, "_runtime_payload", None)
-            if not old_payload:
-                return False
-            old_text = str(old_payload.get("resolved", "") or " ")
-            new_text = str(new_payload.get("resolved", "") or " ")
-            if old_text == new_text:
-                return False
-            if _only_static_changes(old_payload, new_payload):
-                return False
-
-            self._roll_anim.stop()
-            self._roll_active = False
-            self._pending_payload = None
-            self._roll_entries = []
-
-            self._fade_anim.stop()
-            self._fade_payload = new_payload
-            self._fade_active = True
-            self._fade_swapped_text = False
-            self._fade_progress = 0.0
-            self.setText(old_text)
-            self._apply_fade_progress(0.0)
-            self._fade_anim.start()
-            if not animations_enabled("pinned"):
-                self._finish_payload_fade()
-            return True
-
-        def _apply_fade_progress(self, progress):
-            if not self._fade_active or not self._fade_payload:
-                return
-            t = max(0.0, min(1.0, float(progress)))
-            if (not self._fade_swapped_text) and t >= 0.5:
-                self._fade_swapped_text = True
-                self.setText(str(self._fade_payload.get("resolved", "") or " "))
-            if t < 0.5:
-                opacity = 1.0 - (0.55 * (t * 2.0))
-            else:
-                opacity = 0.45 + (0.55 * ((t - 0.5) * 2.0))
-            self._set_fade_opacity(max(0.0, min(1.0, float(opacity))))
-
-        def _set_fade_opacity(self, opacity):
-            """The text's opacity during a fade; the effect only exists while it is below 1."""
-            if opacity >= 0.999:
-                if self.graphicsEffect() is not None:
-                    self.setGraphicsEffect(None)  # deletes the effect
-                self._fade_effect = None
-                return
-            if self._fade_effect is None:
-                if effect_nested(self):
-                    return  # inside another fade (see effect_guard): no fade of its own
-                self._fade_effect = QGraphicsOpacityEffect(self)
-                self.setGraphicsEffect(self._fade_effect)
-            self._fade_effect.setOpacity(opacity)
-
-        def _finish_payload_fade(self):
-            self._fade_active = False
-            payload = self._fade_payload or self._runtime_payload or {"template": "", "entries": [], "resolved": ""}
-            self._fade_payload = None
-            self._fade_swapped_text = False
-            self._runtime_payload = payload
-            self._set_fade_opacity(1.0)
-            final_text = str(payload.get("resolved", "") or " ")
-            self._measurement_text = final_text
-            self.setText(final_text)
-            self.updateGeometry()
-            QTimer.singleShot(0, self.updateGeometry)
-
-        def _apply_roll_progress(self, progress):
-            if not self._pending_payload:
-                return
-            t = max(0.0, min(1.0, float(progress)))
-            values = []
-            for entry in self._roll_entries:
-                if entry.get("mode") != "roll":
-                    values.append(str(entry.get("text", "")))
+            parts = []
+            for name, value in attrs:
+                name = (name or "").lower()
+                if name not in _SAFE_ATTRS or value is None:
                     continue
-                curr = float(entry["start"]) + ((float(entry["end"]) - float(entry["start"])) * t)
-                values.append(
-                    _format_roll_value(
-                        entry["kind"],
-                        curr,
-                        entry["decimals"],
-                        entry["prefix"],
-                        entry["suffix"],
-                    )
-                )
-            rendered_text = _render_runtime_payload(self._pending_payload, values=values) or " "
-            self.setText(rendered_text)
-            self.updateGeometry()
+                if name == "style":
+                    value = _safe_style(value)
+                    if not value:
+                        continue
+                parts.append(f' {name}="{html.escape(value, quote=True)}"')
+            out.append(f"<{tag}{''.join(parts)}" + (" />" if tag in _VOID_TAGS else ">"))
+            if closed and tag not in _VOID_TAGS:
+                out.append(f"</{tag}>")
 
-        def _finish_payload_roll(self):
-            self._roll_active = False
-            payload = self._pending_payload or self._runtime_payload or {"template": "", "entries": [], "resolved": ""}
-            self._pending_payload = None
-            self._runtime_payload = payload
-            self._roll_entries = []
-            final_text = str(payload.get("resolved", "") or " ")
-            self._measurement_text = final_text
-            self.setText(final_text)
-            self.updateGeometry()
-            QTimer.singleShot(0, self.updateGeometry)
+        def handle_endtag(self, tag):
+            tag = tag.lower()
+            if skip:
+                if tag == skip[-1]:
+                    skip.pop()
+                return
+            if tag in _SAFE_TAGS and tag not in _VOID_TAGS:
+                out.append(f"</{tag}>")
 
-    label = _RichLabel(parent)
-    label.setWordWrap(True)
-    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    label.setTextFormat(Qt.TextFormat.RichText)
-    label.setObjectName("pinned_text_label_inner")
-    # The mouse goes to the card around it: a rich text label otherwise takes the press
-    # (for links), so the text widget could not be dragged like the others.
-    label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-    label.setContentsMargins(4, 4, 4, 4)
+        def handle_data(self, data):
+            if not skip:
+                out.append(html.escape(data, quote=False))
 
-    sp = label.sizePolicy()
-    sp.setHeightForWidth(True)
-    sp.setVerticalPolicy(QSizePolicy.Policy.Preferred)
-    label.setSizePolicy(sp)
-
-    label.setText(text or " ")
-    label._measurement_text = text or " "
-    return label
+    try:
+        parser = _Clean(convert_charrefs=True)
+        parser.feed(str(text or ""))
+        parser.close()
+    except Exception:
+        log_swallowed()
+        return html.escape(re.sub(r"<[^>]*>", "", str(text or "")), quote=False)
+    return "".join(out)
 
 
 def shown_template(template):
@@ -752,36 +432,6 @@ def shown_template(template):
     if template == TEXT_WIDGET_DEFAULT_TEMPLATE:
         return template.replace(TEXT_WIDGET_DEFAULT_SENTENCE, tr_name(TEXT_WIDGET_DEFAULT_SENTENCE))
     return template
-
-
-def _build_text_label(widget_def, deck_id, cache=None, parent=None, cfg=None):
-    if cfg is None:
-        cfg = _addon_config()
-
-    template = shown_template(widget_def.get("template", ""))
-    span = widget_def.get("time_span", Period.TOTAL)
-    days = widget_def.get("custom_days", 7)
-    custom_type = widget_def.get("custom_type", "relative")
-    start_date_str = widget_def.get("start_date", "")
-    end_date_str = widget_def.get("end_date", "")
-
-    payload = _build_runtime_payload(
-        template,
-        deck_id,
-        span,
-        days,
-        cache=cache,
-        cfg=cfg,
-        default_custom_type=custom_type,
-        default_start_date_str=start_date_str,
-        default_end_date_str=end_date_str,
-    )
-    text = (payload or {}).get("resolved", "") if payload is not None else ""
-
-    label = _make_text_label_widget(text, parent)
-    if hasattr(label, "setResolvedPayload"):
-        label.setResolvedPayload(payload or {"template": "", "entries": [], "resolved": text}, animate=False)
-    return label
 
 
 def _update_text_label(label, widget_def, deck_id, cache=None, fail_if_not_cached=False, cfg=None):

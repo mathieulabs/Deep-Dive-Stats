@@ -3,7 +3,7 @@
 
 """Pinned widgets package.
 
-- WidgetRegistry: pinned.store.registry
+- WidgetRegistry: logic.widget_registry
 - DeckSelectorDialog: pinned.dialogs.deck_selector
 - PinnedViewSelectorDialog: pinned.dialogs.view_selector
 """

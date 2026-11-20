@@ -10,6 +10,10 @@ Counts. A reset (Forget) makes it new again, a due date set (or a reschedule) ma
 review card with that interval; filtered-deck previews change nothing. Suspended and buried
 are not in the history: a card counts in its scheduling state.
 
+Each change also keeps the interval of a review card (0 in the other states): the load of
+the collection on every past day (the reviews a day its review cards bring, 1 / interval of
+each one) is summed from the same events (Load Trend).
+
 The changes of state of the whole collection are read once (one pass over the review
 history, in the background), then kept: after new reviews only the cards answered since are
 read again. A deck is a filter on the cards (one quick query of the cards table)."""
@@ -24,9 +28,9 @@ NEW, LEARN, RELEARN, YOUNG, MATURE = range(5)
 KEYS = ("new", "learn", "relearn", "young", "mature")
 
 _LOCK = threading.Lock()
-# {"col": id(col), "roll": rollover, "max_id", "count", "by_card": {cid: [(day, state), ...]}}
+# {"col": id(col), "roll": rollover, "max_id", "count", "by_card": {cid: [(day, state, ivl), ...]}}
 _STATE = {}
-_AGG = {}  # aggregated timelines per deck, kept until the history or the cards change
+_AGG = {}  # aggregated timelines per deck (states, loads), kept until the history or the cards change
 
 
 def _day_sql(column, roll):
@@ -65,8 +69,9 @@ def _manual_state(rtype, ivl, factor):
 
 
 def _events(rows, current=None):
-    """[(day, state)] of one card from its history in order [(day, type, ease, ivl, factor)]:
-    the state at the end of each day it changed. current: (type, ivl) of the card now.
+    """[(day, state, ivl)] of one card from its history in order [(day, type, ease, ivl, factor)]:
+    the state at the end of each day it changed, with the interval of a review card (0 in the
+    other states; a new entry when only the interval changed). current: (type, ivl) of the card now.
 
     After an answer the card is in the state of its next answer's kind: learning before a
     learning answer, relearning before a relearning one, a review card before a review
@@ -88,18 +93,20 @@ def _events(rows, current=None):
             if nxt is not None and nxt[3] is None:
                 s = LEARN if nxt[1] == 0 else RELEARN if nxt[1] == 2 else _review_state(ivl)
             elif nxt is None and current is not None and current[0] in (1, 2, 3):
-                ctype, civl = current
-                s = LEARN if ctype == 1 else RELEARN if ctype == 3 else _review_state(civl)
+                ctype, ivl = current
+                s = LEARN if ctype == 1 else RELEARN if ctype == 3 else _review_state(ivl)
             elif ivl and ivl > 0:
                 s = _review_state(ivl)
             else:
                 s = LEARN if rtype == 0 else RELEARN
+        # the interval of a review card (the one its state was read from); none known: no load
+        kept_ivl = int(ivl) if s in (YOUNG, MATURE) and ivl and ivl > 0 else 0
         if out and out[-1][0] == day:
-            out[-1] = (day, s)
-            if len(out) > 1 and out[-2][1] == s:
+            out[-1] = (day, s, kept_ivl)
+            if len(out) > 1 and out[-2][1] == s and out[-2][2] == kept_ivl:
                 out.pop()
-        elif not out or out[-1][1] != s:
-            out.append((day, s))
+        elif not out or out[-1][1] != s or out[-1][2] != kept_ivl:
+            out.append((day, s, kept_ivl))
     return out
 
 
@@ -130,7 +137,8 @@ def _read(where=""):
 def _all_events():
     from .. import rollover_hour
 
-    max_id, count = mw.col.db.first("SELECT max(id), count() FROM revlog") or (None, 0)
+    from .revlog_stamp import revlog_stamp
+    max_id, count = revlog_stamp()  # (kept: one read of the history for all the charts)
     max_id, count = int(max_id or 0), int(count or 0)
     roll = int(rollover_hour() or 0)
     with _LOCK:
@@ -176,8 +184,88 @@ class Timeline:
         return self.counts[i] if i >= 0 else (0, 0, 0, 0, 0)
 
 
+class LoadTimeline:
+    """The load (reviews a day: the sum of 1 / interval of the review cards) at the end of
+    every day of a deck's history, young and mature cards apart."""
+
+    def __init__(self, days, loads):
+        self.days = days  # sorted day ordinals where the load changes
+        self.loads = loads  # loads[i]: (young, mature) from days[i] on
+
+    def at(self, ordinal):
+        i = bisect.bisect_right(self.days, ordinal) - 1
+        return self.loads[i] if i >= 0 else (0.0, 0.0)
+
+
 def timeline(addon_config, deck_id=None, is_deleted=False):
     """Timeline of the cards of the decks (the cards as they exist now)."""
+    return _timelines(addon_config, deck_id, is_deleted)[0]
+
+
+def load_timeline(addon_config, deck_id=None, is_deleted=False):
+    """LoadTimeline of the cards of the decks (the cards as they exist now)."""
+    return _timelines(addon_config, deck_id, is_deleted)[1]
+
+
+def span_ordinal(span, custom_days=7):
+    """The day ordinal Interval Time Machine reads its intervals on: the first Anki day of a
+    period (a Period code, a year, or a custom range), Anki's today for a period with no
+    start (Total) or one starting today."""
+    from datetime import datetime, timedelta
+
+    from .. import rollover_hour
+    from ..data.core.time_utils import get_time_range_ms
+
+    roll = timedelta(hours=int(rollover_hour() or 0))
+    today = (datetime.now() - roll).date().toordinal()
+    try:
+        start_ms = get_time_range_ms(int(span), 0, custom_days=custom_days)[0]
+    except Exception:
+        return today
+    if not start_ms or start_ms <= 0:
+        return today
+    return min(today, (datetime.fromtimestamp(start_ms / 1000.0) - roll).date().toordinal())
+
+
+def intervals_at(addon_config, deck_id, is_deleted, ordinal):
+    """Interval Time Machine: the review
+    cards of the decks at the end of a past day by their interval then, in the shape of
+    card_history.card_distribution ({"distribution": {days: cards}, "total", "zero", "sum"}).
+    A card counts with the interval of its last change up to that day if it was a review card
+    (young or mature) then; in learning, relearning or still new, it is left out."""
+    from .review_buckets import did_limit
+
+    by_card, stamp = _all_events()
+    limit = did_limit(addon_config, deck_id, is_deleted)
+    cards_stamp = tuple(mw.col.db.first("SELECT count(), max(id), total(mod) FROM cards") or ())
+    key = ("ivl", limit, stamp, cards_stamp, int(ordinal))
+    with _LOCK:
+        hit = _AGG.get(key)
+    if hit is not None:
+        return hit
+    dist = {}
+    probe = (int(ordinal), 99, 1 << 60)  # after every event of that day
+    for (cid,) in mw.col.db.all(f"SELECT cards.id FROM cards WHERE 1 = 1 {limit}"):
+        ev = by_card.get(int(cid))
+        if not ev:
+            continue
+        i = bisect.bisect_right(ev, probe) - 1
+        if i < 0:
+            continue
+        _day, state, ivl = ev[i]
+        if state in (YOUNG, MATURE) and ivl > 0:
+            dist[ivl] = dist.get(ivl, 0) + 1
+    out = {"distribution": dist, "total": sum(dist.values()), "zero": 0,
+           "sum": sum(k * v for k, v in dist.items()), "date": date.fromordinal(int(ordinal)).isoformat()}
+    with _LOCK:
+        if len(_AGG) > 12:
+            _AGG.clear()
+        _AGG[key] = out
+    return out
+
+
+def _timelines(addon_config, deck_id=None, is_deleted=False):
+    """(Timeline, LoadTimeline) of the decks: one pass over the events of their cards."""
     from .. import rollover_hour
     from .review_buckets import did_limit
 
@@ -191,6 +279,13 @@ def timeline(addon_config, deck_id=None, is_deleted=False):
     if hit is not None:
         return hit
     delta = {}
+    load_delta = {}  # {day: [young, mature]} changes of load
+
+    def load_move(day, ivl, sign):
+        row = load_delta.get(day)
+        if row is None:
+            row = load_delta[day] = [0.0, 0.0]
+        row[1 if ivl >= 21 else 0] += sign / ivl
 
     def move(day, state, step):
         row = delta.get(day)
@@ -205,20 +300,34 @@ def timeline(addon_config, deck_id=None, is_deleted=False):
         if ev and ev[0][0] <= start:
             steps = ev  # answered on (or before) the day it was made: never seen as new
         else:
-            steps = [(start, NEW)] + list(ev or ())
-        prev = None
-        for day, state in steps:
-            if prev is not None:
-                move(day, prev, -1)
-            move(day, state, 1)
-            prev = state
+            steps = [(start, NEW, 0)] + list(ev or ())
+        prev, prev_ivl = None, 0
+        for day, state, ivl in steps:
+            if state != prev:
+                if prev is not None:
+                    move(day, prev, -1)
+                move(day, state, 1)
+                prev = state
+            if ivl != prev_ivl:
+                if prev_ivl:
+                    load_move(day, prev_ivl, -1.0)
+                if ivl:
+                    load_move(day, ivl, 1.0)
+                prev_ivl = ivl
     days = sorted(delta)
     counts, run = [], [0, 0, 0, 0, 0]
     for d in days:
         row = delta[d]
         run = [run[k] + row[k] for k in range(5)]
         counts.append(tuple(run))
-    out = Timeline(days, counts)
+    load_days = sorted(load_delta)
+    loads, young, mature = [], 0.0, 0.0
+    for d in load_days:
+        young += load_delta[d][0]
+        mature += load_delta[d][1]
+        # (sums of many small steps: a hair under zero once every card has left)
+        loads.append((max(0.0, round(young, 6)), max(0.0, round(mature, 6))))
+    out = (Timeline(days, counts), LoadTimeline(load_days, loads))
     with _LOCK:
         if len(_AGG) > 12:
             _AGG.clear()

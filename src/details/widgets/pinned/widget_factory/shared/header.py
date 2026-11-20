@@ -8,13 +8,6 @@ from ......qss import set_qss
 from ......i18n import tr
 
 
-def prepare_pinned_header(header_widget, header_layout, *, spacing=8):
-    if header_widget is not None:
-        set_qss(header_widget, "background: transparent;")
-    if header_layout is not None:
-        header_layout.setSpacing(int(spacing))
-
-
 def add_pinned_zoom_reset_button(
     header_widget,
     header_layout,
