@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from ..shared import QTimer, Period, datetime, mw, timedelta
+from datetime import datetime, timedelta
+from aqt.qt import QTimer
+from aqt import mw
+from ... import Period
 from ...data.transforms.activity_series import build_activity_series, build_breakdown_rows
 from ...data.transforms.retention_series import build_retention_series
 from ...refresh import queue_ui_callback
@@ -120,7 +123,7 @@ def _db_review_counts():
     cache build: home deck of the card, excluded days left out, type < resched, day bins
     up to the end of the logical day. The returned total skips excluded decks, like the
     all-decks context does."""
-    from ..shared import get_time_range_ms
+    from ...data.core.time_utils import get_time_range_ms
     from ..exclusion import excluded_dids
     from .....utils import excluded_days_clause
 

@@ -35,18 +35,6 @@
     return e;
   }
   const T = function(s){ return DD.t ? DD.t(s) : s; };
-  // the text on the accent colour: dark on a light accent (a grey or yellow one), else white
-  function onAccent(){
-    const c = document.createElement('span');
-    c.style.color = 'var(--dd-accent)';
-    document.body.appendChild(c);
-    const m = getComputedStyle(c).color.match(/[\d.]+/g) || [];
-    c.remove();
-    const lin = function(v){ v = Number(v) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
-    const L = m.length >= 3 ? 0.2126 * lin(m[0]) + 0.7152 * lin(m[1]) + 0.0722 * lin(m[2]) : 0;
-    return L > 0.5 ? '#1b1b1d' : '#fff';
-  }
-
   // a dialog with one field; check(value) -> the result, or undefined while it is not valid
   function open(o, type, check){
     style();
@@ -69,7 +57,7 @@
       const acts = el('div', 'ddq-acts');
       const cancel = el('button', 'ddq-btn', T('Cancel'));
       const ok = el('button', 'ddq-btn ok', T(o.ok || 'OK'));
-      ok.style.color = onAccent();
+      ok.style.color = DD.onAccent();
       acts.appendChild(cancel); acts.appendChild(ok);
       box.appendChild(acts);
       function valid(){
@@ -164,7 +152,7 @@
       const acts = el('div', 'ddq-acts');
       const cancel = el('button', 'ddq-btn', T('Cancel'));
       const ok = el('button', 'ddq-btn ok', T(o.ok || 'OK'));
-      ok.style.color = onAccent();
+      ok.style.color = DD.onAccent();
       acts.appendChild(cancel); acts.appendChild(ok);
       box.appendChild(acts);
       (o.rows || []).slice(0, max).forEach(function(s){ row(s && s.q, s && s.c); });

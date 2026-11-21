@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from contextlib import nullcontext
 from ....i18n import num, tr, tr_n, N_, tr_name
-
-local_chart_animation_batch = lambda *_a, **_k: nullcontext()
 
 DEFAULT_FSRS_FILTER_IDX = 2
 FSRS_FILTER_MODES = ("1_month", "50_percent", "95_percent", "all")
@@ -116,7 +113,9 @@ def shared_fsrs_filter_modes(conf=None):
             if isinstance(d, dict) and d.get("type") in SHARED_FILTER_TYPES and d.get("filter_modes"):
                 return d["filter_modes"]
     except Exception:
-        pass
+        from ...logic.logger import log_swallowed
+
+        log_swallowed()
     return None
 
 

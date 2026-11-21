@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-class StatCardWidget:
-    """Placeholder kept for isinstance() checks after removing native Qt stat cards."""
-
-
 from ...logic.stat_cards import (
     get_stat_card_info,
     get_stat_card_default_title,

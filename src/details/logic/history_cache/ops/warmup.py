@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from ..shared import QTimer, Period, mw, time
+import time
+from aqt.qt import QTimer
+from aqt import mw
+from ... import Period
 from ...logger import log_swallowed
 
 

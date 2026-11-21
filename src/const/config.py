@@ -241,6 +241,7 @@ class Config:
     PINNED_MARGIN_BOTTOM = 'Pinned_Margin_Bottom'
     PINNED_SECTION_SPACING = 'Pinned_Section_Spacing'
     PINNED_GAPS = 'Pinned_Gaps'  # {gap key: px}: the spaces changed by dragging them
+    PINNED_SAVED_WIDGETS = 'Pinned_Saved_Widgets'  # [{sid, name, def}]: widgets saved by name (Save Widget As...)
     PINNED_POSITION_TOP_DECK = 'Pinned_Position_Top_Deck'
     PINNED_USE_ACTIVE_THEME = 'Pinned_Use_Active_Theme'
     PINNED_USE_SEPARATE_THEME = 'Pinned_Use_Separate_Theme'
@@ -484,6 +485,7 @@ class Config:
         PINNED_MARGIN_BOTTOM: 20,
         PINNED_SECTION_SPACING: 10,
         PINNED_GAPS: {},
+        PINNED_SAVED_WIDGETS: [],
         PINNED_POSITION_TOP_DECK: False,
         PINNED_USE_ACTIVE_THEME: True,
         PINNED_USE_SEPARATE_THEME: False,

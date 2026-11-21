@@ -34,7 +34,6 @@ def _end_review_return(manager):
 
         _clear_pinned_data()
         invalidate_max_ids_cache()
-        manager.__class__._last_max_ids = None
     except Exception:
         log_swallowed()
 
@@ -48,7 +47,7 @@ def _arm_watchdog(manager, seq):
         if attempt == 0:
             # Phase B may still run on a slow collection: more time, unless the cache is idle (its callback lost)
             try:
-                from ..imports import GlobalHistoryCache
+                from .....logic.history_cache import GlobalHistoryCache
 
                 if GlobalHistoryCache()._is_refreshing:
                     QTimer.singleShot(_WATCHDOG_MS[1] - _WATCHDOG_MS[0], lambda: _check(1))
@@ -56,7 +55,7 @@ def _arm_watchdog(manager, seq):
             except Exception:
                 log_swallowed()
         try:
-            from ..imports import log_info
+            from .....logic import log_info
 
             log_info("Review return watchdog: phase B not done, the pinned data read again.", tag="PINNED")
         except Exception:
@@ -70,7 +69,7 @@ def _phase_b(manager, seq):
     if manager._review_return_seq != seq:
         return
     try:
-        from ..imports import GlobalHistoryCache
+        from .....logic.history_cache import GlobalHistoryCache
 
         manager._review_return_phase_b_active = True
 
@@ -93,7 +92,6 @@ def _phase_b(manager, seq):
                         _last_max_ids_cache["rev_id"] = fresh_rev
                         _last_max_ids_cache["card_id"] = fresh_card
                         _last_max_ids_cache["time"] = time.time()
-                        manager.__class__._last_max_ids = (fresh_rev, fresh_card)
                     else:
                         invalidate_max_ids_cache()
                         refresh_max_ids_cache_now()
@@ -138,7 +136,7 @@ def on_state_did_change(manager, new_state, old_state):
         manager._current_deck_id = None
     elif old_state == "review" and new_state in ("deckBrowser", "overview"):
         try:
-            from ..imports import GlobalHistoryCache
+            from .....logic.history_cache import GlobalHistoryCache
 
             GlobalHistoryCache()._skip_next_warmup = True
         except Exception:

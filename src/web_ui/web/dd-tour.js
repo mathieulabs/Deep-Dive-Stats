@@ -1,4 +1,5 @@
-// Concise interactive guided tour for the Deep Dive window (reuses .ddp-tour* styles from dd.css).
+// Concise interactive guided tour for the Deep Dive window: its steps and demos, on the overlay, pointer and dots
+// of DD.tourKit (dd-core.js, shared with the main screen's tour), styled by .ddp-tour* in dd.css.
 (function(){
   'use strict';
   const DD = window.DD;
@@ -7,27 +8,14 @@
   const PAD = 6;
   let active = null;
 
+  const K = DD.tourKit;  // (dd-core.js)
   function visRect(el){
     if (!el || !el.getBoundingClientRect) return null;
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden') return null;
-    const r = el.getBoundingClientRect();
-    if (r.width < 2 || r.height < 2) return null;
-    return {left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height};
+    return K.rect(el, 1);
   }
-
-  function unite(rects){
-    const xs = (rects || []).filter(Boolean);
-    if (!xs.length) return null;
-    let l = 1e9, t = 1e9, r = -1e9, b = -1e9;
-    xs.forEach(function(q){
-      if (q.left < l) l = q.left;
-      if (q.top < t) t = q.top;
-      if (q.right > r) r = q.right;
-      if (q.bottom > b) b = q.bottom;
-    });
-    return {left: l, top: t, right: r, bottom: b, width: r - l, height: b - t};
-  }
+  const unite = K.unite;
 
   function findZoomCard(){
     const st = DD.state;
@@ -118,38 +106,8 @@
     // Pre-capture the Add / Remove gallery offscreen so it is ready on step 2
     DD.call('dd_tour_gallery_prep').catch(function(){});
 
-    const ov = document.createElement('div');
-    ov.className = 'ddp-tour';
+    const el = K.build({back: DD.t('Back'), skip: DD.t('Skip'), next: DD.t('Next')}), ov = el.ov;
     ov.style.setProperty('--ddp-tour-acc', getComputedStyle(document.documentElement).getPropertyValue('--dd-accent').trim() || '#58a6ff');
-    ov.innerHTML =
-      '<div class="ddp-tour-hole"></div>' +
-      '<img class="ddp-tour-pic">' +
-      '<div class="ddp-tour-ptr"><svg width="20" height="24" viewBox="0 0 20 24"><path d="M2 1.5v18l4.6-4.3 3.2 7.1 3-1.4-3.1-6.9H16z" fill="#fff" stroke="#111" stroke-width="1.3" stroke-linejoin="round"/></svg></div>' +
-      '<div class="ddp-tour-card">' +
-        '<div class="ddp-tour-head"><span class="ddp-tour-title"></span><span class="ddp-tour-dots"></span></div>' +
-        '<div class="ddp-tour-text"></div>' +
-        '<div class="ddp-tour-row">' +
-          '<button class="ddp-tour-back" type="button">' + DD.t('Back') + '</button>' +
-          '<span></span>' +
-          '<button class="ddp-tour-skip" type="button">' + DD.t('Skip') + '</button>' +
-          '<button class="ddp-tour-next" type="button">' + DD.t('Next') + '</button>' +
-        '</div>' +
-      '</div>';
-    document.body.appendChild(ov);
-
-    const el = {
-      ov: ov,
-      hole: ov.querySelector('.ddp-tour-hole'),
-      pic: ov.querySelector('.ddp-tour-pic'),
-      ptr: ov.querySelector('.ddp-tour-ptr'),
-      card: ov.querySelector('.ddp-tour-card'),
-      title: ov.querySelector('.ddp-tour-title'),
-      dots: ov.querySelector('.ddp-tour-dots'),
-      text: ov.querySelector('.ddp-tour-text'),
-      back: ov.querySelector('.ddp-tour-back'),
-      skip: ov.querySelector('.ddp-tour-skip'),
-      next: ov.querySelector('.ddp-tour-next')
-    };
 
     const T = active = {steps: steps, i: -1, timers: [], gen: 0, cleanups: [], picRect: null};
 
@@ -163,36 +121,14 @@
     }
 
     function tween(ms, step, done){
-      const g = T.gen, t0 = performance.now();
-      (function tick(now){
-        if (active !== T || T.gen !== g) return;
-        const p = Math.min(1, (now - t0) / Math.max(1, ms));
-        const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-        step(e);
-        if (p < 1) requestAnimationFrame(tick);
-        else if (done) done();
-      })(t0);
+      const g = T.gen;
+      K.tween(ms, K.ease.quad, function(){ return active === T && T.gen === g; }, step, done);
     }
 
-    function setPic(src, x, y, w, h){
-      if (!src){ el.pic.style.display = 'none'; T.picRect = null; return; }
-      if (el.pic.getAttribute('src') !== src) el.pic.setAttribute('src', src);
-      el.pic.style.display = 'block';
-      el.pic.style.left = Math.round(x) + 'px';
-      el.pic.style.top = Math.round(y) + 'px';
-      el.pic.style.width = Math.round(w) + 'px';
-      el.pic.style.height = Math.round(h) + 'px';
-      T.picRect = {left: x, top: y, right: x + w, bottom: y + h, width: w, height: h};
-    }
+    function setPic(src, x, y, w, h){ T.picRect = K.pic(el, src, x, y, w, h); }
 
     const touch = !!(DD.isTouch && DD.isTouch());
-    // the drawn mouse pointer of the examples: not on a phone (no mouse there)
-    function setPtr(x, y, show){
-      if (show === false || touch){ el.ptr.style.opacity = '0'; return; }
-      el.ptr.style.opacity = '1';
-      el.ptr.style.left = Math.round(x) + 'px';
-      el.ptr.style.top = Math.round(y) + 'px';
-    }
+    function setPtr(x, y, show){ K.ptr(el, x, y, show); }
 
     function stopStep(){
       T.gen++;
@@ -201,7 +137,7 @@
       setPtr(0, 0, false);
       setPic(null);
       const cs = T.cleanups.splice(0);
-      cs.forEach(function(fn){ try { fn(); } catch (e) {} });
+      cs.forEach(function(fn){ try { fn(); } catch (e) { DD.swallowed('tour cleanup', e); } });
     }
 
     function runGalleryDemo(){
@@ -455,16 +391,7 @@
       el.card.style.top = Math.round(cy) + 'px';
     }
 
-    function renderDots(){
-      el.dots.innerHTML = '';
-      T.steps.forEach(function(_, idx){
-        const dot = document.createElement('i');
-        if (idx === T.i) dot.className = 'on';
-        else if (idx < T.i) dot.className = 'seen';
-        dot.onclick = function(){ go(idx); };
-        el.dots.appendChild(dot);
-      });
-    }
+    function renderDots(){ K.dots(el, T.steps.length, T.i, go); }
 
     function go(idx){
       if (active !== T) return;
@@ -516,12 +443,7 @@
     }
 
     function onResize(){ place(false); }
-    function onKey(ev){
-      if (active !== T) return;
-      if (ev.key === 'Escape'){ ev.preventDefault(); close(); }
-      else if (ev.key === 'ArrowRight' || ev.key === 'Enter'){ ev.preventDefault(); go(T.i + 1); }
-      else if (ev.key === 'ArrowLeft'){ ev.preventDefault(); if (T.i > 0) go(T.i - 1); }
-    }
+    const onKey = K.keys(close, function(d){ if (active === T && (d > 0 || T.i > 0)) go(T.i + d); });
 
     el.back.onclick = function(){ go(T.i - 1); };
     el.skip.onclick = close;

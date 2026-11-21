@@ -114,6 +114,14 @@
       } else d.appendChild(el('div', 'dg-name', t.name));
     }
     d.onclick = function(){ hideTip(); pick(x.t, x.vsw ? x.view : null); };
+    // My Widgets: a saved widget's right click renames or deletes it (asked in Python)
+    if (t.saved) d.addEventListener('contextmenu', function(e){
+      e.preventDefault(); hideTip();
+      if (!DD.webMenu) return;
+      DD.webMenu({x: e.clientX, y: e.clientY}, [['rename', DD.t('Rename...'), null, 'pencil'], ['delete', DD.t('Delete'), null, 'trash']], function(v){
+        call(v === 'rename' ? 'gal_rename' : 'gal_delete', {id: x.t.id});
+      });
+    });
     const x = {el: d, pic: pic, mark: mark, minus: minus, vsw: vsw, view: PIE_DUAL[t.type] || null, chartIt: null, t: t, live: null, inst: null, state: 'none'};
     syncVsw(x);
     tiles[t.id] = x;
@@ -284,11 +292,13 @@
         if (show) n++;
       });
       const sc = secs[s.key];
-      sc.sec.style.display = n ? '' : 'none';
-      sc.head.textContent = s.head + '  ·  ' + n;
-      sc.nav.disabled = !n;
+      const hinted = !!sc.hint && !s.tiles.length && !words.length;
+      if (sc.hint) sc.hint.style.display = hinted ? '' : 'none';
+      sc.sec.style.display = n || hinted ? '' : 'none';
+      sc.head.textContent = hinted ? s.head : s.head + '  ·  ' + n;
+      sc.nav.disabled = !n && !hinted;
       sc.count.textContent = n ? String(n) : '';
-      sc.shown = n > 0;
+      sc.shown = n > 0 || hinted;
       any = any || n > 0;
     });
     emptyEl.textContent = filterMissing && !words.length ? ST.all_added : ST.empty;
@@ -324,9 +334,13 @@
   }
   // a tile picked; the text widget's sentence first written in the text editor (text_editor.js; cancelled: nothing)
   function pick(t, view){
-    if (t.family !== 'text' || !DD.editText){ call('gal_pick', view ? {id: t.id, view: view} : {id: t.id}); return; }
-    DD.editText({title: ST.toggle ? 'Add Text' : 'Add Text Widget', ok: 'Add'}).then(function(tpl){
-      if (tpl != null) call('gal_pick', {id: t.id, template: tpl});
+    if (t.family !== 'text' || t.saved){ call('gal_pick', view ? {id: t.id, view: view} : {id: t.id}); return; }
+    const save = ST.save_text ? {} : null;  // the editor's "Also keep in Add Widget as:" (its name, once added)
+    DD.editText({title: ST.toggle ? 'Add Text' : 'Add Text Widget', ok: 'Add', save: save}).then(function(tpl){
+      if (tpl == null) return;
+      const a = {id: t.id, template: tpl};
+      if (save && save.name) a.save_name = save.name;
+      call('gal_pick', a);
     });
   }
   function addFirst(){
@@ -365,8 +379,11 @@
       const head = el('h3', 'dg-sechead');
       const grid = el('div', 'dg-grid dg-grid-' + s.family);
       sec.appendChild(head); sec.appendChild(grid);
+      // (an empty category that says how to fill it: My Widgets)
+      const hint = s.hint ? el('p', 'dg-sechint', s.hint) : null;
+      if (hint) sec.appendChild(hint);
       mainEl.appendChild(sec);
-      secs[s.key] = {sec: sec, head: head, nav: nav, count: count, shown: true, grid: grid};
+      secs[s.key] = {sec: sec, head: head, nav: nav, count: count, shown: true, grid: grid, hint: hint};
     });
     emptyEl = el('div', 'dg-empty');
     mainEl.appendChild(emptyEl);
@@ -473,14 +490,35 @@
     if (!st || !mainEl) return;
     const viewWas = ST && ST.view;
     ST = st;
+    const keep = {}, keepSec = {};
     (st.sections || []).forEach(function(s){
+      keepSec[s.key] = true;
       s.tiles.forEach(function(t){
         const x = tiles[t.id];
-        if (!x) return;
-        const textWas = x.t.text;
+        keep[t.id] = true;
+        // a text saved as it was added: its tile comes (after the Text tile)
+        if (!x){ if (secs[s.key]) secs[s.key].grid.appendChild(tileEl(t)); return; }
+        const textWas = x.t.text, nameWas = x.t.name;
         update(x, t);
         if (t.text !== textWas) showPic(x);
+        if (t.name !== nameWas){ const n = x.el.querySelector('.dg-ntxt') || x.el.querySelector('.dg-name'); if (n) n.textContent = t.name; }
       });
+    });
+    // a saved widget deleted (My Widgets): its tile goes, and its category when it was the last one
+    Object.keys(tiles).forEach(function(id){
+      if (keep[id]) return;
+      const x = tiles[id];
+      try { if (x.inst && x.inst.destroy) x.inst.destroy(); } catch (e) {}
+      if (io) io.unobserve(x.el);
+      x.el.remove(); delete tiles[id];
+    });
+    Object.keys(secs).forEach(function(k){
+      if (keepSec[k]) return;
+      const sc = secs[k];
+      sc.sec.remove(); sc.nav.remove();
+      const rule = navEl.querySelector('.dg-rule');
+      if (rule && navEl.firstChild === rule) rule.remove();  // (the line under it, the first thing left)
+      delete secs[k];
     });
     filterMissing = !!st.missing;
     renderHead();

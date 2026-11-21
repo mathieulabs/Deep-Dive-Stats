@@ -2,7 +2,8 @@
 // underline, strike, shadow, font, size, colour, titles, lists, alignment and a line; {placeholders} highlighted and
 // completed (variables, then ":" a time span, "@" a deck, "|" a unit), braces paired; Markdown turned into formatting
 // as it is typed (# , - , 1. , **bold**, *italic*, ~~strike~~, --- then Enter) or pasted.
-//   DD.editText({template, title, ok}) -> Promise: the template written (trimmed), or null when cancelled.
+//   DD.editText({template, title, ok, save}) -> Promise: the template written (trimmed), or null when cancelled.
+//     save: {} to offer "Also keep in Add Widget as:" a name, put in save.name (null when not checked).
 //   DD.textEditor(host, {template, onChange}) -> {el, get(), set(template), focus()}: the editor alone, in host.
 // The template in and out: one paragraph is its
 // words only, else the paragraphs' HTML, made only of what safe_html (text_label.py) keeps. The variables, spans,
@@ -83,7 +84,13 @@
     '.ddte-menu div{display:flex;gap:8px;padding:6px 10px;border-radius:5px;cursor:pointer}',
     '.ddte-menu div:hover{background:color-mix(in srgb,var(--dd-accent) 16%,transparent)}',
     '.ddte-menu span{width:12px}',
-    '.ddte-acts{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}',
+    '.ddte-acts{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:14px}',
+    '.ddte-saverow{display:flex;align-items:center;gap:8px;margin-right:auto;min-width:0}',
+    '.ddte-save{display:flex;align-items:center;gap:6px;min-width:0;color:var(--dd-text-dim);cursor:pointer;white-space:nowrap}',
+    '.ddte-save input[type=checkbox]{appearance:auto;-webkit-appearance:checkbox;width:14px;height:14px;margin:0;flex:none;accent-color:var(--dd-accent);cursor:pointer}',
+    '.ddte-save input[type=text]{box-sizing:border-box;width:180px;min-width:0;height:26px;padding:0 8px;border:1px solid color-mix(in srgb,var(--dd-text) 18%,transparent);border-radius:6px;background:color-mix(in srgb,var(--dd-text) 4%,var(--dd-bg));color:var(--dd-text);font:inherit}',
+    '.ddte-save input[type=text]:focus{outline:none;border-color:var(--dd-accent)}',
+    '.ddte-save input[type=text]:disabled{opacity:.45}',
     '.ddte-btn,.ddte-btn:hover,.ddte-btn:focus,.ddte-btn:active{height:28px;min-width:72px;padding:0 14px;border:1px solid color-mix(in srgb,var(--dd-text) 18%,transparent);border-radius:7px;background:color-mix(in srgb,var(--dd-text) 5%,var(--dd-bg));color:var(--dd-text);font:inherit;cursor:pointer}',
     '.ddte-btn:hover{background:color-mix(in srgb,var(--dd-text) 10%,var(--dd-bg))}',
     '.ddte-btn.ok,.ddte-btn.ok:hover,.ddte-btn.ok:focus{border-color:var(--dd-accent);background:var(--dd-accent);font-weight:500}',
@@ -980,8 +987,21 @@
       hidePop();
       empty();
       highlight();
+      idleSize();
+    }
+    // the size shown before the cursor is in the text (sync() needs a selection): the first line's (it was empty)
+    function idleSize(){
+      if (document.activeElement === size || range()) return;
+      let n = area.firstElementChild || area;
+      while (n.firstElementChild && n.firstElementChild.tagName !== 'BR') n = n.firstElementChild;
+      const px = parseFloat(getComputedStyle(n).fontSize);
+      if (px > 0) size.value = String(Math.round(px * 0.75 * 2) / 2);
     }
     set(opts.template || '');
+    if (!size.value && window.ResizeObserver){  // (a host put in the page after: once it is laid out)
+      const ro = new ResizeObserver(function(){ if (!root.isConnected) return; idleSize(); if (size.value) ro.disconnect(); });
+      ro.observe(root);
+    }
     showHelp(helpOpen);
     data().then(function(d){
       D = Object.assign(D, d);
@@ -1008,18 +1028,6 @@
     };
   };
 
-  // the text on the accent colour: dark on a light accent, else white (as dialogs.js)
-  function onAccent(){
-    const c = el('span');
-    c.style.color = 'var(--dd-accent)';
-    document.body.appendChild(c);
-    const m = getComputedStyle(c).color.match(/[\d.]+/g) || [];
-    c.remove();
-    const lin = function(v){ v = Number(v) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
-    const L = m.length >= 3 ? 0.2126 * lin(m[0]) + 0.7152 * lin(m[1]) + 0.0722 * lin(m[2]) : 0;
-    return L > 0.5 ? '#1b1b1d' : '#fff';
-  }
-
   // ---- the dialog ----
   DD.editText = function(o){
     o = o || {};
@@ -1035,7 +1043,31 @@
       const cancel = el('button', 'ddte-btn', T('Cancel'));
       const ok = el('button', 'ddte-btn ok', T(o.ok || 'Add'));
       cancel.type = ok.type = 'button';
+      // o.save: "Also keep in Add Widget as:" a name, given back in o.save.name once added (unchecked: none)
+      let saveBox = null, saveName = null;
+      if (o.save){
+        const lab = el('label', 'ddte-save');
+        saveBox = document.createElement('input'); saveBox.type = 'checkbox';
+        saveName = document.createElement('input'); saveName.type = 'text'; saveName.maxLength = 80;
+        saveName.placeholder = T('Name'); saveName.disabled = true;
+        lab.appendChild(saveBox); lab.appendChild(el('span', null, T('Also keep in Add Widget as:')));
+        const row = el('div', 'ddte-saverow');
+        row.appendChild(lab); row.appendChild(saveName); acts.appendChild(row);
+        saveBox.onchange = function(){
+          saveName.disabled = !saveBox.checked;
+          if (saveBox.checked){
+            if (!saveName.value.trim()) saveName.value = (ed.area.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+            saveName.focus(); saveName.select();
+          }
+        };
+        saveName.addEventListener('keydown', function(e){ if (e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); add(); } });
+      }
       acts.appendChild(cancel); acts.appendChild(ok);
+      function add(){
+        const v = ed.get().trim();
+        if (o.save) o.save.name = saveBox.checked ? (saveName.value.trim() || (ed.area.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) || null) : null;
+        close(v);
+      }
       box.appendChild(acts);
       function close(v){
         document.removeEventListener('keydown', key, true);
@@ -1046,13 +1078,13 @@
       function key(e){
         if (!veil.contains(e.target) && e.target !== document.body) return;
         if (e.key === 'Escape' && !ed.busy()){ e.preventDefault(); e.stopPropagation(); close(null); }
-        else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); e.stopPropagation(); close(ed.get().trim()); }
+        else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); e.stopPropagation(); add(); }
       }
       // the page's own keys (its shortcuts) stay out of the dialog
       ['keydown', 'keyup', 'keypress'].forEach(function(t){ veil.addEventListener(t, function(e){ e.stopPropagation(); }); });
       cancel.onclick = function(){ close(null); };
-      ok.onclick = function(){ close(ed.get().trim()); };
-      ok.style.color = onAccent();
+      ok.onclick = add;
+      ok.style.color = DD.onAccent();
       veil.addEventListener('mousedown', function(e){ if (e.target === veil) close(null); });
       document.addEventListener('keydown', key, true);
       document.body.appendChild(veil);

@@ -151,7 +151,6 @@ class WebDeepDiveDialog(QDialog):
         bridge.register("remove_chart", self._remove_chart)
         bridge.register("restore_chart", self._restore_chart)
         bridge.register("show_past", self._show_past)
-        bridge.register("edit_text", lambda wid: self._later(lambda: self._edit_text(wid)))
         bridge.register("text_get", self._text_get)
         bridge.register("text_set", self._edit_text)
         bridge.register("te_data", lambda: text_editor_data(self.addon_config))
@@ -218,18 +217,23 @@ class WebDeepDiveDialog(QDialog):
         except Exception:
             pass
         self._push_theme()
-        self.update_dashboard_visibility()  # stat card colors and the charts' data colors read again (live preview)
-        if needs:  # the other live widgets (pinned charts) too, as apply_styles does
+        # stat card colors and the charts' data colors read again (live preview), without animating them
+        self.update_dashboard_visibility(quiet=True)
+        if needs:  # the other live widgets (pinned charts) too
             sync_theme_manager_from_config(conf, emit=True, source="apply_styles")
 
-    def update_dashboard_visibility(self):
-        """A setting that changes what the window shows (stat cards, colors): the page reads it again, once for a burst."""
+    def update_dashboard_visibility(self, quiet=False):
+        """A setting that changes what the window shows (stat cards, colors): the page reads it again, once for a burst.
+        quiet: only colors changed (a theme): the charts take the data read again at once, not animated (a burst is
+        quiet only when all its changes are)."""
         from aqt.qt import QTimer
 
         if getattr(self, "_vis_tm", None) is None:
             self._vis_tm = QTimer(self)
             self._vis_tm.setSingleShot(True)
-            self._vis_tm.timeout.connect(lambda: (self._push_theme(), self.bridge.push("refresh")))
+            self._vis_tm.timeout.connect(
+                lambda: (self._push_theme(), self.bridge.push("refresh", {"quiet": True} if self._vis_quiet else None)))
+        self._vis_quiet = bool(quiet) and (getattr(self, "_vis_quiet", True) if self._vis_tm.isActive() else True)
         self._vis_tm.start(150)
 
     # ---- the opening animations start once the window is shown and the page loaded (DD.go) ----
@@ -336,6 +340,9 @@ class WebDeepDiveDialog(QDialog):
                 _fit_install(self)
             except Exception as e:
                 log_warn(f"[web] screen_fit install: {e}")
+        from .win_size import follow_safe_area
+
+        follow_safe_area(self)
         self._go_check()
         self._rate_check()
 
@@ -406,6 +413,11 @@ class WebDeepDiveDialog(QDialog):
             sync_theme_manager_from_config(conf, emit=False)
             get_theme_manager().invalidate_cache()
             theme = build_theme("details", conf)
+            # the stacked charts' series colours (Answer Time, Forgotten...): they come with their data, read again
+            # a moment later; sent here, every chart repaints in the same frame
+            from . import extras_providers
+
+            theme["series"] = extras_providers.series_colors([w["type"] for w in providers.default_widgets()])
             self._base_color(theme)
             self.webview.eval("DD.setTheme(%s)" % json.dumps(theme))
         except Exception as e:
@@ -757,16 +769,6 @@ class WebDeepDiveDialog(QDialog):
     # ---- the Deep Dive's texts (providers.text_data): a sentence of one's own with the pinned text widget's
     # variables, read for the deck and period shown; added and taken off in the gallery (Add / Remove, its Text
     # tile), edited and removed from their own right-click menu too ----
-    def _text_dialog(self, template="", new=True, parent=None):
-        """The Qt text editor (still there for a caller without the page's; the page writes in text_editor.js)."""
-        from types import SimpleNamespace
-
-        from ..details.widgets.pinned.main_menu.ui.add_widget_menu import ask_text_template
-        from ..i18n import tr
-
-        return ask_text_template(SimpleNamespace(_config_manager=self.addon_config), parent or self, template=template,
-                                 title=tr("Add Text") if new else tr("Edit Text"), ok_label=tr("Add") if new else tr("Save"))
-
     @staticmethod
     def _save_texts(texts, shown_order=None):
         """The texts saved, then the order of what the window shows (the texts placed in it)."""
@@ -781,15 +783,11 @@ class WebDeepDiveDialog(QDialog):
     def _texts_now():
         return {k: dict(v) for k, v in providers.text_widgets().items()}
 
-    def _add_text(self, parent=None, template=None):
-        """The gallery's Text tile: its sentence (template: written in the gallery page's text editor; None: asked in
-        the Qt one), the text put at the end. Its id, or None (the editor cancelled)."""
+    def _add_text(self, template):
+        """The gallery's Text tile: its sentence (written in the gallery page's text editor), the text put at the
+        end. Its id."""
         import secrets
 
-        if template is None:
-            template = self._text_dialog(parent=parent)
-        if template is None:
-            return None
         texts = self._texts_now()
         wid = "text:" + secrets.token_hex(3)  # never the id of a text removed (its size stayed saved)
         while wid in texts:
@@ -805,13 +803,9 @@ class WebDeepDiveDialog(QDialog):
         return {"template": texts[wid].get("template") or ""} if wid in texts else None
 
     def _edit_text(self, wid, template=None):
-        """A text's new sentence (template: from the page's text editor; None: asked in the Qt one)."""
+        """A text's new sentence, from the page's text editor."""
         texts = self._texts_now()
-        if wid not in texts:
-            return
-        if template is None:
-            template = self._text_dialog(texts[wid].get("template") or "", new=False)
-        if template is None:
+        if wid not in texts or template is None:
             return
         texts[wid]["template"] = template
         self._save_texts(texts)
@@ -939,7 +933,7 @@ class WebDeepDiveDialog(QDialog):
         from ..details.ui.details_dialog import links
 
         links.open_link({"support": links.SUPPORT_URL, "rate": links.RATE_URL, "github": links.GITHUB_URL}.get(name))
-        if name == "rate":  # the rating page opened from the toolbar: no need to ask anymore (build.py)
+        if name == "rate":  # the rating page opened from the toolbar: no need to ask anymore
             from ..details.ui.details_dialog.rate_prompt import mark_rated
 
             mark_rated()
@@ -1877,10 +1871,8 @@ class WebDeepDiveDialog(QDialog):
             return ec.shown_charts(mgr), [k for k in keys if card_shown(k)]
 
         # the Text tile: a click writes a new text (the editor over the gallery), its "−" takes one off
-        def add_text(template=None):
-            from aqt.qt import QApplication
-
-            wid = self._add_text(parent=QApplication.activeModalWidget(), template=template)
+        def add_text(template):
+            wid = self._add_text(template)
             if wid:
                 show_now()
             return wid

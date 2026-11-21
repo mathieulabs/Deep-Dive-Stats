@@ -3,11 +3,6 @@
 
 
 class ChartGeometry:
-    MARGIN_LEFT = 35
-    MARGIN_TOP = 10
-    MARGIN_BOTTOM = 30
-    DEFAULT_MARGIN_RIGHT = 20
-
     STATS_EXTRA_HEIGHT = {
         "future_due": 90,
         "review_intervals": 70,

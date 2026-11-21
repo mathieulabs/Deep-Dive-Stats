@@ -5,9 +5,6 @@
 A card with an interval of d days comes back about once every d days: it adds 1/d review
 to each day (the sum of the bars is the daily load of the deck)."""
 
-from ....logic.formatting import fmt_num_trim_zeros
-from .....i18n import tr, tr_n
-
 
 def to_load(data):
     """The review intervals data (distribution {interval: cards}) as load {interval: reviews/day}."""

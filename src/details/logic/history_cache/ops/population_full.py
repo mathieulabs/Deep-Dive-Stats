@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from ..shared import datetime, mw, timedelta
+from datetime import datetime, timedelta
+from aqt import mw
 from ..exclusion import deck_targets, excluded_dids
 
 
-def populate_full_cache(cfg, range_type, min_rev_id=None, min_card_id=None, include_heavy=True, hier_context=None):
+def populate_full_cache(cfg, range_type, min_rev_id=None, min_card_id=None, hier_context=None):
     """The 'Super Query' implementation."""
     from .....utils import rollover_hour
     offset_hour = rollover_hour()

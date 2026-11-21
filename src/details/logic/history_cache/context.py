@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from .shared import Config, Period, datetime, log_debug, mw, timedelta
+from datetime import datetime, timedelta
+from aqt import mw
+from .. import Config, Period
+from ..logger import log_debug
 from .ops.context_helpers import (
     bisect_desc,
     compute_slice_bounds,

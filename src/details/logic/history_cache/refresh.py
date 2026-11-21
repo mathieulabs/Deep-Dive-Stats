@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from .shared import Period, log_debug, log_info, mw, time
+import time
+from aqt import mw
+from .. import Period
+from ..logger import log_debug, log_info
 from ..refresh import queue_ui_callback
 from .ops.refresh_monitoring import (
     capture_db_fingerprint,
@@ -267,7 +270,7 @@ class RefreshMixin:
                     m_id = None if force_full else self.last_max_rev_id
                     mc_id = None if force_full else self.last_max_card_id
 
-                res = GlobalHistoryCache._populate_full_cache(cfg, Period.TOTAL, min_rev_id=m_id, min_card_id=mc_id, include_heavy=not is_undo, hier_context=hier_data)
+                res = GlobalHistoryCache._populate_full_cache(cfg, Period.TOTAL, min_rev_id=m_id, min_card_id=mc_id, hier_context=hier_data)
 
                 if used_rev_hint:
                     resolved_current_max = mw.col.db.scalar("select max(id) from revlog") or 0
@@ -315,7 +318,7 @@ class RefreshMixin:
             def on_done(future):
                 try:
                     try:
-                        (delta_map, hier_map), was_full, was_undo, fsrs_leaf, fsrs_dirty, merged_in_worker, worker_finished_at, resolved_current_max, resolved_current_max_card = future.result()
+                        (delta_map, hier_map), was_full, was_undo, fsrs_leaf, fsrs_dirty, merged_in_worker, _finished_at, resolved_current_max, resolved_current_max_card = future.result()
                     except Exception:
                         try:
                             (delta_map, hier_map), was_full, was_undo, fsrs_leaf, fsrs_dirty = future.result()
@@ -490,13 +493,6 @@ class RefreshMixin:
                         def _deferred_merge_done(fut):
                             try:
                                 fut.result()
-                                try:
-                                    self._pending_partial_widget_refresh = {
-                                        "reason": "deferred_merge",
-                                        "deck_ids": list(deferred_payload.keys()),
-                                    }
-                                except Exception:
-                                    self._pending_partial_widget_refresh = None
                                 self._emit_context_updated_coalesced()
                             except Exception:
                                 log_swallowed()

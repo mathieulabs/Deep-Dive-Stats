@@ -17,7 +17,6 @@ from .state import RuntimeState
 
 class MainMenuWidgetManager(QObject):
     _instance: ClassVar["MainMenuWidgetManager | None"] = None
-    _last_max_ids: ClassVar[tuple[int, int] | None] = None
 
     @classmethod
     def instance(cls) -> "MainMenuWidgetManager":
@@ -45,9 +44,6 @@ class MainMenuWidgetManager(QObject):
         self._op_refresh_timer = QTimer()
         self._op_refresh_timer.setSingleShot(True)
         self._op_refresh_timer.timeout.connect(self._run_operation_refresh)
-        from .ui.context_menu import PinnedContextMenu
-
-        self._context_menu = PinnedContextMenu(self)
         # The config (lazy). Starts dirty so the first read has the profile's values, not early defaults.
         self._config_manager = None
         self._config_dirty = True

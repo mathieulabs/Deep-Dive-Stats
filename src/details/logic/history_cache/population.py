@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from .shared import (
-    Period,
-    log_debug,
-    mw,
-)
+from aqt import mw
+from .. import Period
+from ..logger import log_debug
 from .ops.population_full import populate_full_cache as populate_full_cache_impl
 
 # Bumped each time the card-state snapshots (counts, future due, intervals,
@@ -18,16 +16,7 @@ def snapshot_version():
 
 
 class PopulationMixin:
-    @staticmethod
-    def _populate_full_cache(cfg, range_type, min_rev_id=None, min_card_id=None, include_heavy=True, hier_context=None):
-        return populate_full_cache_impl(
-            cfg,
-            range_type,
-            min_rev_id=min_rev_id,
-            min_card_id=min_card_id,
-            include_heavy=include_heavy,
-            hier_context=hier_context,
-        )
+    _populate_full_cache = staticmethod(populate_full_cache_impl)
 
     @staticmethod
     def _refresh_snapshot_charts(cache, hier_map, min_rev_id=None, dirty_dids=None):

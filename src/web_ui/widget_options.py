@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 """A widget's settings as a schema of options, with no Qt: what the web settings page (widget_settings.py) draws
-for a chart or a stat card, and how each option is read from and written to the configs.
+for a chart, a stat card or the text widget, and how each option is read from and written to the configs.
 
-The configs are the ones the settings dialog edits (details/ui/config WidgetSettingsDialog), held by `holder`:
+The configs are the ones a WidgetSettingsState (details/logic/widget_settings_state.py) sorts out, held by
+`holder`:
   - widget_def: the widget's definition (its own options: Graph Opacity, the lines, the tooltip...);
   - local_config: its own style (the same dict as widget_def for a pinned widget);
   - global_config: the shared style (the whole config, or the Deep Dive grid's compact style dict);
   - addon_config: where the style options go (local_config with "Own style" on, else global_config);
   - theme_config: the whole config (the Chart Style values a chart follows).
-WidgetOptions reads them as the dialog's controls do when it opens, keeps the values the page changes, and writes
-them back as its apply_live_changes does (every option at once, after each change). Save, Cancel and the live
+WidgetOptions reads them when the settings open, keeps the values the page changes, and writes them back
+(every option at once, after each change). Save, Cancel and the live
 preview stay with the caller.
 
 What needs the add-on's other modules (Qt ones) comes in `env`:
@@ -25,11 +26,14 @@ What needs the add-on's other modules (Qt ones) comes in `env`:
 
 The heatmap's settings are all in the shared heatmap style (Heatmap_* keys of addon_config: no "Own style"), its
 tooltip lines too (Heatmap_Tooltip_Hidden). Its palette is an option of its own kind, "palette": the one chosen
-and the user's saved gradients (heatmap/palettes.py), each change written at once as the dialog does.
+and the user's saved gradients (heatmap/palettes.py), each change written at once.
+
+The text widget's sentence is an option of its own kind, "texteditor" (the page's text editor): each change
+written to its definition at once, the default text left as shown kept in English (text_editor.keep_default).
 
 The Range Buttons (the charts with range radio buttons) are an option of their own kind, "ranges": a list of rows
-{pick, n, u} (a preset value, or "__custom__" with a number n and, for the FSRS charts, a unit u "d" / "p"). As
-in the dialog, they are only written on Save (before_save): a chart rebuilt with other buttons at each change
+{pick, n, u} (a preset value, or "__custom__" with a number n and, for the FSRS charts, a unit u "d" / "p"). They
+are only written on Save (before_save): a chart rebuilt with other buttons at each change
 would lose its place.
 """
 
@@ -38,13 +42,12 @@ from __future__ import annotations
 from ..const.config import Config
 from ..i18n import tr, tr_name, upper
 
-# Types the schema draws. The other one (the text widget) keeps the Qt dialog's controls, mirrored
-# (widget_settings._Mirror).
+# Types the schema draws: every one but these.
 RANGE_BUTTON_TYPES = ("future_due", "stability", "review_intervals", "interval_load", "lapse_distribution",
                       "review_distribution", "learning_steps", "time_distribution", "interval_history",
                       "stability_history")
-_NOT_YET = ("text_label", "unknown", "")
-_CUSTOM = "__custom__"  # a Range Button's own value (range_button_row._CUSTOM)
+_NOT_YET = ("unknown", "")
+_CUSTOM = "__custom__"  # a Range Button's own value
 
 _AUTO_BLUR = 14  # px: a saved -1 (the former "Auto") is this one (web_glass._AUTO_BLUR)
 _OPACITY_DEFAULTS = {"card_counts": 100, "distribution": 100, "retention": 100}
@@ -88,7 +91,7 @@ def _range_row(rkind, value, presets):
 
 def _share_ranges(modes):
     """The Range Buttons the distribution charts share (fsrs_filters.shared_fsrs_filter_modes): saved once the
-    dialog has saved its own config (written after it, the key would be dropped). Always stored, the defaults too:
+    settings have saved their own config (written after it, the key would be dropped). Always stored, the defaults too:
     a chart's older list of its own never shows again."""
     from aqt.qt import QTimer
 
@@ -162,9 +165,14 @@ class WidgetOptions:
         return dashboard_key if self.dashboard else facecard_key
 
     def _schema(self):
-        groups = [] if self.type == "heatmap" else [{"id": "own", "title": None, "items": [
+        own = [{"id": "own", "title": None, "items": [
             _opt("own_style", "switch", tr("Own style for this widget"), "unlink"),
         ]}]
+        if self.type == "text_label":
+            # its sentence (text_editor.js), then its style: no name of its own
+            return [{"id": "text", "title": tr("Text Widget"), "items": [
+                _opt("template", "texteditor", tr("Text Widget"), "template")]}] + own + self._text_groups()
+        groups = [] if self.type == "heatmap" else own
         general = [_opt("label", "text", tr("Display Label:"), "session", ph=tr("Empty = no title"))]
         if self.type == "stat_card" and not self.dashboard:
             general.append(_opt("stat_key", "select", tr("Metric:"), "session"))
@@ -180,9 +188,8 @@ class WidgetOptions:
         return groups
 
     def _heatmap_groups(self):
-        """The heatmap dialog's sections (heatmap_section.py), in its order. Reset to Defaults: the pinned heatmap
-        takes the config's defaults (heatmap_reset.reset_heatmap_pinned), the Deep Dive one a few values of its own
-        (reset_heatmap_grid), the others left as they are."""
+        """The heatmap's sections. Reset to Defaults: the pinned heatmap
+        takes the config's defaults, the Deep Dive one a few values of its own, the others left as they are."""
         D, C = Config.DEFAULT_CONFIG, Config
         grid = bool(getattr(self.h, "is_grid", False))
 
@@ -361,6 +368,28 @@ class WidgetOptions:
                                           rkind="days" if days else "fsrs")]})
         return groups
 
+    def _text_groups(self):
+        """The text widget's box: as a chart's, in its own Text_Widget_* keys."""
+        D = Config.DEFAULT_CONFIG
+        web = bool(self.env.get("web_glass"))
+        blur, shadow = self._glass_sliders(Config.TEXT_WIDGET_GLASS_BLUR, Config.TEXT_WIDGET_GLASS_SHADOW)
+        show, intensity = D[Config.TEXT_WIDGET_SHOW_GLASS], D[Config.TEXT_WIDGET_GLASS_INTENSITY]
+        border, hover = D[Config.TEXT_WIDGET_GLASS_BORDER], D[Config.TEXT_WIDGET_HOVER_BORDER]
+        box = [
+            _opt("glass", "switch", tr("Show Background Box"), "conf", key=Config.TEXT_WIDGET_SHOW_GLASS, default=True,
+                 reset=show),
+            _opt("intensity", "slider", tr("Background Opacity") if web else tr("Background Intensity"), "conf",
+                 key=Config.TEXT_WIDGET_GLASS_INTENSITY, default=intensity, min=0, max=100, suffix="%", reset=intensity,
+                 tip=tr("How much the box covers what is behind it: 0% see-through, 100% solid.") if web else None),
+            *blur,
+            _opt("border", "slider", tr("Border Opacity"), "conf", key=Config.TEXT_WIDGET_GLASS_BORDER, default=50,
+                 min=0, max=100, suffix="%", reset=border),
+            *shadow,
+            _opt("hover", "switch", tr("Show Hover Border"), "conf", key=Config.TEXT_WIDGET_HOVER_BORDER,
+                 default=hover, reset=hover, tip=tr("Brighten the box border when the mouse is over it.")),
+        ]
+        return [{"id": "box", "title": tr("Background Box Settings"), "items": box}]
+
     def _stat_card_groups(self):
         D = Config.DEFAULT_CONFIG
         k = self._key
@@ -468,6 +497,10 @@ class WidgetOptions:
             return {"key": palette_of(conf.get, customs), "customs": customs}
         elif st == "session":
             return self._read_session(o["id"])
+        elif st == "template":
+            from ..details.widgets.pinned.widget_factory.builders.text_label import shown_template
+
+            return shown_template(wd.get("template") or "")
         elif st == "ranges":
             choices, _default, normalize = _ranges_lib(o["rkind"])
             presets = [v for v, _l in choices]
@@ -504,7 +537,7 @@ class WidgetOptions:
         return v
 
     def load(self, session_too=True):
-        """The values as the dialog's controls show them (refresh_ui_values)."""
+        """The values from the configs."""
         for o in self._by_id.values():
             if o["store"] == "session" and not session_too:
                 continue
@@ -523,6 +556,9 @@ class WidgetOptions:
                 return False
             self.apply()
             return True
+        if o["store"] == "template":
+            self._set_template(str(value or ""))
+            return True
         if o["store"] == "ranges":
             rows = self._ranges_in(o, value)
             if rows is None:
@@ -536,6 +572,18 @@ class WidgetOptions:
         if o["store"] != "session" or (oid == "label" and self.dashboard):
             self.apply()
         return True
+
+    def _set_template(self, template):
+        """The text widget's sentence, into its definition at once (the live preview shows it)."""
+        from .text_editor import keep_default
+
+        h = self.h
+        if not hasattr(self, "_template_stored"):
+            self._template_stored = h.widget_def.get("template", "")
+        template = keep_default(template, self._template_stored)
+        self.values["template"] = template
+        h.widget_def["template"] = template
+        h.local_config["template"] = template
 
     # ---- the heatmap's palette ----
     def _palette(self):
@@ -569,7 +617,7 @@ class WidgetOptions:
         return False
 
     def palette_new(self, base_color=None, dark=False):
-        """A new gradient of the user's, from the palette shown, chosen at once (the dialog's New gradient)."""
+        """A new gradient of the user's, from the palette shown, chosen at once."""
         from ..details.widgets.charts.heatmap.palettes import CUSTOM, new_id, seed_colors
 
         p = self._palette()
@@ -650,7 +698,7 @@ class WidgetOptions:
         return rows
 
     def _save_ranges(self):
-        """The Range Buttons into the widget (the dialog's Save): a value picked twice kept once; fewer than 2
+        """The Range Buttons into the widget (Save): a value picked twice kept once; fewer than 2
         buttons, or the defaults, store nothing (the chart shows the defaults)."""
         wd, local = self.h.widget_def, self.h.local_config
         both = (wd,) if local is wd else (wd, local)
@@ -674,7 +722,7 @@ class WidgetOptions:
                     d[o["key"]] = list(norm)
 
     def set_unlinked(self, on):
-        """Own style on / off (the dialog's toggle_unlink): the style options read from the other config."""
+        """Own style on / off: the style options read from the other config."""
         h = self.h
         h.is_unlinked = bool(on)
         if h.is_unlinked:
@@ -688,7 +736,7 @@ class WidgetOptions:
         self.apply()
 
     def apply(self):
-        """Every option into the configs (the dialog's apply_live_changes)."""
+        """Every option into the configs."""
         h, conf, wd, local = self.h, self.h.addon_config, self.h.widget_def, self.h.local_config
         both = (wd,) if local is wd else (wd, local)
         hidden = []
@@ -730,7 +778,7 @@ class WidgetOptions:
                     d.pop("tooltip_hidden", None)
         if self.type == "stat_card":
             if self.dashboard:
-                # the card's own name in the Deep Dive: kept in the config's labels map (live, as the dialog does)
+                # the card's own name in the Deep Dive: kept in the config's labels map (live)
                 labels_conf = h.global_config if isinstance(h.global_config, dict) else conf
                 labels = labels_conf.get(Config.DASH_STAT_LABELS, {})
                 if not isinstance(labels, dict):
@@ -790,10 +838,11 @@ class WidgetOptions:
         return text
 
     def before_save(self):
-        """What the dialog's save_and_close puts in local_config before it saves (persist_widget_settings)."""
+        """What goes in local_config before Save writes it (persist_widget_settings)."""
         h = self.h
         h.local_config["use_custom_style"] = bool(h.is_unlinked)
-        h.local_config["label"] = self.label_to_save()
+        if "label" in self._by_id:  # (the text widget has none)
+            h.local_config["label"] = self.label_to_save()
         if "stat_key" in self.values:
             h.local_config["stat_key"] = self.values["stat_key"]
         if "time_unit" in self.values:

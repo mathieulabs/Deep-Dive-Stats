@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 import threading
 
-from ..shared import mw
+from aqt import mw
 from ...fsrs_math import FSRS_CARD_COLS, FSRS_CARD_COND, add_memory_state, memory_state
 
 

@@ -679,10 +679,13 @@ html.dd-exporting .dd-tbl-panel{border:0!important;border-radius:0!important;bac
 .dd-shell .dd-sc{align-items:center;text-align:center}
 .dd-shell .dd-sc-t,.dd-shell .dd-sc-v{z-index:1;text-align:center;max-width:100%}
 .dd-shell .dd-sc-t{padding-left:0}
+.dd-sc-ico-bal{display:none}
+/* pinned only: in the Deep Dive cards the icon jutting out left of a centered title looked off */
+.ddp .dd-shell .dd-sc-ico-bal{display:block;flex:0 1 auto;width:calc(max(12px,1.4em) + 5px);min-width:0;margin-left:-5px}
 .dd-shell .dd-sc-v{font-variant-numeric:tabular-nums;margin-top:3px}
 /* TEST off: the glow behind the number
 .dd-shell .dd-sc::after{content:'';position:absolute;left:50%;top:62%;width:min(80%,260px);height:120%;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(closest-side,color-mix(in srgb,var(--sc-c,transparent) 11%,transparent),transparent);pointer-events:none;z-index:0} */
-/* the widget gallery's hidden preview page (gallery.js): each chart fills its picture, without its card */
+/* the widget gallery's hidden preview page (gallery_page.js): each chart fills its picture, without its card */
 #ddg-root{position:relative;width:100%;height:100%}
 :root:root .ddg-card{width:100%;height:100%;background:transparent;border:0;border-radius:0;box-shadow:none;padding:2px 6px 0}
 

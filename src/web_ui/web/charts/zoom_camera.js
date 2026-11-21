@@ -379,3 +379,185 @@
   DD.zoomCam = {clock: clock, path: path, split: split, mix: mix, composite: composite, edge: edge, glide: glide,
     lerpLog: lerpLog, sm: sm, ease: ease, grid: grid, list: list, create: create};
 })();
+
+// What the Deep Dive (app.js) and the main screen (pinned.js) share in their zoom flow: the adaptive zoom (a zoom
+// down to 2 days switches the charts of days to 10-minute bins, zooming from the held picture of the days), its way
+// back to the days, the zoom out past a chart's period, and the dots of Activity (one per review, 3 hours or less).
+// Each page keeps its own state (one adaptive view for the linked charts there, one per chart here) and its calls.
+(function(){
+  'use strict';
+  const DOTS_MAX = 3 * 3600 * 1000, BIN10 = 600000;
+
+  function noAnim(fn){ const prev = DD._noAnim; DD._noAnim = true; try { return fn(); } finally { DD._noAnim = prev; } }
+
+  // the day labels of a chart's data, as its zoom labels them
+  function labelsOf(type, p){
+    if (!p) return [];
+    if (type === 'activity') return (p.rows || []).map(function(r){ return String(r.date); });
+    if (type === 'added') return (p.rows || []).map(function(r){ return String(r.pretty_date); });
+    if (Array.isArray(p.rows)) return p.rows.map(function(r){ return String(r.date); });  // (the charts of answers by day)
+    const d = p.data || {}; for (const k in d){ if (Array.isArray(d[k]) && d[k].length) return d[k].map(function(x){ return String(x[0]); }); }
+    return [];
+  }
+
+  // a zoom to 2 days or less (resolve_adaptive_zoom_window), on rows of days (not already 10-minute rows: Today / Yesterday)
+  function canAdapt(z, range){
+    if (!range || !z || !z.swap || range[1] - range[0] > 3) return false;
+    const f = z.label(range[0]), l = z.label(range[1] - 1);
+    return !!(f && l && !/\d:\d\d$/.test(f));
+  }
+  // compute_transition_align_right: the window in the right half of the view
+  function alignRight(range, n){ return (range[0] + range[1]) / (2 * Math.max(1, n)) >= 0.5; }
+
+  // the picture a chart shows now, held over its canvas until its new data is in (1.5 s at most); win: its window
+  function hold(z, win){
+    if (!DD.holdPicture || !z || !z.snap) return null;
+    const P = z.snap(); if (!P || !P.img.width) return null;
+    const h = {P: P, win: (win || [0, z.count()]).slice(), end: DD.holdPicture(z.canvas, P)};
+    setTimeout(function(){ h.end(); }, 1500);
+    return h;
+  }
+  // what a leaving chart shows (its dots, or its 10-minute bars), held still until the days are in
+  function holdShown(z, D){
+    if (!DD.holdPicture || !z || !z.picture) return null;
+    const P = (D && D.visible()) ? D.picture() : z.picture();
+    return (P && P.img && P.img.width) ? {P: P, win: null} : null;
+  }
+  function holdNow(z, h){
+    if (!h) return null;
+    h.end = DD.holdPicture(z.canvas, h.P);
+    setTimeout(function(){ h.end(); }, 1500);
+    return h;
+  }
+
+  // the chart's data swapped inside a camera zoom: its own zoom ends, then the old picture (or the one held)
+  // cross-fades into the new one over the same days (_PixmapZoom, 300 ms); out of view, at once
+  function swapPictured(z, data, range, right, wa, wb, held, seen){
+    if (!seen || !z.picture || !DD.pictureZoom){
+      if (held) held.end();
+      if (seen) z.swap(data, range, right); else noAnim(function(){ z.swap(data, range, right); });
+      return;
+    }
+    let before;
+    if (held){ before = held.P; if (held.win){ wa = held.win; wb = z.get() || [0, z.count()]; } }  // from the days held, into the days zoomed to
+    else before = z.picture();
+    noAnim(function(){ z.swap(data, range, right); });
+    const after = z.picture();
+    if (held) held.end();
+    DD.pictureZoom(z.canvas, before, after, wa, wb, 300);
+  }
+
+  // back to the days from the 10-minute view of first..last (labels L of the days' data, z the chart still in
+  // the 10-minute rows): the days' window (widen_zoom_window when toWider: one wheel step, 15 %, wider, and wider
+  // than the 2-day threshold; else the whole view) and the picture zoom from the 10-minute window shown (wa, in
+  // days of the new rows) to it (wb)
+  function leaveWindows(L, first, last, z, toWider){
+    const a = L.indexOf(first), b = L.lastIndexOf(last) + 1, n = L.length;
+    let range = null, wa = null, wb = null;
+    if (a >= 0 && b > a){
+      if (toWider){
+        const nl = Math.min(n, Math.max(b - a + 1, Math.floor((b - a) * 1.15), 4));
+        let s0 = Math.round((a + b) / 2 - nl / 2); s0 = Math.max(0, Math.min(s0, n - nl));
+        range = nl >= n ? null : [s0, s0 + nl];
+      }
+      const cur = z.get(), cnt = Math.max(1, z.count()), s0 = cur ? cur[0] : 0, e0 = cur ? cur[1] : cnt, D = b - a;
+      wa = [a + s0 / cnt * D, a + e0 / cnt * D]; wb = range ? range.slice() : [0, n];
+    }
+    return {range: range, wa: wa, wb: wb};
+  }
+
+  // zoomed out past the chart's period, with its Total data now in: the days first..last shown before, with about
+  // a quarter more days before them; null: the whole view
+  function expandWindow(z, first, last){
+    let a = -1, b = -1;
+    const n = z.count ? z.count() : 0;
+    for (let i = 0; i < n; i++){
+      const l = z.label(i);
+      if (l === first && a < 0) a = i;
+      if (l === last) b = i;
+    }
+    if (a < 0 || b < a){ a = Math.max(0, n - 30); b = n - 1; }
+    const spanLen = Math.max(2, b - a + 1);
+    const newA = Math.max(0, a - Math.max(3, Math.round(spanLen * 0.28))), newB = Math.min(n - 1, b);
+    return (newA === 0 && newB >= n - 1) ? null : [newA, newB + 1];
+  }
+
+  // ---- one dot per review: in the 10-minute view zoomed to 3 hours or less, Activity shows each review as a dot;
+  // the bars sink while the dots pop in (_SinkOut + their intro); back to the bars by a picture zoom; the dots
+  // window moves by camera zoom. o: {get() -> {D (the dots), z, seen()} or null, active() (in the 10-minute view),
+  // times() (the start of each 10-minute bin), fetch(t0, t1) -> {events}, leave() (back to the days, one step
+  // wider), onSet() (after a zoom step of zoomOut), onError(e)} ----
+  function dots(o){
+    let seq = 0, tm = null;
+    const seen = function(g){ return !g.seen || g.seen(); };
+    function barsWindow(z){
+      const times = o.times(), cur = z.get(), n = z.count(), s0 = cur ? cur[0] : 0, e0 = cur ? cur[1] : n;
+      return (times && times[s0] != null && times[e0 - 1] != null) ? [times[s0], times[e0 - 1] + BIN10] : null;
+    }
+    function toBars(instant){
+      const g = o.get(); if (!g || !g.D) return;
+      const D = g.D, z = g.z;
+      seq++; clearTimeout(tm);
+      if (!D.visible()) return;
+      const before = (!instant && seen(g)) ? D.picture() : null, wd = D.window(), wbars = barsWindow(z);
+      D.hide(); z.canvas.style.visibility = '';
+      if (before && DD.pictureZoom) DD.pictureZoom(z.canvas, before, z.picture(), wd, wbars, 300);
+    }
+    function apply(){
+      const g = o.get(); if (!g || !g.D) return;
+      const D = g.D, z = g.z, times = o.times(), rng = z.get();
+      if (!o.active() || !times || !rng){ toBars(); return; }
+      const t0 = times[Math.max(0, rng[0])], t1 = times[Math.min(times.length, rng[1]) - 1] + BIN10;
+      if (!(t1 > t0) || t1 - t0 > DOTS_MAX){ toBars(); return; }
+      const my = ++seq;
+      o.fetch(t0, t1).then(function(r){
+        if (my !== seq || !o.active()) return;
+        if (!r || !r.events){ toBars(); return; }
+        const m = z.mode();
+        D.setMode(m.mode === 'time' ? 'time' : 'reviews', m.breakdown);
+        const anim = seen(g);
+        if (D.visible()){
+          // zooming out: the view glides to the wider window; in or moving: the dots page slides (camera_zoom)
+          const before = anim ? D.picture() : null, wa = D.window();
+          if (D.setEvents(r.events, t0, t1) === 'set' && before && DD.pictureZoom) DD.pictureZoom(D.canvas, before, D.picture(), wa, [t0, t1], 300);
+          return;
+        }
+        // bars -> dots over the same hours: the bars sink and fade while the dots pop in
+        const before = anim ? z.picture() : null;
+        D.setEvents(r.events, t0, t1);
+        // the axes go from the bars' to the dots' while the bars sink (dots.js sinkOut), the dots' own held back meanwhile
+        const na = (before && DD.sinkOut && D.axisInfo) ? D.axisInfo() : null;
+        if (na && D.holdAxes) D.holdAxes(300);
+        z.canvas.style.visibility = 'hidden';
+        D.show(anim);
+        if (before && DD.sinkOut) DD.sinkOut(z.canvas, before, 300, na);
+      }).catch(o.onError || function(){});
+    }
+    function refresh(immediate){
+      const g = o.get(); if (!g || !g.D) return;
+      if (!g.D.visible() && !o.active()) return;
+      clearTimeout(tm);
+      if (immediate) apply(); else tm = setTimeout(apply, 120);
+    }
+    // Ctrl+wheel out of the whole dots window: the 10-minute zoom widens by a step right away
+    function zoomOut(frac){
+      const g = o.get(), times = o.times(); if (!g || !g.D || !o.active() || !times) return;
+      const D = g.D, z = g.z, n = times.length;
+      const cur = z.get() || [0, n], cs = Math.max(0, cur[0]), ce = Math.min(n, cur[1]);
+      const w = D.window(), span = (w[1] - w[0]) * 1.25, n0 = w[0] + frac * (w[1] - w[0]) - frac * span, n1 = n0 + span;
+      const br = function(x){ let i = 0; while (i < n && times[i] <= x) i++; return i; };
+      const bl = function(x){ let i = 0; while (i < n && times[i] < x) i++; return i; };
+      let s0 = Math.max(0, br(n0) - 1), e0 = Math.min(n, bl(n1 - BIN10) + 1);
+      s0 = Math.min(s0, cs); e0 = Math.max(e0, ce);
+      if (s0 === cs && e0 === ce){ s0 = Math.max(0, cs - 1); e0 = Math.min(n, ce + 1); }
+      if (s0 >= cs && e0 <= ce){ o.leave(); return; }  // the whole 10-minute view: back to the days
+      noAnim(function(){ z.set(s0, e0); });
+      o.onSet();
+      refresh(true);
+    }
+    return {toBars: toBars, refresh: refresh, zoomOut: zoomOut};
+  }
+
+  DD.zoomFlow = {labelsOf: labelsOf, canAdapt: canAdapt, alignRight: alignRight, hold: hold, holdShown: holdShown, holdNow: holdNow,
+    swapPictured: swapPictured, leaveWindows: leaveWindows, expandWindow: expandWindow, dots: dots, noAnim: noAnim};
+})();

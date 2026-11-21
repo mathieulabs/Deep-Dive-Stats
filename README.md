@@ -72,7 +72,7 @@ You can also send a pull request: texts live in `src/i18n/<language>.json`.
 python dev_tools/build_release.py
 ```
 
-Writes `dist/Deep_Dive_Stats.ankiaddon`. Add `--check` to only run the audit.
+Writes `dist/releases/Deep_Dive_Stats_<version>.ankiaddon`. Add `--check` to only run the audit.
 `dev_tools/check_import_graph.py` imports every module without starting Anki.
 
 ## Support

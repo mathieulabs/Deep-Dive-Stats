@@ -15,10 +15,10 @@ from .persistence_keys import (
 )
 
 if TYPE_CHECKING:
-    from ..dialogs.widget_settings import WidgetSettingsDialog
+    from ....logic.widget_settings_state import WidgetSettingsState
 
 
-def persist_widget_settings(dialog: "WidgetSettingsDialog") -> None:
+def persist_widget_settings(dialog: "WidgetSettingsState") -> None:
     if dialog.is_pinned_mode:
         _persist_pinned_widget_settings(dialog)
         return
@@ -26,7 +26,7 @@ def persist_widget_settings(dialog: "WidgetSettingsDialog") -> None:
         _persist_dashboard_widget_settings(dialog)
 
 
-def _persist_pinned_widget_settings(dialog: "WidgetSettingsDialog") -> None:
+def _persist_pinned_widget_settings(dialog: "WidgetSettingsState") -> None:
     manager = ConfigManager(mw)
     cfg = dict(manager.config)
 
@@ -84,7 +84,7 @@ def _persist_pinned_widget_settings(dialog: "WidgetSettingsDialog") -> None:
     mw.reset()
 
 
-def _persist_dashboard_widget_settings(dialog: "WidgetSettingsDialog") -> None:
+def _persist_dashboard_widget_settings(dialog: "WidgetSettingsState") -> None:
     manager = ConfigManager(mw)
     meta_cfg = dict(manager.config)
     # global_config can be an older snapshot: never let it overwrite the live pins.

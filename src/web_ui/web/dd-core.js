@@ -376,7 +376,7 @@
     later();
   };
   // "About This Chart" of a right-click menu: the chart's explanation (chart_help) where the menu was, in the "?"'s
-  // tooltip, until the next click, key or scroll (chart_help._HelpPopup)
+  // tooltip, until the next click, key or scroll
   DD.helpPopup = function(text, x, y, host){
     if (!text) return;
     host = host || document.body;
@@ -589,6 +589,12 @@
   // checkout (DD.dev, set by Python before the page starts): a user's page neither builds nor sends them
   DD.dev = !!DD.dev;
   DD.log = function(text){ LOGQ.push(String(text)); flushLog(true); };
+  // DD.swallowed: an error the page goes on after (a callback, a chart's drawing), logged once per place
+  const SWALLOWED = new Set();
+  DD.swallowed = function(where, e){
+    if (SWALLOWED.has(where)) return; SWALLOWED.add(where);
+    try { DD.log('Ignored error at ' + where + ': ' + ((e && e.stack) || e)); } catch (x) {}
+  };
   DD.trace = function(text){
     if (!DD.dev) return;
     LOGQ.push(String(text));
@@ -1094,6 +1100,18 @@
     if (target && target.dispatchEvent) target.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true, clientX: x, clientY: y}));
   };
 
+  // the text on the accent colour (an OK button): dark on a light accent (a grey or yellow one), else white
+  DD.onAccent = function(){
+    const c = document.createElement('span');
+    c.style.color = 'var(--dd-accent)';
+    document.body.appendChild(c);
+    const m = getComputedStyle(c).color.match(/[\d.]+/g) || [];
+    c.remove();
+    const lin = function(v){ v = Number(v) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const L = m.length >= 3 ? 0.2126 * lin(m[0]) + 0.7152 * lin(m[1]) + 0.0722 * lin(m[2]) : 0;
+    return L > 0.5 ? '#1b1b1d' : '#fff';
+  };
+
   // ---- theme ----
   DD.setTheme = function(theme){
     DD.theme = theme;
@@ -1113,7 +1131,7 @@
     DD.applyBackdrop();
   };
 
-  // Window backdrop: same layers as render_backdrop() (gradient, two glows, vignette, grain).
+  // Window backdrop (theme.backdrop_spec): a gradient, two glows, a vignette and a grain.
   function eased(color, alpha){
     const rgb = hexRgb(color);
     return [[0, 1], [0.18, 0.66], [0.38, 0.34], [0.6, 0.13], [0.82, 0.035], [1, 0]].map(function(p){
@@ -1199,15 +1217,20 @@
     if (kind === 'draw'){ B.drawN++; B.drawMs += ms; const k = name || '?'; B.byChart[k] = (B.byChart[k] || 0) + ms; }
     else if (kind === 'layout'){ B.layoutN++; B.layoutMs += ms; B.layoutMax = Math.max(B.layoutMax, ms); }
   };
+  // The burst (DD._rz) is also what puts the charts' redraws off while the window is resized (DD.frame.resized):
+  // kept for every user, only its trace is a source checkout's. A zoom (Anki's Ctrl + / Ctrl -, Ctrl + wheel: the
+  // pixel ratio changes) is not put off: each chart drawn again at once for its new size and ratio. Put off, each kept
+  // its last picture stretched to its new box for 120-300 ms, then jumped to the right one: the charts bounced
+  // inside their cards at each zoom step
   function rzEvent(){
-    if (!DD.dev) return;
-    const now = performance.now(), w = window.innerWidth, h = window.innerHeight;
+    const now = performance.now(), w = window.innerWidth, h = window.innerHeight, d = window.devicePixelRatio || 1;
     let B = DD._rz;
     if (!B){
       B = DD._rz = {t0: now, clock: Date.now(), ev: 0, sizes: [], frames: 0, gaps: [], cur: {}, drawN: 0, drawMs: 0, byChart: {},
-        layoutN: 0, layoutMs: 0, layoutMax: 0, laterN: 0, long: [], calls: [], answers: [], pending0: DD._pending ? DD._pending() : [], last: null, end: 0};
+        layoutN: 0, layoutMs: 0, layoutMax: 0, laterN: 0, long: [], calls: [], answers: [], pending0: DD._pending && DD.dev ? DD._pending() : [], last: null, end: 0,
+        dpr: d, zoom: false};
       B.end = now + 400;
-      try { rzLongObs = new PerformanceObserver(function(l){ l.getEntries().forEach(function(e){ if (DD._rz) DD._rz.long.push(Math.round(e.startTime - DD._rz.t0) + '+' + Math.round(e.duration)); }); }); rzLongObs.observe({entryTypes: ['longtask']}); } catch (e) { rzLongObs = null; }
+      if (DD.dev) try { rzLongObs = new PerformanceObserver(function(l){ l.getEntries().forEach(function(e){ if (DD._rz) DD._rz.long.push(Math.round(e.startTime - DD._rz.t0) + '+' + Math.round(e.duration)); }); }); rzLongObs.observe({entryTypes: ['longtask']}); } catch (e) { rzLongObs = null; }
       const raf0 = DD._raf0 || window.requestAnimationFrame.bind(window);
       (function fr(t){
         if (DD._rz !== B) return;
@@ -1223,11 +1246,13 @@
       })(null);
     }
     B.ev++; B.end = now + 400;
+    if (d !== B.dpr){ B.dpr = d; B.zoom = true; if (DD.dev) DD.trace('RESIZETRACE zoom: pixel ratio ' + d.toFixed(3) + ', charts drawn at once'); }
     const sz = w + 'x' + h; if (B.sizes[B.sizes.length - 1] !== sz) B.sizes.push(sz);
   }
   function rzEnd(B){
     DD._rz = null;
     if (rzLongObs){ try { rzLongObs.disconnect(); } catch (e) {} rzLongObs = null; }
+    if (!DD.dev) return;
     const g = B.gaps.slice().sort(function(a, b){ return a - b; });
     const top = Object.keys(B.byChart).sort(function(a, b){ return B.byChart[b] - B.byChart[a]; }).slice(0, 5).map(function(k){ return k + ' ' + Math.round(B.byChart[k]); });
     const sizes = B.sizes.length > 6 ? B.sizes.slice(0, 3).concat(['...'], B.sizes.slice(-2)) : B.sizes;
@@ -1287,7 +1312,7 @@
   DD._go = false;
   const goCbs = [];
   DD.onGo = function(fn){ if (DD._go) fn(); else goCbs.push(fn); };
-  DD.go = function(){ if (DD._go) return; DD._go = true; running = false; DD.frame.kick(); goCbs.splice(0).forEach(function(fn){ try { fn(); } catch (e) {} }); };
+  DD.go = function(){ if (DD._go) return; DD._go = true; running = false; DD.frame.kick(); goCbs.splice(0).forEach(function(fn){ try { fn(); } catch (e) { DD.swallowed('DD.onGo', e); } }); };
   setTimeout(function(){ DD.go(); }, 3000);  // never kept waiting (a page shown another way)
   function loop(now){
     if (!DD._go){ running = false; return; }
@@ -1319,7 +1344,7 @@
         DD.trace('PERF anim frames=' + run.n + ' dur=' + (now - run.start).toFixed(0) + 'ms avg=' + ((now - run.start) / Math.max(1, run.n - 1)).toFixed(1) + 'ms maxGap=' + run.maxGap.toFixed(0) + 'ms drawAvg=' + (run.js / run.n).toFixed(1) + 'ms drawMax=' + run.jsMax.toFixed(0) + 'ms active=' + run.maxActive + (top.length ? ' top=[' + top.join(', ') + ']' : ''));
       }
       run = null;
-      if (idleCbs.length) idleCbs.splice(0).forEach(function(fn){ try { fn(); } catch (e) {} });
+      if (idleCbs.length) idleCbs.splice(0).forEach(function(fn){ try { fn(); } catch (e) { DD.swallowed('frame idle', e); } });
     }
   }
   // While the window is resized the charts are redrawn now and then, all together (RZ_EVERY ms apart, and once the
@@ -1331,7 +1356,7 @@
   function rzFlush(){
     rzFlushAt = performance.now();
     const todo = Array.from(rzLater.entries()); rzLater.clear();
-    todo.forEach(function(e){ try { e[1](); } catch (x) {} DD.frame.drawNow(e[0]); });
+    todo.forEach(function(e){ try { e[1](); } catch (x) { DD.swallowed('resize prep', x); } DD.frame.drawNow(e[0]); });
   }
   function rzKick(){
     if (rzQueued) return; rzQueued = true;
@@ -1358,6 +1383,18 @@
 
   // a chart drawn at its own size and shown smaller (the gallery's tiles: a holder with data-dd-scale and a CSS scale
   // of that much): its layout stays the full size, its canvas has the pixels it is shown on
+  // a chart's tooltip at (left, top) of its plot, moved onto whole screen pixels: the mouse's place on the plot is
+  // fractional (a card at x.5, Anki's zoom), and the tooltip, a layer of its own (will-change), had its text blurred
+  DD.tipAt = function(tip, left, top){
+    const p = tip.offsetParent;
+    if (p){
+      const d = window.devicePixelRatio || 1, s = DD.scaleOf(p) || 1, r = p.getBoundingClientRect();
+      const x0 = r.left + p.clientLeft * s, y0 = r.top + p.clientTop * s;
+      left = (Math.round((x0 + left * s) * d) / d - x0) / s;
+      top = (Math.round((y0 + top * s) * d) / d - y0) / s;
+    } else { left = Math.round(left); top = Math.round(top); }
+    tip.style.transform = 'translate3d(' + left.toFixed(3) + 'px,' + top.toFixed(3) + 'px,0)';
+  };
   DD.scaleOf = function(node){
     const h = node && node.closest ? node.closest('[data-dd-scale]') : null;
     return h ? (Number(h.dataset.ddScale) || 1) : 1;
@@ -1438,19 +1475,26 @@
     // window is resized, now and then (rzKick above)
     resized: function(fn, prep){
       const B = DD._rz;
+      // a zoom: this chart and those put off before it, drawn now (rzEvent above)
+      if (B && (B.zoom || (window.devicePixelRatio || 1) !== B.dpr)){
+        B.zoom = true;
+        rzLater.delete(fn); if (rzLater.size) rzFlush();
+        try { prep(); } catch (e) { DD.swallowed('zoom prep', e); }
+        DD.frame.drawNow(fn); return;
+      }
       if (B && (rzLater.size || B.ev > 1)){
         if (!rzLater.has(fn)) DD.rzNote('later');
         rzLater.set(fn, prep); rzKick(); return;
       }
       if (B && !rzLater.size) rzFlushAt = performance.now();
       rzLater.delete(fn);
-      try { prep(); } catch (e) {}
+      try { prep(); } catch (e) { DD.swallowed('resize prep', e); }
       DD.frame.drawNow(fn);
     },
     drawNow: function(fn){
       if (DD._go && !(fn._el && fn._el._ddVis === false) && !fn._held){
         const t = performance.now();
-        try { fn(t); } catch (e) {}
+        try { fn(t); } catch (e) { DD.swallowed('draw ' + ((fn._el && fn._el.dataset && fn._el.dataset.type) || '?'), e); }
         if (DD._rz) DD.rzNote('draw', performance.now() - t, fn._el && fn._el.dataset && fn._el.dataset.type);
       }
       DD.frame.kick();
@@ -1594,4 +1638,98 @@
     update();
     return update;
   };
+})();
+
+// The guided tours' shared parts (the Deep Dive's in dd-tour.js, the main screen's in pinned.js): the dimmed screen
+// with its light, the card, the drawn pointer and the example picture, the step dots, the keys, a tween. Each page
+// keeps its own steps, demos and where it puts the card.
+(function(){
+  'use strict';
+  const DD = window.DD;
+  const PTR = '<svg width="20" height="24" viewBox="0 0 20 24"><path d="M2 1.5v18l4.6-4.3 3.2 7.1 3-1.4-3.1-6.9H16z" fill="#fff" stroke="#111" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+  // an element's box on screen, or null when it is narrower or lower than min
+  function rect(el, min){
+    if (!el || !el.getBoundingClientRect) return null;
+    const r = el.getBoundingClientRect(), m = min || 0;
+    if (!(r.width > m && r.height > m)) return null;
+    return {left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height, x: r.left, y: r.top};
+  }
+  // the box around boxes (the missing ones left out), or null
+  function unite(rs){
+    const xs = (rs || []).filter(Boolean);
+    if (!xs.length) return null;
+    let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    xs.forEach(function(q){ l = Math.min(l, q.left); t = Math.min(t, q.top); r = Math.max(r, q.right); b = Math.max(b, q.bottom); });
+    return {left: l, top: t, right: r, bottom: b, width: r - l, height: b - t};
+  }
+  // the overlay, put on <body>: {ov, hole, pic, ptr, card, title, dots, text, back, skip, next}
+  function build(labels){
+    const L = labels || {};
+    const ov = document.createElement('div');
+    ov.className = 'ddp-tour';
+    ov.innerHTML = '<div class="ddp-tour-hole"></div><img class="ddp-tour-pic"><div class="ddp-tour-ptr">' + PTR + '</div>' +
+      '<div class="ddp-tour-card"><div class="ddp-tour-head"><span class="ddp-tour-title"></span><span class="ddp-tour-dots"></span></div>' +
+      '<div class="ddp-tour-text"></div><div class="ddp-tour-row"><button class="ddp-tour-back" type="button"></button><span></span>' +
+      '<button class="ddp-tour-skip" type="button"></button><button class="ddp-tour-next" type="button"></button></div></div>';
+    document.body.appendChild(ov);
+    const q = function(c){ return ov.querySelector(c); };
+    const el = {ov: ov, hole: q('.ddp-tour-hole'), pic: q('.ddp-tour-pic'), ptr: q('.ddp-tour-ptr'), card: q('.ddp-tour-card'),
+      title: q('.ddp-tour-title'), dots: q('.ddp-tour-dots'), text: q('.ddp-tour-text'), back: q('.ddp-tour-back'),
+      skip: q('.ddp-tour-skip'), next: q('.ddp-tour-next')};
+    el.back.textContent = L.back || 'Back'; el.skip.textContent = L.skip || 'Skip'; el.next.textContent = L.next || 'Next';
+    return el;
+  }
+  // the drawn mouse pointer of the examples: never on a touch screen (no mouse there)
+  function ptr(el, x, y, show){
+    if (show === false || (DD.isTouch && DD.isTouch())){ el.ptr.style.opacity = '0'; return; }
+    el.ptr.style.opacity = '1';
+    el.ptr.style.left = Math.round(x) + 'px';
+    el.ptr.style.top = Math.round(y) + 'px';
+  }
+  // the example picture at x, y, w x h (src null: hidden); its box, or null
+  function pic(el, src, x, y, w, h){
+    const im = el.pic;
+    if (!src){ im.style.display = 'none'; return null; }
+    if (im.getAttribute('src') !== src) im.setAttribute('src', src);
+    im.style.display = 'block';
+    im.style.left = Math.round(x) + 'px'; im.style.top = Math.round(y) + 'px';
+    im.style.width = Math.round(w) + 'px'; im.style.height = Math.round(h) + 'px';
+    return {left: x, top: y, right: x + w, bottom: y + h, width: w, height: h};
+  }
+  // one dot a step, the current one lit and those before it seen; a click on one goes to it
+  function dots(el, n, i, pick){
+    const d = el.dots;
+    if (d.children.length !== n){
+      d.innerHTML = '';
+      for (let k = 0; k < n; k++){
+        const dot = document.createElement('i');
+        dot.addEventListener('click', function(){ pick(k); });
+        d.appendChild(dot);
+      }
+    }
+    Array.from(d.children).forEach(function(dot, k){ dot.className = k === i ? 'on' : k < i ? 'seen' : ''; });
+  }
+  // Escape closes, Right / Enter goes on, Left goes back: the keydown listener (added on capture by the caller)
+  function keys(close, step){
+    return function(ev){
+      if (ev.key === 'Escape'){ ev.preventDefault(); close(); }
+      else if (ev.key === 'ArrowRight' || ev.key === 'Enter'){ ev.preventDefault(); step(1); }
+      else if (ev.key === 'ArrowLeft'){ ev.preventDefault(); step(-1); }
+    };
+  }
+  const ease = {
+    quad: function(t){ return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; },
+    cubic: function(t){ return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+  };
+  // fn(eased 0..1) on the frames for ms, then done; dropped as soon as alive() is false (the step changed)
+  function tween(ms, curve, alive, fn, done){
+    const t0 = performance.now();
+    (function f(now){
+      if (!alive()) return;
+      const t = Math.min(1, (now - t0) / Math.max(1, ms));
+      fn(curve(t));
+      if (t < 1) requestAnimationFrame(f); else if (done) done();
+    })(t0);
+  }
+  DD.tourKit = {rect: rect, unite: unite, build: build, ptr: ptr, pic: pic, dots: dots, keys: keys, ease: ease, tween: tween};
 })();

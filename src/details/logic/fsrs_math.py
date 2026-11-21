@@ -114,7 +114,9 @@ def memory_state(data):
             if cd.HasField("fsrs"):
                 return float(cd.fsrs.stability), float(cd.fsrs.difficulty), None, None
         except Exception:
-            pass
+            from .logger import log_swallowed
+
+            log_swallowed()
         return None
     if not isinstance(data, str):
         return None

@@ -614,6 +614,19 @@
       // and last review days); morphed bar by bar, each bar would turn into another day (the whole chart wobbled
       // by a day). The old rows are put on the new days first (a day they lack counts 0): each bar only changes height.
       const od = this.daily || [], nd = newDaily || [];
+      // a value axis (Answer Time's seconds, Interval Ratings' days, the n-th review...: the rows are values from the
+      // same first one): each bar keeps its value, the morph goes from the bars on screen anchored on the left, as a
+      // zoom (the bars widen or narrow, those past the new end slide out on the right). Put on the new rows first,
+      // the old bars were laid out on the new count at once: they jumped in the first frame, then only grew
+      const valueAxis = !!((opts && opts.value_axis) || this.options.value_axis);
+      if (valueAxis && od.length && nd.length && od[0].date === nd[0].date && od[od.length - 1].date !== nd[nd.length - 1].date){
+        this.daily = nd; this.zoomRange = null;
+        if (opts) Object.assign(this.options, opts);
+        if (opts && opts.keys) this.keys = opts.keys;
+        this._recompute();
+        this._startTransition(oldBins, false, ax0);
+        return;
+      }
       if (od.length && nd.length && !this._transition && (od[0].date !== nd[0].date || od[od.length - 1].date !== nd[nd.length - 1].date)){
         const by = {}; od.forEach(function(r){ if (r && r.date != null) by[r.date] = r; });
         let shared = 0;
@@ -1197,8 +1210,8 @@
       const plotW = Math.max(1, this.w - this._padL - this._padR);
       const marks = this._dayTicks(v0, v1, this._dayStep(v0, v1, plotW))
         .filter((i) => R[i] && R[i].date != null && String(R[i].date) !== '')
-        .map((i) => ({f: (i + 0.5 - v0) / span, label: String(R[i].date)}));
-      return {idxAxis: true, t0: v0, t1: v1, marks: marks};
+        .map((i) => ({f: (i + 0.5 - v0) / span, label: String(R[i].date), j: i - v0}));
+      return {idxAxis: true, t0: v0, t1: v1, marks: marks, vis: v1 - v0, bs: binSize(Math.max(1, v1 - v0), this.options.adaptive_binning)};
     }
     // the date marks of a view drawn: [{i, a}] with x from the day index; a mark coming close to another one fades as
     // they near, as do those whose text reaches past the plot's ends
@@ -1767,7 +1780,9 @@
             return Math.max(0, on + (nn - on) * valueT);
           });
 
-          if (alignRight){
+          // (anchored on the left too: the bars go from their old grid to the new one, never laid out at once on the
+          // larger count)
+          if (alignRight || tr.from.length !== tr.to.length){
             slots = interpolateBarSlots(tr.from.length, tr.to.length, valueT, padL, plotW, alignRight, denseRatio(plotW / Math.max(1, tr.to.length), this._baseRatio()));
           }
         } else if (sameCount){
@@ -1787,6 +1802,10 @@
           if (alignRight){
             const slideWidthRatio = denseRatio(plotW / Math.max(1, tr.to.length), this._baseRatio());
             slots = interpolateBarSlots(tr.from.length, tr.to.length, valueT, padL, plotW, alignRight, slideWidthRatio);
+          } else {
+            // not aligned right: the old bars keep their own grid at the start and glide to the new one (they were laid
+            // out on the new count at once, so the bars re-positioned in the first frame, then animated)
+            slots = interpolateBarSlots(tr.from.length, tr.to.length, valueT, padL, plotW, false, denseRatio(plotW / Math.max(1, tr.to.length), this._baseRatio()));
           }
         }
         if (tr.fromSlots && !gmode){
@@ -2235,12 +2254,47 @@
             : (A0.marks || []).map((m) => ({f: (m.t - A0.t0) / Math.max(1, A0.t1 - A0.t0), label: String(m.label)}));
           const newM = this._dayTicks(v0, v1, this._dayStep(v0, v1, plotW))
             .filter((i) => this.daily[i] && this.daily[i].date != null && String(this.daily[i].date) !== '')
-            .map((i) => ({f: (i + 0.5 - v0) / span, label: String(this.daily[i].date)}));
+            .map((i) => ({f: (i + 0.5 - v0) / span, label: String(this.daily[i].date), k: i - v0}));
           const cntA = {}, cntB = {}, byB = {};
           oldM.forEach((m) => { cntA[m.label] = (cntA[m.label] || 0) + 1; });
           newM.forEach((m) => { cntB[m.label] = (cntB[m.label] || 0) + 1; byB[m.label] = m; });
           const matched = new Set(), marks = [];
-          oldM.forEach((m) => {
+          // index axes (Answer Time, Added, ...): each label sits under its own bar slot, the bars' centres drawn this
+          // frame. An old label is under the bar at its old index, a new one under its new index; a label on both sides
+          // glides from one to the other on the bars' curve. At e = 0 and e = 1 they are exactly where the bars are, so
+          // nothing moves at the start of the change
+          const byIdx = !!A0.idxAxis && oldM.length > 0 && oldM.every((m) => m.j != null) && newM.every((m) => m.k != null);
+          if (byIdx){
+            const nB = bins.length;
+            const oldPad = tr0.alignRight ? nB - tr0.from.length : 0, newPad = tr0.alignRight ? nB - tr0.to.length : 0;
+            // a label is under its row; its bar is the bin holding that row (bars of 2 seconds or more: row 20 is bar 10).
+            // It keeps its place from that bar's centre at rest (0 = old side, 1 = new side), scaled by the bars'
+            // spacing of the moment: exactly where it was at e = 0, where it stays at e = 1
+            const ab = this.options.adaptive_binning;
+            const bsA = Math.max(1, A0.bs || binSize(Math.max(1, A0.vis || tr0.from.length), ab)), bsB = Math.max(1, binSize(Math.max(1, Math.round(span)), ab));
+            const stepNow = (i, d) => { const a = centers[i], b = centers[i + 1], c = centers[i - 1]; return (a != null && b != null) ? b - a : (a != null && c != null) ? a - c : d; };
+            const follow = (row, f, pad, nBins, bs) => {
+              const st = plotW / Math.max(1, nBins), b = Math.floor(row / bs), i = pad + b, c = centers[i];
+              const rest = padL + f * plotW;
+              return c != null ? c + (rest - (padL + (b + 0.5) * st)) * stepNow(i, st) / st : rest;
+            };
+            const cOld = (m) => follow(m.j, m.f, oldPad, tr0.from.length, bsA);
+            const cNew = (m) => follow(m.k, m.f, newPad, tr0.to.length, bsB);
+            const newByLabel = {};
+            newM.forEach((m) => { if (newByLabel[m.label] == null) newByLabel[m.label] = m; });
+            const kept = new Set();
+            oldM.forEach((m) => {
+              const nm = newByLabel[m.label];
+              if (nm && !kept.has(m.label)){
+                kept.add(m.label);
+                const a0 = cOld(m), a1 = cNew(nm);
+                marks.push({x: a0 + (a1 - a0) * e, label: m.label, a: 1, p: 2});
+              } else marks.push({x: cOld(m), label: m.label, a: 1 - sm(e / 0.67), p: 1 - e});
+            });
+            newM.forEach((m) => { if (!kept.has(m.label)) marks.push({x: cNew(m), label: m.label, a: sm((e - 0.33) / 0.67), p: e}); });
+          }
+          const oldLoop = byIdx ? [] : oldM, newLoop = byIdx ? [] : newM;
+          oldLoop.forEach((m) => {
             if (cntA[m.label] === 1 && cntB[m.label] === 1){
               const nb = byB[m.label];
               matched.add(m.label);
@@ -2249,7 +2303,7 @@
               marks.push({x: padL + m.f * plotW, label: m.label, a: 1 - sm(raw0 / 0.35), p: 1 - raw0});
             }
           });
-          newM.forEach((m) => {
+          newLoop.forEach((m) => {
             if (!matched.has(m.label)) marks.push({x: padL + m.f * plotW, label: m.label, a: sm((raw0 - 0.3) / 0.45), p: raw0});
           });
           ctx.save(); ctx.font = AXIS_FONT; ctx.fillStyle = this._axisInk();

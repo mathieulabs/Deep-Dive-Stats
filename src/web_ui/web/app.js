@@ -61,6 +61,11 @@
   ICONS.history = '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>';
   ICONS.search = '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>';
   ICONS.filter = '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>';
+  // the main screen's right click (web_menus.py)
+  ICONS.external = '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>';
+  ICONS.eye = '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>';
+  ICONS.zoom = '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35M11 8v6M8 11h6"/>';
+  ICONS.copy = '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/>';
   DD.icon = icon;
   // a chart and its Time Machine, the same chart on a past day (View on a Past Day: here and on the main screen,
   // pinned.js; logic/pinning.py PAST)
@@ -131,6 +136,7 @@
       const right = r.right - 2, left = r.left - m.offsetWidth + 2;
       m.style.left = (right + m.offsetWidth <= window.innerWidth - 4 || left < 4 ? Math.min(right, window.innerWidth - m.offsetWidth - 4) : left) + 'px';
       m.style.top = Math.max(4, Math.min(r.top - 4, window.innerHeight - m.offsetHeight - 4)) + 'px';
+      sharpIcons(m);
       return m;
     }
     if (anchor && anchor.getBoundingClientRect){
@@ -194,7 +200,19 @@
       };
       DD._menuCloser = f; document.addEventListener('click', f);
     }, 0);
+    sharpIcons(m);
     return m;
+  }
+  // the entries' icons on whole screen pixels: an entry's height is often odd, its icon centered in it fell on half
+  // a pixel (and on a fraction at Anki's zoom), its thin strokes spread over two rows of pixels, blurred
+  function sharpIcons(m){
+    const d = window.devicePixelRatio || 1;
+    m.querySelectorAll('.dd-mic > svg').forEach(function(s){
+      s.style.transform = '';
+      const r = s.getBoundingClientRect();
+      const fx = (Math.round(r.left * d) - r.left * d) / d, fy = (Math.round(r.top * d) - r.top * d) / d;
+      if (Math.abs(fx) > 0.01 || Math.abs(fy) > 0.01) s.style.transform = 'translate(' + fx.toFixed(3) + 'px,' + fy.toFixed(3) + 'px)';
+    });
   }
   DD.webMenu = menu;
   // the button of the menu shown clicked again: the menu closes, its button's own handler never runs (it opened it
@@ -911,21 +929,12 @@
     // seconds / intervals, Due Today: today's hours) zoom on their own, they follow the days' zoom by their data
     const ZLINK = {activity: 1, retention: 1, added: 1, ratings: 1, review_speed: 1, forgotten: 1, resets: 1, introduced: 1, introduced_load: 1, card_states: 1, load_trend: 1, stability_trend: 1, memorised: 1};
     let zseq = 0, ztm = null;
+    const ZF = DD.zoomFlow;  // (charts/zoom_camera.js: shared with the main screen)
     function widgetOf(id){ return state.widgets.filter(function(x){ return String(x.id) === String(id); })[0]; }
     const G = state.globals = Object.assign({show_average: true, avg_on_active_days: true, show_cumulative: true, sync_zoom: true, binning: true}, boot.globals || {});
     const rzBtn = root.querySelector('.dd-rzoom');
     let EXP = null;  // {ids: [...], busy: bool} when temporarily zoomed out past state.span into Total
     function inEXP(id){ return !!(EXP && EXP.ids && EXP.ids.indexOf(String(id)) >= 0); }
-    function findDateIdx(z, first, last){
-      let a = -1, b = -1, n = z.count ? z.count() : 0;
-      for (let i = 0; i < n; i++){
-        const l = z.label(i);
-        if (l === first && a < 0) a = i;
-        if (l === last) b = i;
-      }
-      if (a < 0 || b < a){ a = Math.max(0, n - 30); b = n - 1; }
-      return [a, b, n];
-    }
     function expandBeyondSpan(srcId){
       if (state.span === -1 || (EXP && EXP.busy)) return;
       const srcCard = state.cards[srcId], srcZ = srcCard && srcCard.inst && srcCard.inst.zoom;
@@ -950,16 +959,9 @@
             if (z.swap){ z.swap(data, null, true); }
             else { DD._noAnim = true; try { c.inst.update(data); } finally { DD._noAnim = false; } }
           } finally { DD._scopeUpdate = false; }
-          const ab = findDateIdx(z, first, last), a = ab[0], b = ab[1], n = ab[2];
-          if (n <= 1) return;
-          const spanLen = Math.max(2, b - a + 1);
-          const newA = Math.max(0, a - Math.max(3, Math.round(spanLen * 0.28)));
-          const newB = Math.min(n - 1, b);
-          if (newA === 0 && newB >= n - 1){
-            quiet(w.id, function(){ z.set(null); });
-          } else {
-            quiet(w.id, function(){ z.set(newA, newB + 1); });
-          }
+          if ((z.count ? z.count() : 0) <= 1) return;
+          const win = ZF.expandWindow(z, first, last);
+          quiet(w.id, function(){ if (win) z.set(win[0], win[1]); else z.set(null); });
           if (String(w.id) === String(srcId)) srcRange = z.get();
         });
         updateRZoom();
@@ -1107,21 +1109,10 @@
     let AZ = null, azSeq = 0;
     function inAZ(id){ return !!AZ && AZ.ids.some(function(x){ return String(x) === String(id); }); }
     DD.leaveAdaptiveSilently = function(){ AZ = null; azSeq++; };  // another deck / period: the new data replaces it
-    function labelsOf(type, p){
-      if (!p) return [];
-      if (type === 'activity') return (p.rows || []).map(function(r){ return String(r.date); });
-      if (type === 'added') return (p.rows || []).map(function(r){ return String(r.pretty_date); });
-      if (Array.isArray(p.rows)) return p.rows.map(function(r){ return String(r.date); });  // (the charts of answers by day)
-      const d = p.data || {}; for (const k in d){ if (Array.isArray(d[k]) && d[k].length) return d[k].map(function(x){ return String(x[0]); }); }
-      return [];
-    }
     function adaptiveCan(srcId, range){
       if (AZ || !range) return false;
       const w = widgetOf(srcId); if (!w || !AZT[w.type]) return false;
-      const z = state.cards[srcId] && state.cards[srcId].inst.zoom; if (!z || !z.swap) return false;
-      if (range[1] - range[0] > 3) return false;  // resolve_adaptive_zoom_window: 2 days or less between the first and last day
-      const first = z.label(range[0]), last = z.label(range[1] - 1);
-      return !!(first && last && !/\d:\d\d$/.test(first));  // not already 10-minute rows (Today / Yesterday)
+      return ZF.canAdapt(state.cards[srcId] && state.cards[srcId].inst.zoom, range);
     }
     function holdAdaptive(srcId, prevSrc){
       if (!DD.holdPicture) return null;
@@ -1130,11 +1121,8 @@
         const c = state.cards[x.id], z = c && c.inst.zoom; if (!AZT[x.type] || !z || !z.snap || !inView(x.id)) return;
         const src = String(x.id) === String(srcId);
         if (!src && (!G.sync_zoom || (x.type === 'added' && x.options && x.options.sync_zoom === false))) return;
-        const win = src ? (prevSrc || [0, z.count()]) : (z.get() || [0, z.count()]);
-        const P = z.snap(); if (!P || !P.img.width) return;
-        out[x.id] = {P: P, win: win.slice(), end: DD.holdPicture(z.canvas, P)};
+        const h = ZF.hold(z, src ? prevSrc : z.get()); if (h) out[x.id] = h;
       });
-      setTimeout(function(){ releaseHolds(out); }, 1500);
       return out;
     }
     function releaseHolds(pre){ if (pre) Object.keys(pre).forEach(function(k){ try { pre[k].end(); } catch (e) {} }); }
@@ -1148,7 +1136,7 @@
       DD.call('adaptive', {deck: state.deck, span: state.span, first: first, last: last, source: w.type, query: state.searchQuery || '', types: types}).then(function(r){
         if (my !== azSeq || AZ || !r || !r.bounds){ releaseHolds(pre); return; }
         const cur = z.get(); if (!cur || cur[0] !== range[0] || cur[1] !== range[1]){ releaseHolds(pre); return; }  // the zoom moved on since
-        const alignRight = (range[0] + range[1]) / (2 * Math.max(1, n)) >= 0.5;  // compute_transition_align_right
+        const alignRight = ZF.alignRight(range, n);
         const ids = state.widgets.filter(function(x){
           const c = state.cards[x.id]; if (!AZT[x.type] || !c || !c.inst.zoom || !c.inst.zoom.swap || !r[x.type]) return false;
           if (String(x.id) === String(srcId)) return true;
@@ -1167,14 +1155,7 @@
     }
     function swapPictured(id, data, range, alignRight, wa, wb, held){
       const c = state.cards[id], z = c && c.inst.zoom; if (!z) return;
-      if (!inView(id) || !z.picture || !DD.pictureZoom){ if (held) held.end(); quiet(id, function(){ z.swap(data, range, alignRight); }); return; }
-      let before;
-      if (held){ before = held.P; if (held.win){ wa = held.win; wb = z.get() || [0, z.count()]; } }  // from the days held, into the days zoomed to
-      else before = z.picture();
-      DD._noAnim = true; try { z.swap(data, range, alignRight); } finally { DD._noAnim = false; }
-      const after = z.picture();
-      if (held) held.end();
-      DD.pictureZoom(z.canvas, before, after, wa, wb, 300);
+      ZF.swapPictured(z, data, range, alignRight, wa, wb, held, inView(id));
     }
     function leaveAdaptive(toWider){
       if (!AZ) return;
@@ -1182,13 +1163,11 @@
       // into them
       const held = {};
       AZ.ids.forEach(function(id){
-        const c = state.cards[id], z = c && c.inst.zoom; if (!z || !z.picture || !DD.holdPicture || !inView(id)) return;
-        const D = c.inst.dots, P = (D && D.visible()) ? D.picture() : z.picture();
-        if (P && P.img && P.img.width) held[id] = {P: P, win: null};
+        const c = state.cards[id], z = c && c.inst.zoom; if (!z || !inView(id)) return;
+        const h = ZF.holdShown(z, c.inst.dots); if (h) held[id] = h;
       });
       dotsToBars(true);
-      Object.keys(held).forEach(function(id){ held[id].end = DD.holdPicture(state.cards[id].inst.zoom.canvas, held[id].P); });
-      setTimeout(function(){ releaseHolds(held); }, 1500);
+      Object.keys(held).forEach(function(id){ ZF.holdNow(state.cards[id].inst.zoom, held[id]); });
       const az = AZ; AZ = null; azSeq++;
       const ws = az.ids.map(widgetOf).filter(Boolean);
       DD.call('data', {widgets: ws, deck: state.deck, span: state.span, query: state.searchQuery || ''}).then(function(d){
@@ -1196,25 +1175,9 @@
         let win = null;
         ws.forEach(function(w){
           const c = state.cards[w.id]; if (!c || !d[w.id]) return;
-          let range = null;
-          if (toWider){
-            // widen_zoom_window: one wheel step (15 %) wider, and wider than the 2-day threshold
-            const L = labelsOf(w.type, d[w.id]), a = L.indexOf(az.first), b = L.lastIndexOf(az.last) + 1, n = L.length;
-            if (a >= 0 && b > a){
-              let nl = Math.max(b - a + 1, Math.floor((b - a) * 1.15), 4); nl = Math.min(n, nl);
-              let s0 = Math.round((a + b) / 2 - nl / 2); s0 = Math.max(0, Math.min(s0, n - nl));
-              range = nl >= n ? null : [s0, s0 + nl];
-              if (range && String(w.id) === String(az.src)) win = [L[range[0]], L[range[1] - 1]];
-            }
-          }
-          // the 10-minute window shown, in days of the restored rows: the picture zooms out to the wider window of days
-          const L = labelsOf(w.type, d[w.id]), da = L.indexOf(az.first), db = L.lastIndexOf(az.last) + 1, z = c.inst.zoom;
-          let wa = null, wb = null;
-          if (da >= 0 && db > da){
-            const cur = z.get(), cnt = Math.max(1, z.count()), s0 = cur ? cur[0] : 0, e0 = cur ? cur[1] : cnt, D = db - da;
-            wa = [da + s0 / cnt * D, da + e0 / cnt * D]; wb = range ? range.slice() : [0, L.length];
-          }
-          swapPictured(w.id, d[w.id], range, az.alignRight, wa, wb, held[w.id]);
+          const L = ZF.labelsOf(w.type, d[w.id]), W = ZF.leaveWindows(L, az.first, az.last, c.inst.zoom, toWider);
+          if (W.range && String(w.id) === String(az.src)) win = [L[W.range[0]], L[W.range[1] - 1]];
+          swapPictured(w.id, d[w.id], W.range, az.alignRight, W.wa, W.wb, held[w.id]);
         });
         releaseHolds(held);
         updateRZoom();
@@ -1224,97 +1187,50 @@
     }
     // ---- one dot per review: in the 10-minute view zoomed to 3 hours or less, Activity
     // shows each review as a dot; the bars sink while the dots pop in; back to the bars by a picture zoom ----
-    const DOTS_MAX = 3 * 3600 * 1000, BIN10 = 600000;
-    let dotsSeq = 0, dotsTm = null;
     function actId(){ const w = state.widgets.filter(function(x){ return x.type === 'activity' && state.cards[x.id] && state.cards[x.id].inst.dots; })[0]; return w ? w.id : null; }
-    function barsWindow(z){
-      const cur = z.get(), n = z.count(), s0 = cur ? cur[0] : 0, e0 = cur ? cur[1] : n;
-      return (AZ && AZ.times && AZ.times[s0] != null && AZ.times[e0 - 1] != null) ? [AZ.times[s0], AZ.times[e0 - 1] + BIN10] : null;
-    }
-    function dotsToBars(instant){
-      const id = actId(); if (id == null) return;
-      const c = state.cards[id], D = c.inst.dots, z = c.inst.zoom;
-      dotsSeq++; clearTimeout(dotsTm);
-      if (!D.visible()) return;
-      const before = (!instant && inView(id)) ? D.picture() : null, wd = D.window(), wbars = barsWindow(z);
-      D.hide(); z.canvas.style.visibility = '';
-      if (before) DD.pictureZoom(z.canvas, before, z.picture(), wd, wbars, 300);
-    }
-    function refreshDots(immediate){
-      const id = actId(); if (id == null) return;
-      if (!state.cards[id].inst.dots.visible() && !inAZ(id)) return;
-      clearTimeout(dotsTm);
-      if (immediate) applyDots(); else dotsTm = setTimeout(applyDots, 120);
-    }
+    const dots = ZF.dots({
+      get: function(){ const id = actId(); if (id == null) return null; const c = state.cards[id]; return {D: c.inst.dots, z: c.inst.zoom, seen: function(){ return inView(id); }}; },
+      active: function(){ const id = actId(); return id != null && inAZ(id); },
+      times: function(){ return AZ ? AZ.times : null; },
+      fetch: function(t0, t1){ return DD.call('review_events', {deck: state.deck, t0: t0, t1: t1, query: state.searchQuery || ''}); },
+      leave: function(){ leaveAdaptive(true); },
+      onSet: function(){ const id = actId(); onZoom(id, state.cards[id].inst.zoom.get()); },
+      onError: function(e){ DD.log('review_events: ' + (e && e.message || e)); },
+    });
+    function dotsToBars(instant){ dots.toBars(instant); }
+    function refreshDots(immediate){ dots.refresh(immediate); }
     DD.refreshDots = refreshDots;
-    function applyDots(){
-      const id = actId(); if (id == null) return;
-      const c = state.cards[id], D = c.inst.dots, z = c.inst.zoom;
-      const rng = z.get();
-      if (!AZ || !inAZ(id) || !AZ.times || !rng){ dotsToBars(); return; }
-      const t0 = AZ.times[Math.max(0, rng[0])], t1 = AZ.times[Math.min(AZ.times.length, rng[1]) - 1] + BIN10;
-      if (!(t1 > t0) || t1 - t0 > DOTS_MAX){ dotsToBars(); return; }
-      const my = ++dotsSeq;
-      DD.call('review_events', {deck: state.deck, t0: t0, t1: t1, query: state.searchQuery || ''}).then(function(r){
-        if (my !== dotsSeq || !AZ) return;
-        if (!r || !r.events){ dotsToBars(); return; }
-        const m = z.mode();
-        D.setMode(m.mode === 'time' ? 'time' : 'reviews', m.breakdown);
-        if (D.visible()){
-          // zooming out: the view glides to the wider window; in or moving: the dots page slides (camera_zoom)
-          const before = inView(id) ? D.picture() : null, wa = D.window();
-          if (D.setEvents(r.events, t0, t1) === 'set' && before) DD.pictureZoom(D.canvas, before, D.picture(), wa, [t0, t1], 300);
-          return;
-        }
-        // bars -> dots over the same hours: the bars sink and fade while the dots pop in (_SinkOut + their intro)
-        const anim = inView(id), before = anim ? z.picture() : null;
-        D.setEvents(r.events, t0, t1);
-        // the axes go from the bars' to the dots' while the bars sink (dots.js sinkOut), the dots' own held back meanwhile
-        const na = (before && DD.sinkOut && D.axisInfo) ? D.axisInfo() : null;
-        if (na && D.holdAxes) D.holdAxes(300);
-        z.canvas.style.visibility = 'hidden';
-        D.show(anim);
-        if (before && DD.sinkOut) DD.sinkOut(z.canvas, before, 300, na);
-      }).catch(function(e){ DD.log('review_events: ' + (e && e.message || e)); });
-    }
-    // Ctrl+wheel out of the whole dots window: the 10-minute zoom widens by a step right away
-    function dotsZoomOut(frac){
-      const id = actId(); if (id == null || !AZ || !AZ.times) return;
-      const c = state.cards[id], D = c.inst.dots, z = c.inst.zoom, times = AZ.times, n = times.length;
-      const cur = z.get() || [0, n], cs = Math.max(0, cur[0]), ce = Math.min(n, cur[1]);
-      const w = D.window(), span = (w[1] - w[0]) * 1.25, n0 = w[0] + frac * (w[1] - w[0]) - frac * span, n1 = n0 + span;
-      const br = (x) => { let i = 0; while (i < n && times[i] <= x) i++; return i; }, bl = (x) => { let i = 0; while (i < n && times[i] < x) i++; return i; };
-      let s0 = Math.max(0, br(n0) - 1), e0 = Math.min(n, bl(n1 - BIN10) + 1);
-      s0 = Math.min(s0, cs); e0 = Math.max(e0, ce);
-      if (s0 === cs && e0 === ce){ s0 = Math.max(0, cs - 1); e0 = Math.min(n, ce + 1); }
-      if (s0 >= cs && e0 <= ce){ leaveAdaptive(true); return; }  // the whole 10-minute view: back to the days
-      DD._noAnim = true; try { z.set(s0, e0); } finally { DD._noAnim = false; }
-      onZoom(id, z.get());
-      refreshDots(true);
-    }
-    DD._dotsZoomOut = dotsZoomOut;
+    DD._dotsZoomOut = dots.zoomOut;
     // zoom gone: only what followed the zoom is read again; the zoomed charts keep playing their own zoom-out animation
     const FOLLOW = {distribution: 1, hourly: 1, heatmap: 1, answer_time: 1, interval_ratings: 1, rating_fatigue: 1, sibling_ratings: 1, fsrs_calibration: 1, forgetting_curve: 1, fsrs_fatigue: 1, week_hours: 1, todays_retention: 1};
+    // (a reset's answers come back at once, read from the cache: they wait for the zoom out to end, else a dozen
+    // charts started their own changes over its frames and it stuttered; a zoom's take longer, they came after it)
+    const FOLLOW_WAIT = 800;
     function refreshFollowers(my){
-      if (scInst) DD.call('stats', {deck: state.deck, span: state.span, query: state.searchQuery || ''}).then(function(s){ if (my === undefined || my === zseq) scInst.update(s); }).catch(function(){});
+      if (scInst) DD.call('stats', {deck: state.deck, span: state.span, query: state.searchQuery || ''}).then(function(s){
+        DD.onIdle(function(){ if (my === undefined || my === zseq) scInst.update(s); }, FOLLOW_WAIT);
+      }).catch(function(){});
       const ws = state.widgets.filter(function(w){ return FOLLOW[w.type]; });
       if (!ws.length) return;
       DD.call('data', {widgets: ws, deck: state.deck, span: state.span, query: state.searchQuery || ''}).then(function(d){
-        if (my !== undefined && my !== zseq) return;  // an answer for a zoom since replaced
-        const off = [];
-        ws.forEach(function(w){
-          const c = state.cards[w.id]; if (!c || !d[w.id]) return;
-          if (inView(w.id)) c.inst.update(d[w.id]);
-          else off.push([w.id, d[w.id]]);
-        });
-        updateRZoom();
-        if (off.length){
-          DD.onIdle(function(){
-            if (my !== undefined && my !== zseq) return;
-            off.forEach(function(it){ const c = state.cards[it[0]]; if (c) quiet(it[0], function(){ c.inst.update(it[1]); }); });
-          }, 420);
-        }
+        DD.onIdle(function(){ followersGot(my, ws, d); }, FOLLOW_WAIT);
       }).catch(function(){});
+    }
+    function followersGot(my, ws, d){
+      if (my !== undefined && my !== zseq) return;  // an answer for a zoom since replaced
+      const off = [];
+      ws.forEach(function(w){
+        const c = state.cards[w.id]; if (!c || !d[w.id]) return;
+        if (inView(w.id)) c.inst.update(d[w.id]);
+        else off.push([w.id, d[w.id]]);
+      });
+      updateRZoom();
+      if (off.length){
+        DD.onIdle(function(){
+          if (my !== undefined && my !== zseq) return;
+          off.forEach(function(it){ const c = state.cards[it[0]]; if (c) quiet(it[0], function(){ c.inst.update(it[1]); }); });
+        }, 420);
+      }
     }
 
     // an export's hidden page (boot.export): the charts drawn at once, no intro
@@ -1356,10 +1272,43 @@
       const visLeft = left.filter(function(w){ const c = state.cards[w.id]; if (!c || !c.card) return false; const r = c.card.getBoundingClientRect(); return r.bottom > 0 && r.top < vh; });
       const offLeft = left.filter(function(w){ return visLeft.indexOf(w) < 0; });
       const ordered = visLeft.concat(offLeft);
-      function next(ws){
-        if (!ws.length || DD._round !== round) return;
-        // each batch once no scroll is going on, then the cards in view first (those the scroll brought in)
-        DD.whenStill(function(){ if (DD._round === round) ask(prioritizeVisible(ws)); });
+      // All of them asked at the window's opening, one batch after the other (the data is read off Anki's UI thread,
+      // the page's animations go on): they used to wait for the page to be idle (~2 s) and for a scroll to stop, and
+      // one scrolling down at once found them loading. A chart whose data comes far from the view is mounted as it
+      // comes near (a view ahead) or when the page is idle, not in the middle of the opening's animations.
+      const wrap = root.querySelector('.dd-gridwrap');
+      const scroller = wrap && getComputedStyle(wrap).overflowY !== 'visible' ? wrap : window;  // (touch: the page scrolls)
+      const held = new Map();  // card: [widget, data] waiting to be mounted
+      let watching = false, draining = false;
+      const onScroll = function(){ held.forEach(function(x, card){ if (near(card)) release(card); }); if (!held.size) unwatch(); };
+      function unwatch(){ if (watching){ watching = false; scroller.removeEventListener('scroll', onScroll); } }
+      function near(card){
+        const r = card.getBoundingClientRect(), h = window.innerHeight;
+        return r.bottom > -h && r.top < 2 * h;
+      }
+      function mount(w, d){ const c = state.cards[w.id]; if (c && c.late) c.inst.update(d); }
+      function release(card){
+        const x = held.get(card);
+        if (!x) return;
+        held.delete(card);
+        if (DD._round === round) mount(x[0], x[1]);
+      }
+      function hold(w, d, card){
+        held.set(card, [w, d]);
+        if (!watching){ watching = true; scroller.addEventListener('scroll', onScroll, {passive: true}); }
+        drain();
+      }
+      // the ones still far: one at a time when nothing moves (no animation, no scroll)
+      function drain(){
+        if (draining) return;
+        draining = true;
+        DD.onIdle(function(){ DD.whenStill(function(){
+          draining = false;
+          if (DD._round !== round){ held.clear(); unwatch(); return; }
+          const first = held.keys().next().value;
+          if (first) release(first);
+          if (held.size) drain(); else unwatch();
+        }); }, 1500);
       }
       function ask(batch){
         DD.call('data', {widgets: batch, deck: deck, span: span, budget_ms: 80, query: state.searchQuery || ''}).then(function(d){
@@ -1370,21 +1319,18 @@
             const c = state.cards[w.id];
             if (!d || d[w.id] === undefined){ rest.push(w); return; }
             if (!c || !c.late) return;
-            c.inst.update(d[w.id]);
-            if (d[w.id] && d[w.id]._empty){ c.card.style.display = 'none'; hid = true; }
+            const v = d[w.id];
+            // (an empty one goes at once: the cards under it take their places before one scrolls to them)
+            if (v && v._empty){ c.inst.update(v); c.card.style.display = 'none'; hid = true; return; }
+            if (near(c.card)) c.inst.update(v); else hold(w, v, c.card);
           });
           if (hid) layoutGrid();
-          if (DD.dev) DD.trace('late data: ' + (batch.length - rest.length) + ' charts at +' + Math.round(performance.now() - t0) + 'ms, ' + rest.length + ' left');
-          if (rest.length < batch.length){
-            const curVh = window.innerHeight;
-            const anyVis = rest.some(function(w){ const c = state.cards[w.id]; if (!c || !c.card) return false; const r = c.card.getBoundingClientRect(); return r.bottom > 0 && r.top < curVh; });
-            if (anyVis) next(rest);
-            else whenIdleOrScroll(function(){ next(rest); }, 1800);
-          }
+          if (DD.dev) DD.trace('late data: ' + (batch.length - rest.length) + ' charts at +' + Math.round(performance.now() - t0) + 'ms, ' + rest.length + ' left, ' + held.size + ' held until near');
+          if (rest.length && rest.length < batch.length) setTimeout(function(){ if (DD._round === round) ask(prioritizeVisible(rest)); }, 0);
         }).catch(function(e){ DD.log('late data: ' + (e && e.message || e)); });
       }
-      if (visLeft.length) next(ordered);
-      else DD.onGo(function(){ setTimeout(function(){ whenIdleOrScroll(function(){ next(ordered); }, 1800); }, 120); });
+      if (visLeft.length) ask(ordered);
+      else DD.onGo(function(){ setTimeout(function(){ if (DD._round === round) ask(prioritizeVisible(ordered)); }, 120); });
     })();
     // A chart with no data is left out (unless "Show Empty Charts"): shown or hidden at once,
     // the other cards slide to their new places (260 ms OutCubic, the position only)
@@ -1758,7 +1704,9 @@
     // every card gets its new data in the same frame: no cascade
     // The Python side runs on the UI thread: one call for every chart froze the window for 200+ ms (and the animations with it).
     // Charts are asked one by one (visible ones first), the UI breathes between two calls, an older round is dropped.
-    function refresh(){
+    // quiet: the same data read again for its colors (a theme picked or previewed): taken at once, no wave nor
+    // morph (every chart played its update ~0.4 s after the theme's own repaint, as if it was late)
+    function refresh(quiet){
       EXP = null;
       if (DD.leaveAdaptiveSilently){ dotsToBars(true); DD.leaveAdaptiveSilently(); }
       DD._lastScope = state.deck + '|' + state.span + '|' + (state.searchQuery || '');
@@ -1794,9 +1742,11 @@
       if (scInst) Promise.all([DD.call('stats', {deck: state.deck, span: state.span, query: state.searchQuery || ''}), chartsReady]).then(function(a){
         if (round === DD._round){ DD._calm = 'dd'; try { scInst.update(a[0]); } finally { DD._calm = false; } }
       });
-      // Charts whose data does not depend on the Deep Dive time span (card states / whole-history charts).
+      // Charts whose data does not depend on the Deep Dive time span (card states / whole-history charts). Not the
+      // heatmap: its days are read for the period shown (providers.heatmap), kept on a span change it showed the
+      // previous one's (Past Month, then Past Year: a single month lit)
       const NO_SPAN = {
-        heatmap: 1, card_counts: 1, future_due: 1, review_intervals: 1, stability: 1, difficulty: 1, retrievability: 1,
+        card_counts: 1, future_due: 1, review_intervals: 1, stability: 1, difficulty: 1, retrievability: 1,
         interval_load: 1, due_today: 1, lapse_distribution: 1, review_distribution: 1, learning_steps: 1, time_distribution: 1,
         future_retention: 1, stability_increase: 1, leech_detector: 1, first_forgetting: 1, first_forgetting_short: 1,
         custom_pie: 1, text_label: 1,
@@ -1878,6 +1828,11 @@
                 DD._calm = 'dd'; DD._scopeUpdate = true;
                 try { DD.applyUpdate(x[0].card, function(){ x[0].inst.update(x[1], spanMode); }); x[0]._deckQ = curDeckQ; } finally { DD._calm = false; DD._scopeUpdate = false; }
               };
+              if (quiet){
+                const p = DD._noAnim; DD._noAnim = true;
+                try { x[0].inst.update(x[1], spanMode); x[0]._deckQ = curDeckQ; } catch (e) { DD.log('quiet refresh: ' + (e && e.message || e)); } finally { DD._noAnim = p; }
+                return;
+              }
               const wait = ri == null ? 0 : ri * step - since;
               if (wait > 8) setTimeout(run, Math.round(wait)); else run();
             });
@@ -2096,7 +2051,7 @@
     grid.classList.toggle('dd-nostats', boot.show_stats === false);
     grid.classList.toggle('dd-bottomstats', boot.show_bottom_stats === true);
     const CUM = ['activity', 'future_due', 'review_intervals', 'stability', 'difficulty', 'retrievability', 'forgotten', 'resets', 'introduced', 'introduced_load', 'due_today', 'interval_load', 'lapse_distribution', 'review_distribution', 'learning_steps', 'time_distribution', 'interval_history', 'stability_history'];
-    // the charts with bins (context_menu binning_charts: the base ones and every added chart of days or values)
+    // the charts with bins: the base ones and every added chart of days or values
     const BIN = ['future_due', 'review_intervals', 'stability', 'difficulty', 'retrievability', 'interval_load', 'lapse_distribution', 'review_distribution', 'learning_steps', 'time_distribution', 'interval_history', 'stability_history', 'difficulty_history', 'ratings', 'review_speed', 'forgotten', 'introduced', 'introduced_load', 'answer_time', 'interval_ratings', 'rating_fatigue', 'sibling_ratings', 'card_states', 'load_trend', 'stability_trend', 'memorised', 'fsrs_calibration', 'forgetting_curve', 'fsrs_fatigue', 'leech_detector', 'stability_increase', 'custom_bar', 'future_retention'];
     const OPT_KEY = {show_breakdown: 'breakdown_enabled'};
     function cardOpt(w, k, dflt){ const v = w.options && w.options[k]; return v === undefined ? dflt : !!v; }
@@ -2476,7 +2431,6 @@
     });
     // a text's sentence written again in the page's text editor (text_editor.js), saved by window.py _edit_text
     function editText(w){
-      if (!DD.editText){ DD.call('edit_text', {wid: w.id}).catch(function(){}); return; }
       DD.call('text_get', {wid: w.id}).then(function(d){
         if (!d) return null;
         return DD.editText({template: d.template, title: 'Edit Text', ok: 'Save'}).then(function(t){
@@ -2591,7 +2545,7 @@
       grid.querySelectorAll('.dd-card').forEach(function(c){ if (c._row === card._row) c.classList.toggle('dd-collapsed', fold); });
       layoutGrid();
     });
-    DD.on('theme', function(){ Object.keys(state.cards).forEach(function(id){ state.cards[id].inst.setTheme(); }); if (scInst) scInst.setTheme(DD.theme); if (tblInst && tblInst.setTheme) tblInst.setTheme(DD.theme); });
+    DD.on('theme', function(){ Object.keys(state.cards).forEach(function(id){ state.cards[id].inst.setTheme(); }); if (scInst){ scInst.setTheme(DD.theme); DD.call('stats', {deck: state.deck, span: state.span, query: state.searchQuery || ''}).then(function(sp){ if (sp) scInst.update(sp); }).catch(function(){}); }  /* their colors and own styles come from Python with the theme */ if (tblInst && tblInst.setTheme) tblInst.setTheme(DD.theme); });
     // the gradient window (heatmap_gradient): its changes shown at once
     DD.on('heatmap_palette', function(p){
       if (!p) return;
@@ -2643,8 +2597,8 @@
     DD.on('table_reload', function(){
       if (tblInst) tblInst.reload();
     });
-    DD.on('refresh', function(){
-      refresh(); if (tblInst) tblInst.reload();
+    DD.on('refresh', function(p){
+      refresh(!!(p && p.quiet)); if (tblInst) tblInst.reload();
       DD.call('drawer', {}).then(function(d){ if (d) setTableOn(d.show !== false); }).catch(function(){});
       // the charts' options and the grid's layout as Settings has them now (Chart Style, Collapsible, Fill Height...)
       DD.call('widget_opts', {}).then(function(r){

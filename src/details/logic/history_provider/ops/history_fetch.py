@@ -1,17 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+from datetime import datetime, timedelta
+from aqt import mw
 from .....utils import excluded_days_clause, excluded_days_need_cards
-from ..shared import (
-    Config,
-    REVLOG_RESCHED,
-    Period,
-    datetime,
-    get_daystart_epoch_sql,
-    get_rollover_offset_ms,
-    get_time_range_ms,
-    mw,
-    timedelta,
-)
+from ... import REVLOG_RESCHED, Period, get_daystart_epoch_sql, get_rollover_offset_ms
+from .window import fetch_window
 from ... import rollover_hour
 from ...data.core.empty_deck import did_limit_has_no_cards
 
@@ -41,48 +34,29 @@ def fetch_history(
     elif did_limit is None:
         did_limit = provider_cls._get_did_limit(addon_config, deck_id)
 
-    if override_start_ms is not None and override_end_ms is not None:
-        start_ms = override_start_ms
-        end_ms = override_end_ms
-    else:
-        week_start = addon_config.config.get(Config.WEEK_START, 0)
-        start_ms, end_ms, _, _ = get_time_range_ms(
-            range_type,
-            week_start=week_start,
-            custom_days=custom_days,
-            custom_type=custom_type,
-            start_date_str=start_date_str,
-            end_date_str=end_date_str,
-        )
+    def first_ms():
+        first = 0
+        if align_with_added:
+            if did_limit and not is_deleted:
+                first = mw.col.db.scalar(f"SELECT MIN(id) FROM cards as cards WHERE 1=1 {did_limit}")
+            if not first:
+                first = mw.col.db.scalar("SELECT MIN(id) FROM cards WHERE id > 0")
+        if not first:
+            first = mw.col.db.scalar(
+                f"""
+                SELECT MIN(revlog.id)
+                FROM revlog
+                LEFT JOIN cards ON revlog.cid = cards.id
+                WHERE revlog.id > 0 {did_limit} {excluded_days_clause()}
+                """
+            )
+        return first
 
-        if range_type == Period.TOTAL:
-            first_rev_ms = 0
-            if align_with_added:
-                if did_limit and not is_deleted:
-                    first_rev_ms = mw.col.db.scalar(f"SELECT MIN(id) FROM cards as cards WHERE 1=1 {did_limit}")
-                if not first_rev_ms:
-                    first_rev_ms = mw.col.db.scalar("SELECT MIN(id) FROM cards WHERE id > 0")
-
-            if not first_rev_ms:
-                first_rev_ms = mw.col.db.scalar(
-                    f"""
-                    SELECT MIN(revlog.id)
-                    FROM revlog
-                    LEFT JOIN cards ON revlog.cid = cards.id
-                    WHERE revlog.id > 0 {did_limit} {excluded_days_clause()}
-                    """
-                )
-
-            start_ms = first_rev_ms or int((datetime.now() - timedelta(days=365)).timestamp() * 1000)
-
+    start_ms, end_ms, is_hourly, ms_per_bin = fetch_window(
+        addon_config, range_type, override_start_ms, override_end_ms, override_bin_ms,
+        custom_days, custom_type, start_date_str, end_date_str, first_ms,
+    )
     offset_ms = get_rollover_offset_ms()
-
-    if override_bin_ms is not None:
-        ms_per_bin = override_bin_ms
-        is_hourly = ms_per_bin < 86400000
-    else:
-        is_hourly = range_type in [Period.TODAY, Period.YESTERDAY] or (end_ms - start_ms <= 2 * 86400 * 1000)
-        ms_per_bin = 600000 if is_hourly else 86400000
 
     join_clause = "LEFT JOIN cards ON revlog.cid = cards.id" if (did_limit or excluded_days_need_cards()) else ""
 

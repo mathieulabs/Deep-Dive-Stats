@@ -3,8 +3,6 @@
 """Collection review-year span helpers for the heatmap "Years" view."""
 from datetime import datetime
 
-FIRST_YEAR = 2006  # Anki's first year: nothing older is looked at
-
 _REVIEW_YEARS_CACHE = {}  # id(collection): (time, first year, last year)
 _REVIEW_YEARS_TTL = 300.0
 

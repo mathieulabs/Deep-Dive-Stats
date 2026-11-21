@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-"""Build dist/Deep_Dive_Stats.ankiaddon and audit it first.
+"""Build dist/releases/Deep_Dive_Stats_<version>.ankiaddon (the version of src/const/base.py) and audit it first.
 
     python dev_tools/build_release.py            audit, then build
     python dev_tools/build_release.py --check    audit only
@@ -36,7 +36,16 @@ PACKAGE_ID = "deep_dive_stats"
 # Anki 23.10 is the first version with FSRS data on cards; 23.10.1 the first with Qt 6.6 (Chromium 112)
 # on every platform, which the pages need (CSS color-mix: Chromium 111).
 MIN_POINT_VERSION = 231001
-OUTPUT_NAME = "Deep_Dive_Stats.ankiaddon"
+RELEASES = os.path.join(DIST, "releases")
+
+
+def version():
+    with open(os.path.join(ROOT, "src", "const", "base.py"), encoding="utf-8") as handle:
+        return re.search(r"^CURRENT_VERSION = ['\"]([^'\"]+)", handle.read(), re.M).group(1)
+
+
+def package_path():
+    return os.path.join(RELEASES, "Deep_Dive_Stats_%s.ankiaddon" % version())
 
 TERMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".personal_terms")
 
@@ -232,8 +241,8 @@ def audit(files):
 
 
 def build(files):
-    os.makedirs(DIST, exist_ok=True)
-    out = os.path.join(DIST, OUTPUT_NAME)
+    os.makedirs(RELEASES, exist_ok=True)
+    out = package_path()
     if os.path.exists(out):
         os.remove(out)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:

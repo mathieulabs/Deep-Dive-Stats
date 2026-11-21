@@ -57,7 +57,7 @@ def _menu_vars(cfg, is_dark, context="details"):
 
 
 def _soft_button_vars(cfg, is_dark, context="details"):
-    """The window's buttons as design_overrides.get_design_overrides draws them (soft pill UI): idle = muted 7 %,
+    """The window's buttons (soft pill UI): idle = muted 7 %,
     border = muted 36 %, hover = accent 14 % with an accent 70 % border."""
     try:
         from ..details.ui.theme.design_overrides import _colors
@@ -102,7 +102,7 @@ def _custom_surface_hex(context="details", cfg=None):
 
 
 def box_look(intensity, border_pct, hover_border=True, context="pinned", cfg=None):
-    """The box behind a chart, as widget_factory/styler.apply_style draws it with the glass on (pinned charts,
+    """The box behind a chart with the glass on (pinned charts,
     texts, heatmap, and the Deep Dive cards through Deep_Dive_Grid_Style): {"bg", "edge", "border", "hover"}."""
     from aqt.qt import QColor
 
@@ -112,7 +112,7 @@ def box_look(intensity, border_pct, hover_border=True, context="pinned", cfg=Non
 
     tv = _theme_vars(context)
     k = box_glass_k(intensity)
-    # apply_style: the border setting is raised for the chart boxes (readable on every theme)
+    # the border setting is raised for the chart boxes (readable on every theme)
     b = min(100, int(round((float(border_pct) * 1.5) + 12))) / 100.0
 
     def edge_of(base_at_half, slope):
@@ -362,7 +362,8 @@ def stat_style(cfg, t=None, is_dark=None, pinned=False):
 
 
 def backdrop_spec(conf=None):
-    """Window backdrop (details/ui/theme/backdrop.py render_backdrop) as numbers for CSS."""
+    """Window backdrop (Settings > Window Background, details/ui/theme/backdrop.py) as numbers for the page's CSS
+    (dd-core.js draws it)."""
     from ..details.ui.theme.backdrop import get_backdrop_settings
     from ..details.ui.theme.design_overrides import _colors, _mix
     from ..details.logic.theme.palette import get_theme_palette

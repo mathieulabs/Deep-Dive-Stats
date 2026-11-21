@@ -1010,7 +1010,6 @@
       }
 
       // cumulative curve + area
-      const lineK = (this.options.line_opacity_pct != null ? this.options.line_opacity_pct : LINE_PCT) / 100;
       if (showCum && n > 0){
         const cumK = this.morph ? 1 : intro;
         const pts = [];
@@ -1024,26 +1023,7 @@
             pts.push([n > 1 ? ml + plotW * i / (n - 1) : ml + plotW * 0.5, mt + plotH - (run / totalCards * plotH) * cumK]);
           }
         }
-        ctx.save();
-        ctx.beginPath(); ctx.rect(ml, mt - 2, plotW, plotH + 2); ctx.clip();
-        ctx.beginPath(); U.smoothPath(ctx, pts);
-        ctx.lineTo(pts[pts.length - 1][0], bottom); ctx.lineTo(pts[0][0], bottom); ctx.closePath();
-        // as Anki's charts draw it (.cumulative-overlay): a flat pale area in the text's colour (Anki: black 3 % light,
-        // white 8 % dark), its edge a faint dark line (black 8 % / 18 %); the Total / Average Lines setting scales both,
-        // its default giving Anki's values
-        const A = DD.areaStyle(C, dark, lineK * 100 / LINE_PCT);
-        ctx.fillStyle = U.rgba(A.fill, A.fillA); ctx.fill();
-        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-        ctx.beginPath(); U.smoothPath(ctx, pts);
-        ctx.strokeStyle = U.rgba(A.line, A.lineA); ctx.lineWidth = A.lw; ctx.stroke();
-        // the Total Line setting (none by default): a clear line over that edge, as before
-        const strong = (this.options.total_line_pct || 0) / 100;
-        if (strong > 0){
-          const bgc = C.bg || (dark ? '#000000' : '#ffffff');
-          ctx.strokeStyle = U.rgba(dark ? U.scaleV(bgc, 1 / 1.6) : bgc, Math.min(1, 150 / 255 * lineK * strong)); ctx.lineWidth = 3.4; ctx.stroke();
-          ctx.strokeStyle = U.rgba(C.text_primary || C.total_line || (dark ? '#ffffff' : '#000000'), Math.min(1, 215 / 255 * lineK * strong)); ctx.lineWidth = 1.3; ctx.stroke();
-        }
-        ctx.restore();
+        this._cumArea(ctx, pts, ml, mt, plotW, plotH);
       }
 
       // x axis (glides matching labels & cross-fades changed ones during morphs so numbers never snap)
@@ -1785,7 +1765,8 @@
         const chart = new Chart(plot, type, ctx.data, DD.theme.chart, ctx.options || {});
         // Pie (the header's pill): the donut in place of the bars, made from the bars of the moment
         let pieEl = null, pieInst = null, pieMeasure = null;
-        const pieShow = function(){
+        // intro: the view just switched (Bars | Pie), the one shown plays its intro again, as Card Counts' switch
+        const pieShow = function(intro){
           const on = !!(PIE_TYPES[type] && chart.options.pie_view);
           plot.style.display = on ? 'none' : '';
           if (!on){ if (pieEl) pieEl.style.display = 'none'; return; }
@@ -1795,7 +1776,7 @@
           // another measure (Cards / Total Time ...): its slices are other ranges, the ring comes in again (a morph
           // turned one range into another)
           const pl = chart.payload || {}, ms = (pl.measure || 'count') + '|' + (pl.pie_limit || 0) + '|' + (pl.pie_slices || 0);
-          const fresh = pieMeasure !== null && ms !== pieMeasure;
+          const fresh = intro || (pieMeasure !== null && ms !== pieMeasure);
           pieMeasure = ms;
           if (!pieInst && DD.pieMount) pieInst = DD.pieMount(pieEl, {data: p, animate: ctx.animate, options: ctx.options || {}});
           else if (pieInst) pieInst.update(p, fresh ? 'fresh' : undefined);
@@ -1805,9 +1786,13 @@
           toggle: function(){
             const on = !chart.options.pie_view;
             chart.options.pie_view = on;
-            pieShow();
+            pieShow(true);
             headFor(type, chart.payload, ctx.head, chart.m);  // (the pie's options, in its view only)
-            if (!on){ chart._resize(); state.last = true; DD.frame.kick(); }
+            if (!on){
+              chart._resize();
+              if (ctx.animate && !DD._noAnim){ chart.morph = null; chart.progress = 0; state.start = null; }
+              state.last = true; DD.frame.kick();
+            }
             DD.call('set_setting', {section: type, key: 'pie_view', value: on}).catch(function(){});
           }};
         headFor(type, ctx.data, ctx.head, chart.m);
@@ -1852,7 +1837,12 @@
           machine: tm,
           update: function(data, hint){ if (tm && tm.keep(data)) return; const zp = zm && zm.get(); chart.setPayload(data, hint); headFor(type, data, ctx.head, chart.m); if (tm) tm.sync(data); pieShow(); state.last = true; DD.frame.kick(); zoomKept(zp); },
           setOptions: function(o){ const zp = zm && zm.get(); chart.setOptions(o); pieShow(); state.last = true; DD.frame.kick(); zoomKept(zp); },
-          setTheme: function(){ chart.colors = DD.theme.chart; state.last = true; DD.frame.kick(); },
+          // the pie shown in place of the bars too (it kept the old theme's texts: white on a light theme): its colors,
+          // and its slices' colors taken again from the new theme, drawn at once (the theme change fades the pictures)
+          setTheme: function(){
+            chart.colors = DD.theme.chart; state.last = true; DD.frame.kick();
+            if (pieInst){ if (pieInst.setTheme) pieInst.setTheme(); const was = DD._noAnim; DD._noAnim = true; try { pieShow(); } finally { DD._noAnim = was; } }
+          },
           destroy: function(){ if (zm) zm.off(); if (pieInst) pieInst.destroy(); if (ctx.head) delete ctx.head._ddPie; if (tm) tm.destroy(); el.classList.remove('dd-tmb'); DD.frame.remove(frame); resizer.disconnect(); el.innerHTML = ''; if (ctx.head){ const p = ctx.head.querySelector('.dd-pills'); if (p) p.innerHTML = ''; } },
         };
         if (zm){ inst.zoom = zm; if (DD.zoomBar) DD.zoomBar(plot, zm); }

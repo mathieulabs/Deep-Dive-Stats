@@ -12,6 +12,7 @@ import json
 
 from ..details.logic.logger import log_error, log_warn
 from .trace import page_log, trace
+from .update_restart import ask_restart, is_stale_import
 
 
 class Bridge:
@@ -68,6 +69,8 @@ class Bridge:
                     payload, ok = fut.result(), True
                 except Exception as e:
                     log_error(f"web bridge {cmd!r}: {e!r}")
+                    if is_stale_import(e):
+                        ask_restart(e)
                     payload, ok = repr(e), False
                 ms = 1000 * (time.perf_counter() - t0)
                 if ms > 300:
@@ -95,6 +98,8 @@ class Bridge:
                 trace(f"bridge {request.get('cmd')!r} took {ms:.0f} ms")
         except Exception as e:  # the page gets the error, the log gets the trace
             log_error(f"web bridge {request.get('cmd')!r}: {e!r}")
+            if is_stale_import(e):
+                ask_restart(e)
             payload, ok = repr(e), False
         self._web.eval(f"DD.__resolve({request_id}, {'true' if ok else 'false'}, {json.dumps(payload)})")
         return None

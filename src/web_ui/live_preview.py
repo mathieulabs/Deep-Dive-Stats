@@ -1,49 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-"""Live preview of the settings dialogs in the web pages.
+"""Live preview of a widget's settings (web_ui/widget_settings.py) in the web pages.
 
-A settings dialog (config.WidgetSettingsDialog) applies each change at once to what it edits
-(apply_live_changes, a short timer after each change). The web pages have no Qt widget for it to restyle, so
-after each of these steps:
+The settings apply each change at once to the configs they edit; after each change (_schedule):
   - the pinned block (web_ui/pinned.py) takes the boxes' new looks;
   - the web Deep Dive window that opened the dialog takes the new theme and reads its charts again
     (its config object is the one the dialog edits).
-Nothing is saved here: Cancel puts the old values back (the dialog's reject) and the pages follow."""
+Nothing is saved here: Cancel puts the old values back and the pages follow."""
 
 from aqt import mw
 from aqt.qt import QTimer
 
 from ..details.logic.logger import log_warn
 
-_state = {"installed": False, "dlg": None, "timer": None}
-
-
-def install():
-    if _state["installed"]:
-        return
-    try:
-        from ..details.ui.config.dialogs.widget_settings import WidgetSettingsDialog
-    except Exception as e:
-        log_warn(f"live preview: {e!r}", tag="WEB")
-        return
-    orig_apply = WidgetSettingsDialog.apply_live_changes
-    orig_reject = WidgetSettingsDialog.reject
-
-    def apply_live_changes(self):
-        try:
-            return orig_apply(self)
-        finally:
-            _schedule(self)
-
-    def reject(self):
-        try:
-            return orig_reject(self)
-        finally:
-            _schedule(self, cancelled=True)
-
-    WidgetSettingsDialog.apply_live_changes = apply_live_changes
-    WidgetSettingsDialog.reject = reject
-    _state["installed"] = True
+_state = {"dlg": None, "timer": None}
 
 
 def _schedule(dlg, cancelled=False):
@@ -138,9 +108,8 @@ def _run():
 
             wid = str((dlg.widget_def or {}).get("id") or "")
             try:
-                # closed (OK) before this step came: its settings are saved, read from there. (Shown as the web page,
-                # widget_settings.py, the dialog itself stays hidden.)
-                shown = bool(getattr(dlg, "_web_open", False)) or (hasattr(dlg, "isVisible") and dlg.isVisible())
+                # closed (Save) before this step came: its settings are saved, read from there
+                shown = bool(getattr(dlg, "_web_open", False))
             except RuntimeError:
                 shown = False
             if shown and getattr(dlg, "is_grid", False) and wid.endswith("_g") and not _state.get("cancelled"):

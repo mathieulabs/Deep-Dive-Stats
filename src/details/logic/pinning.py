@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Pinning a Deep Dive chart to the main screen ("Pin ... to main menu"), without any window: which charts can be
-pinned, under what name, and the pin itself. Used by the web Deep Dive (web_ui/window.py) and the native one's
-right-click menu (details/ui/deep_dive/context_menu.py)."""
+pinned, under what name, and the pin itself. Used by the Deep Dive window (web_ui/window.py)."""
 
 from __future__ import annotations
 

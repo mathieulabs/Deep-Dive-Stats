@@ -104,14 +104,14 @@ def _writable_cm(manager):
 
 
 def toggle_global_bottom_stats(manager, enabled):
-    from ..imports import Config
+    from .....ui import Config
 
     _writable_cm(manager).set_value(Config.DEEP_DIVE_PINNED_SHOW_BOTTOM_STATS, enabled)
     manager.refresh()
 
 
 def toggle_global_show_stats(manager, enabled):
-    from ..imports import Config
+    from .....ui import Config
 
     _writable_cm(manager).set_value(Config.DEEP_DIVE_PINNED_SHOW_STATS, enabled)
     manager.refresh()

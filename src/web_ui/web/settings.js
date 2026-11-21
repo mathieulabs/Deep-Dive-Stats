@@ -661,6 +661,7 @@
       function(v){ S.themeFilter = v; render(); }));
     box.appendChild(bar);
     const grid = el('div', 'dds-themes');
+    grid.dataset.keepScroll = pinned ? 'pthemes' : 'themes';
     function fill(){
       grid.innerHTML = '';
       const q = (pinned ? S.pthemeFind : S.themeFind).trim().toLowerCase();
@@ -927,12 +928,19 @@
     const a = document.activeElement, keep = a && a.dataset && a.dataset.keep;
     const sel = keep ? [a.selectionStart, a.selectionEnd] : null;
     const top = mainEl.scrollTop;
+    // lists that scroll on their own (the theme grids) keep their place too
+    const inner = {};
+    mainEl.querySelectorAll('[data-keep-scroll]').forEach(function(n){ inner[n.dataset.keepScroll] = n.scrollTop; });
     navEl.querySelectorAll('button[data-tab]').forEach(function(b){ b.classList.toggle('on', b.dataset.tab === S.tab); });
     const page = S.tab === 'general' ? pageGeneral() : S.tab === 'spans' ? pageSpans() : S.tab === 'colors' ? pageColors() : pageDecks();
     if (mainEl.firstChild !== page){
       while (mainEl.firstChild) mainEl.removeChild(mainEl.firstChild);
       mainEl.appendChild(page);
     }
+    mainEl.querySelectorAll('[data-keep-scroll]').forEach(function(n){
+      const v = inner[n.dataset.keepScroll];
+      if (v) n.scrollTop = v;
+    });
     mainEl.scrollTop = top;
     syncSubNav();
     if (keep){

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-"""What the web text editor (web/text_editor.js, the web TextLabelEditor) needs from Python: the variables, time
+"""What the web text editor (web/text_editor.js) needs from Python: the variables, time
 spans, units and decks it completes, and its help, already translated. No window: a page's 'te_data' handler
 answers with editor_data().
 """
@@ -11,7 +11,7 @@ import html
 
 from ..i18n import N_, tr, tr_name
 
-# the variables' descriptions in the completion list (the Qt editor's TemplateTextEdit reads them from here too)
+# the variables' descriptions in the completion list
 VARIABLE_DESCRIPTIONS = {
     "total_time": N_("Formatted total study time"),
     "reviews": N_("Number of reviews"),

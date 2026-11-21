@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+from aqt import mw
 from .....utils import excluded_days_clause
-from ..shared import Config, REVLOG_RESCHED, Period, get_daystart_epoch_sql, mw
+from ... import Config, REVLOG_RESCHED, Period, get_daystart_epoch_sql
 from ...data.core.revlog_slices import revlog_slices as _revlog_slices, sliced_all as _sliced_all
 
 def _deleted_cards_count(slices):
@@ -108,77 +109,46 @@ def fetch_all_decks_context(provider_cls, addon_config, range_type=Period.YEAR, 
     """
     rows_rev = _sliced_all(query_rev, slices, 2)
 
-    # In delta mode only fetch counts for decks with new reviews: the merge keeps existing counts for the others.
-    rows_counts = []
+    # In delta mode only the decks with new reviews: the merge keeps the counts of the others.
+    touched = ""
     if is_delta and min_rev_id is not None:
-        query_counts = f"""
-            SELECT
-                COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid,
-                CASE
-                    WHEN queue = -1 THEN 'suspended'
-                    WHEN queue < -1 THEN 'buried'
-                    WHEN type = 0 THEN 'new'
-                    WHEN type = 1 THEN 'learn'
-                    WHEN type = 3 THEN 'relearn'
-                    WHEN type = 2 AND ivl < 21 THEN 'young'
-                    WHEN type = 2 AND ivl >= 21 THEN 'mature'
-                    ELSE 'other'
-                END as status,
-                COUNT(id)
-            FROM cards
-            WHERE (CASE WHEN odid > 0 THEN odid ELSE did END) IN (
+        touched = f"""
+            (CASE WHEN odid > 0 THEN odid ELSE did END) IN (
                 SELECT DISTINCT COALESCE((CASE WHEN c2.odid > 0 THEN c2.odid ELSE c2.did END), -1)
                 FROM revlog rl LEFT JOIN cards c2 ON rl.cid = c2.id
                 WHERE rl.id > {min_rev_id}
-            )
-            GROUP BY hdid, status
-        """
-    else:
-        query_counts = """
-            SELECT
-                COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid,
-                CASE
-                    WHEN queue = -1 THEN 'suspended'
-                    WHEN queue < -1 THEN 'buried'
-                    WHEN type = 0 THEN 'new'
-                    WHEN type = 1 THEN 'learn'
-                    WHEN type = 3 THEN 'relearn'
-                    WHEN type = 2 AND ivl < 21 THEN 'young'
-                    WHEN type = 2 AND ivl >= 21 THEN 'mature'
-                    ELSE 'other'
-                END as status,
-                COUNT(id)
-            FROM cards
-            GROUP BY hdid, status
-        """
-    rows_counts = mw.col.db.all(query_counts)
+            )"""
+    rows_counts = mw.col.db.all(f"""
+        SELECT
+            COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid,
+            CASE
+                WHEN queue = -1 THEN 'suspended'
+                WHEN queue < -1 THEN 'buried'
+                WHEN type = 0 THEN 'new'
+                WHEN type = 1 THEN 'learn'
+                WHEN type = 3 THEN 'relearn'
+                WHEN type = 2 AND ivl < 21 THEN 'young'
+                WHEN type = 2 AND ivl >= 21 THEN 'mature'
+                ELSE 'other'
+            END as status,
+            COUNT(id)
+        FROM cards
+        {"WHERE " + touched if touched else ""}
+        GROUP BY hdid, status
+    """)
 
-    rows_future = []
     # The cards of Future Due (counted as in Anki's graph), by Anki due day.
     from ...metrics.future_due import due_day_sql
 
     fd_day, fd_cond = due_day_sql()
     fd_due = f"{int(mw.col.sched.today)} + {fd_day}"
-    if is_delta and min_rev_id is not None:
-        query_future = f"""
-            SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid, {fd_due} AS fd_due, COUNT(*)
-            FROM cards AS cards
-            WHERE {fd_cond}
-            AND (CASE WHEN odid > 0 THEN odid ELSE did END) IN (
-                SELECT DISTINCT COALESCE((CASE WHEN c2.odid > 0 THEN c2.odid ELSE c2.did END), -1)
-                FROM revlog rl LEFT JOIN cards c2 ON rl.cid = c2.id
-                WHERE rl.id > {min_rev_id}
-            )
-            GROUP BY 1, 2
-        """
-    else:
-        query_future = f"""
-            SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid, {fd_due} AS fd_due, COUNT(*)
-            FROM cards AS cards
-            WHERE {fd_cond}
-            GROUP BY 1, 2
-        """
-    rows_future = mw.col.db.all(query_future)
+    rows_future = mw.col.db.all(f"""
+        SELECT COALESCE((CASE WHEN odid > 0 THEN odid ELSE did END), -1) as hdid, {fd_due} AS fd_due, COUNT(*)
+        FROM cards AS cards
+        WHERE {fd_cond}
+        {"AND " + touched if touched else ""}
+        GROUP BY 1, 2
+    """)
 
     # In delta mode, deleted card count doesn't change during reviews, reuse cached value.
     if is_delta and hasattr(provider_cls, "_session_deleted_count"):

@@ -7,7 +7,7 @@ is on it), and a new one replaces it: only the last change can be undone."""
 from aqt import mw
 from aqt.qt import QColor, QCursor, QEvent, QFrame, QHBoxLayout, QLabel, QPushButton, Qt, QTimer
 
-from ..imports import ThemeContext, get_theme_colors
+from ....chart_utils.theme import ThemeContext, get_theme_colors
 from ......qss import set_qss
 from ......i18n import tr
 

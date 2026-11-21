@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Individual reviews inside a short time window (one row per revlog entry)."""
+from aqt import mw
 from .....utils import excluded_days_clause, excluded_days_need_cards
-from ..shared import REVLOG_RESCHED, mw
+from ... import REVLOG_RESCHED
 from ...data.core.empty_deck import did_limit_has_no_cards
 
 # Kinds: 0 learning, 1 young, 2 mature, 3 relearning, 4 filtered

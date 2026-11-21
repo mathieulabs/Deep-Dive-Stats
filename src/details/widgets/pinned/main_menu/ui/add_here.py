@@ -36,12 +36,7 @@ def add_at(manager, target, choice):
     from .add_widget_menu import pin_new
 
     if choice.widget_type == "text_label" and choice.template is None:
-        from aqt import mw
-        from .add_widget_menu import ask_text_template
-
-        choice.template = ask_text_template(manager, mw)
-        if choice.template is None:
-            return None
+        return None  # (its sentence is written in the gallery page's text editor first)
     fam = choice.family
     defs = _layout.defs()
     kind = (target or {}).get("kind")
@@ -76,7 +71,7 @@ def add_at(manager, target, choice):
             order.insert(order.index(keys[-1]) + 1, new_key)
         else:
             order.append(new_key)
-        from ..imports import Config
+        from .....ui import Config
 
         _config_manager(manager).write_config_vals({Config.PINNED_BLOCK_ORDER: order})
         new_id = pin_new(manager, choice, fields=_box_fields(fam, box), refresh=False)
@@ -103,7 +98,7 @@ def open_gallery_at(manager, target):
     import copy
 
     from ... import WidgetRegistry
-    from ..imports import Config
+    from .....ui import Config
 
     # The widgets and the order of the boxes as they were: Cancel puts them back.
     cfg = WidgetRegistry._config()

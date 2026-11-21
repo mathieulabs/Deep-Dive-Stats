@@ -4,9 +4,9 @@
 their text, and the menus a click on them opens (the period, the decks). Both can be turned off (Settings > Pinned
 Widgets, or "Hide these labels")."""
 
-from ..imports import Config, Period, mw
+from .....ui import Config, Period
+from aqt import mw
 from ... import DeckMultiSelectDialog, WidgetRegistry
-from .....ui import StyledMenu, get_svg_icon
 from .....logic.logger import log_swallowed
 from ......i18n import N_, tr, tr_n, tr_name
 
@@ -59,7 +59,7 @@ def deck_text(manager, widget_def):
     return tr_n("{n} deck", "{n} decks", len(resolved))
 
 
-# -- Actions shared with the right-click menu --------------------------------------------
+# -- What the menus change (web_ui/web_menus.py) --------------------------------------------
 
 def _latest(widget_def):
     """The widget's saved definition now: a menu can be built from one read before a change
@@ -91,25 +91,6 @@ def apply_span_to_all(manager, widget_def):
     manager.refresh()
 
 
-def fill_span_menu(menu, manager, widget, widget_def):
-    """The period list of a widget: its periods, then new period, apply to all."""
-    from .....ui.shared.span_menu import populate_span_menu
-
-    widget_def = _latest(widget_def)
-    populate_span_menu(
-        menu,
-        widget_def.get("time_span", Period.TOTAL),
-        widget_def.get("custom_days", None),
-        lambda v, d=None: set_span(manager, widget_def, v, d),
-        manager._config_manager,
-        on_manage_callback=manager._open_time_span_settings,
-    )
-    if sum(1 for d in WidgetRegistry.get_all() if has_time_span(d)) > 1:
-        all_act = menu.addAction(tr("Apply to all widgets"))
-        all_act.setIcon(get_svg_icon("copy", size=14, context_ref=menu))
-        all_act.triggered.connect(lambda _=False: apply_span_to_all(manager, widget_def))
-
-
 def choose_decks(manager, widget, widget_def):
     """The deck picker of a widget (with its filter field)."""
     widget_def = _latest(widget_def)
@@ -124,20 +105,6 @@ def choose_decks(manager, widget, widget_def):
             "deck_id": None,
         })
         manager.refresh()
-
-
-def themed_menu(parent, manager):
-    """A menu in the pinned widgets' theme (the right-click menu, the period list)."""
-    menu = StyledMenu(parent)
-    menu.setProperty("deepdivestats_theme_context", "pinned")
-    menu.setProperty("deepdivestats_ignore_forced_dark_theme", True)
-    try:
-        cfg = (manager._config_manager.config or {}) if getattr(manager, "_config_manager", None) else {}
-        menu.setProperty("deepdivestats_config_override", dict(cfg))
-        menu._apply_theme_style()
-    except Exception:
-        log_swallowed()
-    return menu
 
 
 # -- The labels ---------------------------------------------------------------------------

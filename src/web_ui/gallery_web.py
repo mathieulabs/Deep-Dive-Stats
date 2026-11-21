@@ -101,7 +101,8 @@ class WebGallery(QDialog):
         for name, fn in (("init", self._init), ("gal_pick", self._pick), ("gal_minus", self._minus),
                          ("gal_missing", self._missing), ("gal_span", self._span), ("gal_decks", self._decks),
                          ("gal_reset", self._reset), ("gal_done", self.accept), ("gal_cancel", self.reject),
-                         ("gal_stats", self._stats), ("decks_tree", self._decks_tree), ("te_data", self._te_data)):
+                         ("gal_stats", self._stats), ("decks_tree", self._decks_tree), ("te_data", self._te_data),
+                         ("gal_rename", self._rename_saved), ("gal_delete", self._delete_saved)):
             self.bridge.register(name, fn)
         self.bridge.register("gal_charts", self._charts, background=True)
         self._load()
@@ -146,7 +147,7 @@ class WebGallery(QDialog):
         pw, ph = self.model.inner(t)
         return {"id": t.id, "name": t.name, "family": t.family, "show_name": t.show_name, "w": t.pic[0], "h": t.pic[1],
                 "pw": pw, "ph": ph, "pinned": t.pinned, "count": t.count, "marks": t.marks, "search": t.search,
-                "text": t.text, "tip": self.model.tip(t), "type": t.choice.widget_type}
+                "text": t.text, "tip": self.model.tip(t), "type": t.choice.widget_type, "saved": bool(t.saved_id)}
 
     def _span_options(self):
         """[[value, name]]: the default period, then the tabs' periods (as the period menu)."""
@@ -199,7 +200,8 @@ class WebGallery(QDialog):
             "search": tr("Search widgets..."), "stat_group": tr("Stat cards"),
             "empty": tr("No widget found."), "all_added": tr("Everything is already added."),
             "sections": [{"key": s["key"], "family": s["family"], "title": s["title"], "head": upper(s["title"]),
-                          "tiles": [self._tile(t) for t in s["tiles"]]} for s in m.sections],
+                          "hint": s.get("hint"), "tiles": [self._tile(t) for t in s["tiles"]]} for s in m.sections],
+            "save_text": any(s["key"] == "saved" for s in m.sections),
             "foot": foot, "view": self._span_value() + "|" + ",".join(foot["add"]["deck_ids"] if foot["add"] else []),
             "stat_radius": CARD_CORNER_RADIUS_PX, "cancel_text": tr("Cancel"),
         }
@@ -274,9 +276,44 @@ class WebGallery(QDialog):
         except RuntimeError:
             pass
 
-    def _pick(self, id, template=None, view=None):
-        # template: a text's sentence, written in the page's text editor; view: 'bars' / 'pie' from the preview toggle
-        return self._later(lambda: self.model.pick(id, template, view=view))
+    def _pick(self, id, template=None, view=None, save_name=None):
+        # template: a text's sentence, written in the page's text editor; view: 'bars' / 'pie' from the preview toggle;
+        # save_name: that text also saved in My Widgets
+        return self._later(lambda: self.model.pick(id, template, view=view, save_name=save_name))
+
+    def _rename_saved(self, id):
+        """My Widgets: a saved widget's new name, asked here."""
+        t = self.model.tiles.get(str(id))
+        if t is None or not t.saved_id:
+            return False
+
+        def go():
+            from ..details.ui.shared.number_dialog import ask_text
+            from ..i18n import tr
+
+            name = ask_text(tr("Rename Saved Widget"), tr("Its name in Add Widget:"), t.name,
+                            parent=self)
+            if name:
+                self.model.rename_saved(id, name)
+
+        return self._later(go)
+
+    def _delete_saved(self, id):
+        """My Widgets: a saved widget deleted, once confirmed (the widgets added from it stay)."""
+        t = self.model.tiles.get(str(id))
+        if t is None or not t.saved_id:
+            return False
+
+        def go():
+            from aqt.utils import askUser
+
+            from ..i18n import tr
+
+            if askUser(tr("Delete the saved widget \"{name}\"? The widgets already added from it stay.", name=t.name),
+                       parent=self, defaultno=True, title=tr("Delete Saved Widget")):
+                self.model.delete_saved(id)
+
+        return self._later(go)
 
     def _te_data(self):
         from .text_editor import editor_data
@@ -307,7 +344,7 @@ class WebGallery(QDialog):
     def _decks_tree(self):
         from .deck_picker import deck_tree
 
-        return deck_tree(with_deleted=True)
+        return deck_tree()  # (the page adds the deleted cards' row itself)
 
     def _reset(self, confirmed=False):
         q = self.model.reset_question()

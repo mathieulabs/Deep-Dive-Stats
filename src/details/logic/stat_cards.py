@@ -129,8 +129,6 @@ DASHBOARD_CARD_SPECS = (
 )
 
 
-DASHBOARD_STAT_BINDINGS = tuple((spec["attr"], spec["field"]) for spec in DASHBOARD_CARD_SPECS)
-
 STAT_VALUE_FIELD_BINDINGS = (
     ("total_time", Config.DEEP_DIVE_SHOW_TIME, Config.DASH_SHOW_TIME),
     ("reviews", Config.DEEP_DIVE_SHOW_REVIEWS, Config.DASH_SHOW_REVIEWS),

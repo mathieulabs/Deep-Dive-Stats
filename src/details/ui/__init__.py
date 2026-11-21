@@ -16,7 +16,6 @@ from ...const import (
 )
 from ...utils import format_hours, rollover_hour, excluded_decks_clause, day_end_with_rollover
 from .shared.menu import StyledMenu
-from .shared.span_menu import populate_span_menu
 from .theme.icons import get_svg_icon
 
 __all__ = [
@@ -39,5 +38,4 @@ __all__ = [
     "get_chart_color",
     "get_color",
     "get_svg_icon",
-    "populate_span_menu",
 ]

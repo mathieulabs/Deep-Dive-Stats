@@ -4,8 +4,6 @@
 the widget gallery's tile tooltips. Settings > General can hide the "?"
 (Config.SHOW_CHART_HELP)."""
 
-from aqt.qt import QEvent, QObject, QTimer
-
 from ....i18n import N_, tr, tr_name
 
 HELP = {
@@ -116,57 +114,3 @@ def help_text(chart_type):
     if key in CAVEATS:
         text += "\n\n" + tr_name(CAVEATS[key])
     return text + "\n\n" + sse_credit() if key in SSE_BASED else text
-
-
-class _HelpPopup(QObject):
-    """A chart's explanation from its right-click menu, in the add-on's tooltip, until the
-    next click or key."""
-
-    _current = None
-
-    def __init__(self, anchor, text):
-        super().__init__(anchor)
-        self._tip = None
-        _HelpPopup._current = self
-
-    def eventFilter(self, _obj, event):
-        if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.KeyPress, QEvent.Type.Wheel,
-                            QEvent.Type.WindowDeactivate):
-            self.close()
-        return False
-
-    def close(self):
-        from aqt.qt import QApplication
-
-        try:
-            QApplication.instance().removeEventFilter(self)
-            self._tip.hide()
-            self._tip.deleteLater()
-        except RuntimeError:
-            pass
-        if _HelpPopup._current is self:
-            _HelpPopup._current = None
-        self.deleteLater()
-
-
-def add_help_action(menu, chart_type, anchor):
-    """"About This Chart" in a chart's right-click menu (its "?" text): the "?" only shows
-    where the title row has room. Nothing when the chart has no explanation."""
-    text = help_text(chart_type)
-    if not text:
-        return None
-    from ...ui.theme.icons import get_svg_icon
-    from ....i18n import tr
-
-    act = menu.addAction(tr("About This Chart"))
-    act.setIcon(get_svg_icon("help-circle", size=16, context_ref=menu))
-
-    def _show():
-        old = _HelpPopup._current
-        if old is not None:
-            old.close()
-        # After the menu has closed (its own click would close the popup at once).
-        QTimer.singleShot(0, lambda: _HelpPopup(anchor, text))
-
-    act.triggered.connect(_show)
-    return act

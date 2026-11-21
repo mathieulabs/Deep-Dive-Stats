@@ -32,7 +32,7 @@
           if (left < 0) left = 2;
           if (top + th > chart.h) top = chart.h - th - 2;
           if (top < 0) top = 2;
-          tip.style.transform = 'translate3d(' + left + 'px,' + top + 'px,0)';
+          DD.tipAt(tip, left, top);
         } else hide();
         if (idx !== chart.hoverIdx){ chart.hoverIdx = idx; hooks.redraw(); }
       }

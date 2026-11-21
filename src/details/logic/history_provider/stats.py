@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
+from aqt import mw
 from ....utils import excluded_days_clause
 from ..data.core.empty_deck import did_limit_has_no_cards
-from .shared import Config, REVLOG_RESCHED, Period, get_daystart_epoch_sql, get_time_range_ms, mw
+from .. import Config, REVLOG_RESCHED, Period, get_daystart_epoch_sql
+from ..data.core.time_utils import get_time_range_ms
 
 
 class StatsMixin:

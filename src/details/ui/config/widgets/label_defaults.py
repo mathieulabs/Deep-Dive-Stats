@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 from ....logic.stat_cards import STAT_CARD_INFO_MAP, get_stat_card_default_title
-from .....i18n import tr, N_, tr_name, upper
+from .....i18n import tr, N_, tr_name
 
 
 def resolve_widget_type(dialog) -> str:
@@ -64,27 +64,8 @@ def get_default_label(dialog) -> str:
     wtype = resolve_widget_type(dialog)
     if wtype == "stat_card":
         stat_key = dialog.widget_def.get("stat_key")
-        if hasattr(dialog, "stat_key_combo"):
-            stat_key = dialog.stat_key_combo.currentData()
         if stat_key not in STAT_CARD_INFO_MAP:
             return tr("Stat Card")
         return get_stat_card_default_title(stat_key)
 
     return tr_name(DEFAULT_LABELS.get(wtype, wtype.replace("_", " ").title()))
-
-
-def reset_label(dialog) -> None:
-    """Restore default label to the input field, including deck name if bound."""
-    default_label = get_default_label(dialog)
-
-    dialog.label_edit.setText(default_label)
-    dialog.apply_live_changes()
-
-
-def update_reset_button_visibility(dialog) -> None:
-    """Show reset button only if there is a custom label."""
-    if hasattr(dialog, "reset_label_btn"):
-        current = upper(dialog.label_edit.text().strip())
-        default = upper(get_default_label(dialog))
-        dialog.reset_label_btn.setVisible(bool(current) and current != default)
-

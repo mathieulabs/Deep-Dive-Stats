@@ -9,7 +9,7 @@ try:
 except Exception:
     REVLOG_RESCHED = 4
 
-CURRENT_VERSION = '2.0.0'
+CURRENT_VERSION = '2.1.0'
 
 # Anki's default hour at which a new study day starts.
 DEFAULT_ROLLOVER_HOUR = 4

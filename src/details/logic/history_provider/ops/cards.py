@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from ..shared import Config, Period, datetime, get_rollover_offset_ms, get_time_range_ms, mw, timedelta
+from datetime import datetime, timedelta
+from aqt import mw
+from ... import Period, get_rollover_offset_ms
+from .window import fetch_window
 from ... import rollover_hour
 from .....utils import get_logical_day_sql, logical_day_number
 from ...logger import log_error
@@ -27,34 +30,16 @@ def fetch_added_history(
     elif did_limit is None:
         did_limit = provider_cls._get_did_limit(addon_config, deck_id)
 
-    if override_start_ms is not None and override_end_ms is not None:
-        start_ms = override_start_ms
-        end_ms = override_end_ms
-    else:
-        week_start = addon_config.config.get(Config.WEEK_START, 0)
-        start_ms, end_ms, _, _ = get_time_range_ms(
-            range_type,
-            week_start=week_start,
-            custom_days=custom_days,
-            custom_type=custom_type,
-            start_date_str=start_date_str,
-            end_date_str=end_date_str,
-        )
+    def first_ms():
+        if is_deleted:
+            return mw.col.db.scalar("SELECT MIN(cid) FROM revlog LEFT JOIN cards ON revlog.cid = cards.id WHERE cards.id IS NULL")
+        return mw.col.db.scalar(f"SELECT MIN(id) FROM cards WHERE 1=1 {did_limit}")
 
-        if range_type == Period.TOTAL:
-            if is_deleted:
-                first_card_ms = mw.col.db.scalar("SELECT MIN(cid) FROM revlog LEFT JOIN cards ON revlog.cid = cards.id WHERE cards.id IS NULL")
-            else:
-                first_card_ms = mw.col.db.scalar(f"SELECT MIN(id) FROM cards WHERE 1=1 {did_limit}")
-            start_ms = first_card_ms or int((datetime.now() - timedelta(days=365)).timestamp() * 1000)
-
+    start_ms, end_ms, is_hourly, ms_per_bin = fetch_window(
+        addon_config, range_type, override_start_ms, override_end_ms, override_bin_ms,
+        custom_days, custom_type, start_date_str, end_date_str, first_ms,
+    )
     offset_ms = get_rollover_offset_ms()
-    if override_bin_ms is not None:
-        ms_per_bin = override_bin_ms
-        is_hourly = ms_per_bin < 86400000
-    else:
-        is_hourly = range_type in [Period.TODAY, Period.YESTERDAY] or (end_ms - start_ms <= 2 * 86400 * 1000)
-        ms_per_bin = 600000 if is_hourly else 86400000
 
     def bin_sql(column):
         # Days are Anki days in local time (a day with a clock change lasts 23 or 25 hours).

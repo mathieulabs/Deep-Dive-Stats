@@ -124,6 +124,32 @@ def daily_metric(wtype, deck, span, options=None, days=None):
     }
 
 
+def series_colors(types):
+    """The colours of the stacked charts' series (their bars, the alternative view's, Variation's gain / loss), sent
+    with a new theme: they repaint with the charts colored by the theme, not once their data is read again."""
+    from ..details.widgets.charts.daily_metrics import BY_TYPE, variation_colors
+    from . import providers
+
+    cfg = providers._cfg()
+    out = {}
+    for t in types:
+        metric = BY_TYPE.get(t)
+        if metric is None or t in out:
+            continue
+        try:
+            c = {"series": {s["key"]: str(s["color"]) for s in metric.series(cfg)}}
+            if metric.alt:
+                c["alt"] = {s["key"]: str(s["color"]) for s in metric.alt[1](cfg)}
+            if metric.variation:
+                c["variation"] = variation_colors(cfg)
+            out[t] = c
+        except Exception:
+            from ..details.logic.logger import log_swallowed
+
+            log_swallowed()
+    return out
+
+
 def _range_of(days):
     from ..details.logic.metrics.review_buckets import range_from_days
 
@@ -209,7 +235,9 @@ def machine_days(span, options=None):
             roll = timedelta(hours=int(rollover_hour() or 0))
             first = min(first, (datetime.fromtimestamp(int(rid) / 1000.0) - roll).date().toordinal())
     except Exception:
-        pass
+        from ..details.logic.logger import log_swallowed
+
+        log_swallowed()
     day = start
     at = options.get("at")
     if at:

@@ -2,9 +2,11 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """What can be added to the main screen (charts, stat cards by group, the text widget), how
 a new one is pinned, and the "Add Widget..." entry of the right-click menu."""
+import copy
+
 from aqt.qt import QAction, QTimer
 
-from ..imports import Period
+from .....ui import Period
 from .....logic.widget_registry import WidgetRegistry
 from ......i18n import tr, N_
 
@@ -67,11 +69,13 @@ def default_span(widget_type, stat_key=None):
 class Choice:
     """A widget to add: a chart type, a stat card or a text (with its text)."""
 
-    def __init__(self, widget_type, label, stat_key=None, template=None):
+    def __init__(self, widget_type, label, stat_key=None, template=None, saved=None):
         self.widget_type = widget_type
         self.label = label
         self.stat_key = stat_key
         self.template = template
+        # A saved widget's definition (saved_widgets): added with all its settings.
+        self.saved = saved
         # Set by the widget gallery: the period and decks it is added with (None: defaults).
         self.time_span = None
         self.custom_days = None
@@ -86,12 +90,21 @@ class Choice:
 
 def pin_new(manager, choice, after_id=None, fields=None, refresh=True):
     """Pin the choice (after after_id, see WidgetRegistry.add) and return its id."""
-    extra = dict(fields or {})
+    saved = getattr(choice, "saved", None)
+    # A saved widget: its settings as they were saved, then its place here (fields)
+    extra = {k: v for k, v in copy.deepcopy(saved or {}).items()
+             if k not in ("id", "type", "label", "stat_key", "time_span", "custom_days", "deck_ids", "deck_id")}
+    extra.update(fields or {})
     if choice.widget_type == "text_label":
         extra["template"] = choice.template or ""
-    # The period and decks picked in the widget gallery (see WidgetGallery.fields_for).
+    # The period and decks picked in the widget gallery (see WidgetGallery.fields_for); a saved widget keeps its own
+    # period unless one is picked there
     span = getattr(choice, "time_span", None)
-    if span is None:
+    if span is None and saved and saved.get("time_span") is not None:
+        span = saved.get("time_span")
+        if saved.get("custom_days") is not None:
+            extra["custom_days"] = saved.get("custom_days")
+    elif span is None:
         span = default_span(choice.widget_type, choice.stat_key)
     elif getattr(choice, "custom_days", None) is not None:
         extra["custom_days"] = choice.custom_days
@@ -104,62 +117,6 @@ def pin_new(manager, choice, after_id=None, fields=None, refresh=True):
     if refresh:
         manager.refresh()
     return new_id
-
-
-def ask_text_template(manager, parent, template="", title=None, ok_label=None):
-    """The text of a new text widget, from a themed dialog, or None when cancelled. template: the text to start from
-    (a text edited), title / ok_label: the window's title and its button (the Deep Dive's texts)."""
-    from aqt.qt import QCoreApplication, QDialog, QHBoxLayout, QPushButton, QVBoxLayout
-    from aqt.theme import theme_manager
-    from .....ui.theme import get_settings_dialog_style
-    from .....ui.config.widgets.text_label_editor import TextLabelEditor
-    from .....ui.config.shared import clamp_dialog_width
-    from .....logic.logger import log_swallowed
-    from ......qss import set_qss
-
-    dlg = QDialog(parent)
-    dlg.setWindowTitle(title or tr("Add Text Widget"))
-    from ......window_icon import addon_icon
-    addon_icon(dlg)
-    dlg.setMinimumWidth(500)
-
-    cfg = {}
-    try:
-        cfg = (manager._config_manager.config or {}) if getattr(manager, "_config_manager", None) else {}
-        from ....chart_utils.theme import ThemeContext, get_context_theme_config
-
-        cfg = get_context_theme_config(ThemeContext.PINNED, cfg)
-        set_qss(dlg, get_settings_dialog_style(bool(theme_manager.get_night_mode()), cfg))
-    except Exception:
-        log_swallowed()
-
-    layout = QVBoxLayout(dlg)
-    layout.setSpacing(12)
-    layout.setContentsMargins(20, 20, 20, 16)
-
-    editor = TextLabelEditor(dlg, theme_config=cfg)
-    if template:
-        editor.set_template(template)
-    layout.addWidget(editor)
-
-    btn_row = QHBoxLayout()
-    btn_row.addStretch()
-    cancel_btn = QPushButton(tr("Cancel"))
-    ok_btn = QPushButton(ok_label or tr("Add"))
-    ok_btn.setDefault(True)
-    cancel_btn.clicked.connect(dlg.reject)
-    ok_btn.clicked.connect(dlg.accept)
-    btn_row.addWidget(cancel_btn)
-    btn_row.addWidget(ok_btn)
-    layout.addLayout(btn_row)
-
-    QCoreApplication.processEvents()
-    wanted_w = max(dlg.minimumWidth(), dlg.sizeHint().width() + 24)
-    dlg.resize(clamp_dialog_width(wanted_w, min_width=500), dlg.sizeHint().height())
-
-    if dlg.exec() != QDialog.DialogCode.Accepted:
-        return None
-    return editor.get_template().strip()
 
 
 def add_widget_actions(menu, manager, icon_fn=None, after_def=None):

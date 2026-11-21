@@ -5,7 +5,6 @@
 from .....ui import ADAPTIVE_CHART_BINNING, Config, Period, rollover_hour, get_color, get_svg_icon
 from .....logic.history_provider import HistoryProvider
 from .....logic import log_debug
-from ......i18n import tr_name, upper
 
 __all__ = [
     "ADAPTIVE_CHART_BINNING",

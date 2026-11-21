@@ -9,7 +9,7 @@ a box of its own, right where it was, with the same space above and under it. Do
 the first time the pinned widgets are built with such a box (nothing changes on screen).
 """
 
-from .imports import Config
+from ....ui import Config
 from ....logic.pinned_layout import (
     charts_section_key, normalize_block_order, stats_section_key, texts_section_key,
 )

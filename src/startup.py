@@ -9,7 +9,6 @@ from .qss import set_qss
 from .details.logic.logger import log_error
 from .details.logic.logger import log_swallowed
 from .i18n import tr
-# DetailedStatsDialog is imported lazily in on_show_details(): importing it at module level forced the whole Deep Dive UI stack to load at every Anki launch.
 
 
 # Where "Report a Bug" sends people. Replace with the project's GitHub issues page.
@@ -465,12 +464,6 @@ def add_toolbar_action():
     from .web_ui import pinned as _web_pinned
 
     _web_pinned.install()
-    try:  # the settings dialogs show their changes live in the web pages
-        from .web_ui import live_preview
-
-        live_preview.install()
-    except Exception:
-        log_swallowed()
     try:  # a widget's settings as a web page
         from .web_ui import widget_settings as _web_widget_settings
 
@@ -779,7 +772,7 @@ def _open_web_on(ids, period_range):
 
 
 def _close_web_deep_dive_for_profile_close(*_args):
-    """The web Deep Dive window goes with its profile (as the native one): left open, it kept the previous
+    """The web Deep Dive window goes with its profile: left open, it kept the previous
     profile's data and took the next profile's theme half way (a light profile after a dark one: dark charts and
     backdrop under light bars and text)."""
     global _web_deep_dive

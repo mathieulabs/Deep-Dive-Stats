@@ -230,6 +230,9 @@
               trend_pass_keys: series.some(function(s){ return s.key === 'again'; }) ? series.map(function(s){ return s.key; }).filter(function(k){ return k !== 'again'; })
                 : (series.some(function(s){ return s.key === 'passed'; }) ? ['passed'] : null),
               trend_unit: TREND_UNIT[type],
+              // rows that are values counted from the first one (seconds, an interval, the n-th review): a zoom morphs
+              // them anchored on the left (activity.js updateData)
+              value_axis: TREND_UNIT[type] !== undefined && TREND_UNIT[type] !== 'day',
             },
           };
         };
@@ -402,12 +405,48 @@
           now = data || {}; sub.statText = statText(type, data, cur);
           if (other) DD.applyUpdate(el, function(){ upd(data, mode); }, true); else upd(data, mode);
         };
+        // a new theme: its series colours come with it (DD.theme.series, window.py _push_theme), the chart repaints at
+        // once with the charts colored by the theme (its data read again later brings the same colours)
+        const setTheme0 = inst.setTheme;
+        inst.setTheme = function(){
+          setTheme0.apply(inst, arguments);
+          const c = DD.theme && DD.theme.series && DD.theme.series[type];
+          if (!c || !now || !now.series) return;
+          const paint = function(list, m){ return (list || []).map(function(s){ return m && m[s.key] ? Object.assign({}, s, {color: m[s.key]}) : s; }); };
+          const d = Object.assign({}, now, {series: paint(now.series, c.series)});
+          if (now.alt && c.alt) d.alt = Object.assign({}, now.alt, {series: paint(now.alt.series, c.alt)});
+          if (now.variation_colors && c.variation) d.variation_colors = c.variation;
+          const p = DD._noAnim; DD._noAnim = true;
+          try { inst.update(d); } finally { DD._noAnim = p; }
+        };
         return inst;
       },
     });
   }
   ['ratings', 'review_speed', 'forgotten', 'resets', 'introduced', 'introduced_load', 'answer_time', 'interval_ratings', 'rating_fatigue', 'sibling_ratings', 'card_states', 'load_trend', 'stability_trend', 'memorised', 'fsrs_calibration', 'forgetting_curve', 'fsrs_fatigue', 'leech_detector', 'stability_increase', 'custom_bar', 'future_retention', 'due_today'].forEach(registerDaily);
 
+  // the frame loop of a grid chart (week_hours, SxR, the gap by button): st.t from 0 to 1 over dur() ms, a draw
+  // each frame while it runs and once after a change (st.last), the redraw on resize; with the setOptions,
+  // setTheme and destroy the three share (their update is their own)
+  function gridLoop(st, el, plot, statEl, head, draw, resize, dur){
+    function frame(now){
+      if (st.t < 1){ if (st.start === null) st.start = now; st.t = Math.min(1, (now - st.start) / dur()); }
+      const needs = st.t < 1;
+      if (needs || st.last) draw();
+      st.last = needs;
+      return needs;
+    }
+    const resizer = new ResizeObserver(function(){ DD.frame.resized(frame, function(){ resize(); st.last = true; }); });
+    DD.frame.observe(resizer, plot);
+    if (st.t >= 1) draw();
+    DD.frame.add(frame);
+    const kick = function(){ st.last = true; DD.frame.kick(); };
+    return {
+      setOptions: function(o){ Object.assign(st.opts, o); kick(); },
+      setTheme: kick,
+      destroy: function(){ DD.frame.remove(frame); resizer.disconnect(); el.innerHTML = ''; if (statEl) statEl.textContent = ''; const p = head && head.querySelector('.dd-pills'); if (p) p.innerHTML = ''; },
+    };
+  }
   // ---- Week by Hour: 7 days by 24 hours, each cell as dark as its reviews ----
   const FONT = '11px "Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif';
   function weekMount(el, ctx){
@@ -552,28 +591,14 @@
       },
       redraw: function(){ st.last = true; DD.frame.kick(); },
     });
-    function frame(now){
-      if (st.t < 1){ if (st.start === null) st.start = now; st.t = Math.min(1, (now - st.start) / (st.swap ? 650 * DD.speed() : ctx.animate && !st.shown ? DD.intro(500) : 300 * (st.k || 1))); }
-      const needs = st.t < 1;
-      if (needs || st.last) draw();
-      st.last = needs;
-      return needs;
-    }
-    const resizer = new ResizeObserver(function(){ DD.frame.resized(frame, function(){ resize(); st.last = true; }); });
-    DD.frame.observe(resizer, plot);
-    if (st.t >= 1) draw();
-    DD.frame.add(frame);
-    return {
+    return Object.assign(gridLoop(st, el, plot, statEl, head, draw, resize, function(){ return st.swap ? 650 * DD.speed() : ctx.animate && !st.shown ? DD.intro(500) : 300 * (st.k || 1); }), {
       update: function(data){
         const from = {}; Object.keys(counts(st.data)).concat(Object.keys(counts(data))).forEach(function(k){ from[k] = share(k); });
         // By Day switched: the old grid as it is now, to fade out (see draw)
         st.swap = (data && data.view === 'day') !== (st.data.view === 'day') && !DD._noAnim ? {data: st.data, share: from} : null;
         st.from = from; st.shown = true; st.data = data; st.t = DD._noAnim ? 1 : 0; st.start = null; st.k = DD.calm ? DD.calm() : 1; stats(); pill(); st.last = true; DD.frame.kick();
       },
-      setOptions: function(o){ Object.assign(st.opts, o); st.last = true; DD.frame.kick(); },
-      setTheme: function(){ st.last = true; DD.frame.kick(); },
-      destroy: function(){ DD.frame.remove(frame); resizer.disconnect(); el.innerHTML = ''; if (statEl) statEl.textContent = ''; const p = head && head.querySelector('.dd-pills'); if (p) p.innerHTML = ''; },
-    };
+    });
   }
   DD.registerChart('week_hours', {mount: weekMount});
   // ---- SxR Heatmap: the review cards now by FSRS stability (rows, high at the top) and
@@ -769,18 +794,7 @@
       },
       redraw: function(){ st.last = true; DD.frame.kick(); },
     });
-    function frame(now){
-      if (st.t < 1){ if (st.start === null) st.start = now; st.t = Math.min(1, (now - st.start) / (ctx.animate && !st.shown ? DD.intro(500) : 300 * (st.k || 1))); }
-      const needs = st.t < 1;
-      if (needs || st.last) draw();
-      st.last = needs;
-      return needs;
-    }
-    const resizer = new ResizeObserver(function(){ DD.frame.resized(frame, function(){ resize(); st.last = true; }); });
-    DD.frame.observe(resizer, plot);
-    if (st.t >= 1) draw();
-    DD.frame.add(frame);
-    return {
+    return Object.assign(gridLoop(st, el, plot, statEl, head, draw, resize, function(){ return ctx.animate && !st.shown ? DD.intro(500) : 300 * (st.k || 1); }), {
       update: function(data){
         // the same grid: each cell goes from its shade now to its new one; another grid (bins, rows, deck): the one
         // shown fades out as the new one fades in
@@ -792,10 +806,7 @@
         if (st.t >= 1) st.prev = undefined;
         stats(); pill(); st.last = true; DD.frame.kick();
       },
-      setOptions: function(o){ Object.assign(st.opts, o); st.last = true; DD.frame.kick(); },
-      setTheme: function(){ st.last = true; DD.frame.kick(); },
-      destroy: function(){ DD.frame.remove(frame); resizer.disconnect(); el.innerHTML = ''; if (statEl) statEl.textContent = ''; const p = head && head.querySelector('.dd-pills'); if (p) p.innerHTML = ''; },
-    };
+    });
   }
   DD.registerChart('sxr_heatmap', {mount: sxrMount});
   // B-W Matrix: the share of review answers passed minus the recall FSRS predicted, by the
@@ -980,18 +991,7 @@
       },
       redraw: function(){ st.last = true; DD.frame.kick(); },
     });
-    function frame(now){
-      if (st.t < 1){ if (st.start === null) st.start = now; st.t = Math.min(1, (now - st.start) / (ctx.animate && !st.shown ? DD.intro(500) : 300 * (st.k || 1))); }
-      const needs = st.t < 1;
-      if (needs || st.last) draw();
-      st.last = needs;
-      return needs;
-    }
-    const resizer = new ResizeObserver(function(){ DD.frame.resized(frame, function(){ resize(); st.last = true; }); });
-    DD.frame.observe(resizer, plot);
-    if (st.t >= 1) draw();
-    DD.frame.add(frame);
-    return {
+    return Object.assign(gridLoop(st, el, plot, statEl, head, draw, resize, function(){ return ctx.animate && !st.shown ? DD.intro(500) : 300 * (st.k || 1); }), {
       update: function(data){
         // the same rows: the cells move from their gaps now to the new ones; other rows (another deck): the grid
         // shown fades out as the new one fades in
@@ -1003,10 +1003,7 @@
         if (st.t >= 1) st.prev = undefined;
         stats(); pill(); st.last = true; DD.frame.kick();
       },
-      setOptions: function(o){ Object.assign(st.opts, o); st.last = true; DD.frame.kick(); },
-      setTheme: function(){ st.last = true; DD.frame.kick(); },
-      destroy: function(){ DD.frame.remove(frame); resizer.disconnect(); el.innerHTML = ''; if (statEl) statEl.textContent = ''; const p = head && head.querySelector('.dd-pills'); if (p) p.innerHTML = ''; },
-    };
+    });
   }
   DD.registerChart('bw_matrix', {mount: bwMount});
   // Custom Pie / Custom Bar: the user's own searches (logic.metrics.custom_search), edited in

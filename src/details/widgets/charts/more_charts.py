@@ -8,7 +8,7 @@ kind: "daily" (charts.daily_metrics, read from the review history of each day),
 (charts.card_history, the cards counted by their lapses / reviews / learning answers),
 "week" (charts.week_hours, the reviews of the period by weekday and hour), "today"
 (charts.due_today, the learning cards due today by hour) or "first_today" (First Answer Retention:
-the first answer of each card on each day of the period; web only, no native chart) or "memory"
+the first answer of each card on each day of the period; web only) or "memory"
 (Stability / Difficulty Time Machine: the cards' FSRS memory states on a past day; web only) or "sxr" (SxR
 Heatmap: the review cards now by stability and retrievability, logic.metrics.sxr; web only)."""
 

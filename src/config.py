@@ -91,7 +91,9 @@ def reload_live_managers() -> None:
             manager.config.clear()
             manager.config.update(fresh)
         except Exception:
-            pass
+            from .details.logic.logger import log_swallowed
+
+            log_swallowed()
 
 
 _BOX_INTENSITY_KEYS = (
@@ -159,7 +161,9 @@ def _move_box_intensities_to_even_scale(saved, normalized):
                 new_dd[wid] = w
             normalized[Config.DEEP_DIVE_WIDGET_SETTINGS] = new_dd
     except Exception:
-        pass
+        from .details.logic.logger import log_swallowed
+
+        log_swallowed()
 
 
 def _write_file_atomic(path: str, payload: str) -> None:
@@ -278,7 +282,9 @@ class ConfigManager:
             try:
                 listener(normalized)
             except Exception:
-                pass
+                from .details.logic.logger import log_swallowed
+
+                log_swallowed()
 
     def _sync_pins_to_live_managers(self, saved: dict[str, Any]) -> None:
         # Other open managers (Deep Dive, settings dialogs) hold their own copy of the config.
@@ -296,7 +302,9 @@ class ConfigManager:
                 try:
                     manager.config[key] = copy.deepcopy(value)
                 except Exception:
-                    pass
+                    from .details.logic.logger import log_swallowed
+
+                    log_swallowed()
         for key in (Config.DEEP_DIVE_EXTRA_CHARTS, Config.DEEP_DIVE_HIDDEN_CHARTS, Config.DEEP_DIVE_CHART_ORDER,
                     Config.DEEP_DIVE_TEXT_WIDGETS, Config.DEEP_DIVE_WIDGET_SETTINGS, Config.SHARED_FILTER_MODES):
             for manager in list(_LIVE_MANAGERS):
@@ -308,7 +316,9 @@ class ConfigManager:
                     else:  # taken off (a reset of the order)
                         manager.config.pop(key, None)
                 except Exception:
-                    pass
+                    from .details.logic.logger import log_swallowed
+
+                    log_swallowed()
 
     def _normalize_config(self, config: dict[str, Any]) -> dict[str, Any]:
         # Deep copy so appending to a profile's list never changes the shared default.
@@ -514,7 +524,9 @@ def copy_profile_settings(mw, source_path, target: "ConfigManager") -> bool:
                 manager.config.clear()
                 manager.config.update(copy.deepcopy(normalized))
             except Exception:
-                pass
+                from .details.logic.logger import log_swallowed
+
+                log_swallowed()
     return True
 
 
@@ -614,7 +626,9 @@ def apply_imported_settings(target: "ConfigManager", data: dict, shareable: bool
                 manager.config.clear()
                 manager.config.update(copy.deepcopy(normalized))
             except Exception:
-                pass
+                from .details.logic.logger import log_swallowed
+
+                log_swallowed()
     return True
 
 

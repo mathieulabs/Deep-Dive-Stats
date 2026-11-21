@@ -8,7 +8,7 @@ of the cache. CHARTS describes them: the pinned widgets, the Deep Dive sections 
 widget gallery all read it."""
 
 from ....logic.formatting import fmt_num, fmt_num_trim_zeros
-from .....i18n import N_, tr, tr_n, tr_name
+from .....i18n import N_, tr, tr_name
 
 
 class DailyMetric:

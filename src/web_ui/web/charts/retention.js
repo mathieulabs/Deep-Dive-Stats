@@ -861,7 +861,7 @@
           if (left < 0) left = 2;
           if (top + chart._th > chart.h) top = chart.h - chart._th - 2;
           if (top < 0) top = 2;
-          tip.style.transform = 'translate3d(' + left + 'px,' + top + 'px,0)';
+          DD.tipAt(tip, left, top);
         } else { tip.style.display = 'none'; chart._tipIdx = null; }
         const g2 = chart._g; let achanged = false; const labels = [];
         chart.hoverAvg = chart.hoverAvg || {};

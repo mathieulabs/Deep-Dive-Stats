@@ -337,7 +337,7 @@
       tip.style.display = 'block';
       let left = q[0] + 15, top = q[1] + 15; const tw = tip.offsetWidth, th = tip.offsetHeight;
       if (left + tw > W) left = q[0] - tw - 15; if (left < 0) left = 2; if (top + th > H) top = H - th - 2; if (top < 0) top = 2;
-      tip.style.transform = 'translate3d(' + left + 'px,' + top + 'px,0)';
+      DD.tipAt(tip, left, top);
     });
     cv.addEventListener('mouseleave', function(){ tip.style.display = 'none'; });
     cv.addEventListener('wheel', function(e){
@@ -354,7 +354,8 @@
       }
       if (e.shiftKey){ e.preventDefault(); e.stopPropagation(); stopView(); applyView(st.v0 - span * 0.1 * (dl < 0 ? 1 : -1), span); }
     }, {passive: false});
-    new ResizeObserver(function(){ draw(); }).observe(plot);
+    // (in device pixels: a zoom of Anki redraws it for the new ratio)
+    DD.frame.observe(new ResizeObserver(function(){ draw(); }), plot);
 
     return {
       canvas: cv,

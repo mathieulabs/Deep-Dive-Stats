@@ -1,44 +1,21 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-"""A widget's settings (a chart, a stat card, the heatmap) as a web page (web/widget_settings.js).
+"""A widget's settings (a chart, a stat card, the heatmap, the text widget) as a web page (web/widget_settings.js),
+drawn from the widget type's option schema (widget_options.py, no Qt).
 
-Drawn in one of two ways:
-  - from the widget type's option schema (widget_options.py, no Qt): the charts, the heatmap and the stat cards.
-    No Qt dialog: a WidgetSettingsState (details/logic) sorts out which configs the settings live in (shared, its
-    own, the theme's) and keeps their Cancel backup; the page's changes go into these configs, the live preview
-    follows (live_preview.py), Save writes them as the Qt dialog does (persist_widget_settings), Cancel puts the
-    backup back;
-  - for the type not converted yet (the text widget): the Qt dialog is built, never shown, and its exec() opens
-    this page, a mirror of its controls (_Mirror) read from its layouts, each change handed back to the Qt control
-    it stands for.
-
-The text widget's sentence is written in the web text editor (web/text_editor.js).
+A WidgetSettingsState (details/logic) sorts out which configs the settings live in (shared, its own, the theme's)
+and keeps their Cancel backup; the page's changes go into these configs, the live preview follows
+(live_preview.py), Save writes them (persist_widget_settings), Cancel puts the backup back. The text widget's
+sentence is written in the web text editor (web/text_editor.js).
 """
 
 from __future__ import annotations
 
-import base64
 import json
 import os
-import re
 
 from aqt import mw
-from aqt.qt import (
-    QBuffer,
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QFormLayout,
-    QGroupBox,
-    QIODevice,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QSpinBox,
-    QTimer,
-    QVBoxLayout,
-    Qt,
-)
+from aqt.qt import QDialog, QTimer, QVBoxLayout
 
 from ..details.logic.logger import log_swallowed, log_warn
 from .bridge import Bridge
@@ -52,48 +29,20 @@ _state = {"installed": False}
 
 
 def install():
-    """widget_settings_dialog() opens the schema's page, WidgetSettingsDialog.exec() the mirror (while the web
-    interface is on)."""
+    """widget_settings_dialog() opens the schema's page (while the web interface is on)."""
     if _state["installed"]:
         return
     try:
         from ..details.ui.config.dialogs import widget_settings as qt_settings
-        from ..details.ui.config.dialogs.widget_settings import WidgetSettingsDialog
     except Exception as e:
         log_warn(f"web widget settings: {e!r}", tag="WEB")
         return
     qt_settings._opener = _open
-    orig_exec = WidgetSettingsDialog.exec
-
-    def exec(self):
-        try:
-            return run(self)
-        except Exception as e:
-            log_warn(f"web widget settings failed, Qt dialog instead: {e!r}", tag="WEB")
-        return orig_exec(self)
-
-    WidgetSettingsDialog.exec = exec
     _state["installed"] = True
 
 
-def run(dlg):
-    """Shows dlg (a WidgetSettingsDialog, never shown itself) as the web page; returns what dlg.exec() would."""
-    from ..details.ui.config.dialogs.widget_settings import WidgetSettingsDialog
-
-    focus, WidgetSettingsDialog.focus_next = WidgetSettingsDialog.focus_next, None
-    page = WebWidgetSettings(dlg, focus=focus)
-    dlg._web_open = True  # (live_preview: the dialog counts as open)
-    try:
-        page.exec()
-    finally:
-        dlg._web_open = False
-        page.deleteLater()
-    return dlg.result()
-
-
 def _open(widget_def, parent=None, **kw):
-    """A widget's settings drawn from the option schema, without a Qt dialog; None for the Qt dialog (a type not
-    converted yet)."""
+    """A widget's settings drawn from the option schema; None for a type it does not know."""
     from .widget_options import supported
 
     if not supported((widget_def or {}).get("type")):
@@ -109,15 +58,15 @@ def _open(widget_def, parent=None, **kw):
 
 
 class _Session:
-    """What a WidgetSettingsDialog is to its callers (exec(), then deleteLater()), for the schema's page."""
+    """What widget_settings_dialog() gives its callers (exec(), then deleteLater()): the page, once exec()."""
 
     def __init__(self, state, schema):
         self.state, self.schema, self._result = state, schema, 0
 
     def exec(self):
-        from ..details.ui.config.dialogs.widget_settings import WidgetSettingsDialog
+        from ..details.ui.config.dialogs import widget_settings as opener
 
-        focus, WidgetSettingsDialog.focus_next = WidgetSettingsDialog.focus_next, None
+        focus, opener.focus_next = opener.focus_next, None
         page = WebWidgetSettings(self.state, focus=focus, schema=self.schema)
         self.state._web_open = True  # (live_preview: the settings count as open)
         try:
@@ -139,178 +88,6 @@ def _url(addon, name):
     from urllib.parse import quote
 
     return f"/_addons/{quote(addon)}/{_WEB_DIR}/{name}"
-
-
-def _plain(text):
-    """A Qt label's text as shown: "&&" is one "&", a lone "&" marks a shortcut."""
-    return re.sub(r"&(.)", r"\1", str(text or "")).strip()
-
-
-_BG = re.compile(r"background(?:-color)?\s*:\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|[a-zA-Z]+)\s*;")
-_GRAD = re.compile(r"qlineargradient\(([^)]*)\)")
-
-
-def _swatch_color(w):
-    m = _BG.search(w.styleSheet() or "")
-    return m.group(1) if m and m.group(1).lower() not in ("transparent", "none") else None
-
-
-def _strip_css(w):
-    """A gradient strip (a QLabel styled with a qlineargradient) as a CSS linear-gradient."""
-    m = _GRAD.search(w.styleSheet() or "")
-    if not m:
-        return None
-    stops = re.findall(r"stop:\s*([0-9.]+)\s+(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))", m.group(1))
-    if not stops:
-        return None
-    return "linear-gradient(90deg, %s)" % ", ".join(f"{c} {float(p) * 100:g}%" for p, c in stops)
-
-
-def _picture(w):
-    sh = w.sizeHint()
-    if sh.width() <= 0 or sh.height() <= 0:
-        return None  # an empty widget
-    try:
-        if w.width() < 4 or w.height() < 4:
-            w.resize(w.sizeHint())
-        pm = w.grab()
-        buf = QBuffer()
-        buf.open(QIODevice.OpenModeFlag.WriteOnly)
-        pm.save(buf, "PNG")
-        dpr = max(1.0, pm.devicePixelRatio())
-        return {"src": "data:image/png;base64," + base64.b64encode(bytes(buf.data())).decode("ascii"),
-                "w": pm.width() / dpr, "h": pm.height() / dpr}
-    except Exception:
-        log_swallowed()
-        return None
-
-
-class _Mirror:
-    """The Qt dialog's controls as a tree of plain dicts (the page draws it), each control under an id the page sends
-    back with a change."""
-
-    def __init__(self, dlg):
-        self.dlg = dlg
-        self.ids = {}
-
-    def _id(self, w):
-        key = str(id(w))
-        self.ids[key] = w
-        return key
-
-    def tree(self):
-        self.ids = {}
-        d = self.dlg
-        items = self._layout(d.content_layout)
-        foot = []
-        for name, role in (("reset_btn", "reset"), ("cancel_btn", "cancel"), ("ok_btn", "save")):
-            b = getattr(d, name, None)
-            if b is not None and not b.isHidden():
-                foot.append({"id": self._id(b), "text": _plain(b.text()), "role": role, "en": b.isEnabled()})
-        return {"items": items, "foot": foot, "title": d.windowTitle()}
-
-    def _layout(self, lay):
-        out = []
-        if lay is None:
-            return out
-        if isinstance(lay, QFormLayout):
-            for r in range(lay.rowCount()):
-                row = []
-                for role in (QFormLayout.ItemRole.LabelRole, QFormLayout.ItemRole.FieldRole, QFormLayout.ItemRole.SpanningRole):
-                    it = lay.itemAt(r, role)
-                    if it is None:
-                        continue
-                    row += self._item(it)
-                if any(n.get("t") != "label" for n in row):
-                    out.append({"t": "row", "items": row})
-            return out
-        for i in range(lay.count()):
-            out += self._item(lay.itemAt(i))
-        return out
-
-    def _item(self, it):
-        w = it.widget()
-        if w is not None:
-            n = self._widget(w)
-            return [n] if n else []
-        sub = it.layout()
-        if sub is None:
-            return []  # a spacer, a stretch
-        items = self._layout(sub)
-        if not items:
-            return []
-        if sub.metaObject().className() == "QHBoxLayout":
-            return [{"t": "row", "items": items}]
-        return items
-
-    def _widget(self, w):
-        if w.isHidden():
-            return None
-        tip = w.toolTip() or ""
-        en = w.isEnabled()
-        if hasattr(w, "get_template") and hasattr(w, "set_template"):  # the text widget's TextLabelEditor
-            from ..details.widgets.pinned.widget_factory.builders.text_label import shown_template
-
-            return {"t": "texteditor", "id": self._id(w), "v": shown_template(self.dlg.widget_def.get("template") or "")}
-        if isinstance(w, QGroupBox):
-            items = self._layout(w.layout())
-            if not items:
-                return None
-            return {"t": "group", "id": self._id(w), "title": _plain(w.title()), "tip": tip, "items": items}
-        if hasattr(w, "slider") and hasattr(w, "spin") and hasattr(w, "label"):  # SettingsSlider
-            s = w.slider
-            return {"t": "slider", "id": self._id(w), "label": _plain(w.label.text()), "v": s.value(), "min": s.minimum(),
-                    "max": s.maximum(), "step": max(1, s.singleStep()), "suffix": w.spin.suffix(),
-                    "en": en and s.isEnabled(), "tip": tip}
-        if isinstance(w, QCheckBox):
-            return {"t": "check", "id": self._id(w), "label": _plain(w.text()), "on": w.isChecked(), "en": en, "tip": tip}
-        if isinstance(w, QComboBox):
-            opts = [[i, w.itemText(i)] for i in range(w.count()) if w.itemText(i) or w.itemData(i) is not None]
-            return {"t": "combo", "id": self._id(w), "opts": opts, "i": w.currentIndex(), "en": en, "tip": tip}
-        if isinstance(w, QLineEdit):
-            return {"t": "text", "id": self._id(w), "v": w.text(), "ph": w.placeholderText(), "en": en, "tip": tip}
-        if isinstance(w, QSpinBox):
-            return {"t": "num", "id": self._id(w), "v": w.value(), "min": w.minimum(), "max": w.maximum(),
-                    "suffix": w.suffix(), "en": en, "tip": tip}
-        if isinstance(w, QPushButton):
-            text = _plain(w.text())
-            if text:
-                return {"t": "button", "id": self._id(w), "text": text, "en": en, "tip": tip}
-            color = _swatch_color(w)
-            if color and w.icon().isNull():
-                return {"t": "swatch", "id": self._id(w), "color": color, "en": en, "tip": tip}
-            return {"t": "icon", "id": self._id(w), "icon": self._icon_name(w), "en": en, "tip": tip}
-        if isinstance(w, QLabel):
-            css = _strip_css(w)
-            if css:
-                return {"t": "strip", "css": css, "tip": tip}
-            text = _plain(w.text()) if w.textFormat() != Qt.TextFormat.RichText else w.text()
-            if not text:
-                return None
-            return {"t": "label", "text": text, "wrap": w.wordWrap(), "tip": tip}
-        lay = w.layout()
-        if lay is not None:
-            items = self._layout(lay)
-            if not items:
-                return None
-            if lay.metaObject().className() == "QHBoxLayout":
-                return {"t": "row", "items": items}
-            return {"t": "box", "items": items}
-        pic = _picture(w)
-        return dict(pic, t="pic") if pic else None
-
-    @staticmethod
-    def _icon_name(w):
-        from ..i18n import tr
-
-        if w.objectName() == "range_btn_remove":
-            return "x"
-        tip = w.toolTip()
-        if tip == tr("Remove color"):
-            return "minus"
-        if tip == tr("Add color"):
-            return "plus"
-        return "reset"
 
 
 def _schema_env(dlg):
@@ -349,7 +126,7 @@ def _schema_env(dlg):
 
 
 def _schema_for(dlg):
-    """(WidgetOptions, _Colors) for a type drawn from its schema, else (None, None): the mirror."""
+    """(WidgetOptions, _Colors) for a type drawn from its schema, else (None, None): no settings window."""
     from .widget_options import WidgetOptions, supported
 
     if not supported(getattr(dlg, "type", None)):
@@ -359,7 +136,7 @@ def _schema_for(dlg):
         opts = WidgetOptions(dlg, env)
         return opts, (_Colors(dlg) if env.get("colors") else None)
     except Exception as e:
-        log_warn(f"widget settings schema ({dlg.type}): {e!r}, the mirror instead", tag="WEB")
+        log_warn(f"widget settings schema ({dlg.type}): {e!r}", tag="WEB")
         return None, None
 
 
@@ -422,10 +199,9 @@ class _Colors:
 
 
 class WebWidgetSettings(QDialog):
-    """The page, over dlg: the hidden Qt dialog (the mirror) or a WidgetSettingsState (schema: the option schema,
-    drawn from it)."""
+    """The page, over dlg (a WidgetSettingsState), drawn from schema: (WidgetOptions, _Colors)."""
 
-    def __init__(self, dlg, focus=None, schema=None):
+    def __init__(self, dlg, schema, focus=None):
         host = dlg.parent()
         try:
             host = host.window() if host is not None else mw
@@ -433,13 +209,11 @@ class WebWidgetSettings(QDialog):
             host = mw
         super().__init__(host)
         self.dlg = dlg
-        self.qt = isinstance(dlg, QDialog)
-        self.mirror = _Mirror(dlg) if self.qt else None
-        self.opts, self.colors = schema if schema is not None else _schema_for(dlg)
+        self.opts, self.colors = schema
         self._focus = focus
         self._last = None
         self._cancelling = False
-        self.setWindowTitle(self._title())
+        self.setWindowTitle(dlg.title())
         from ..window_icon import addon_icon
 
         addon_icon(self)
@@ -458,17 +232,9 @@ class WebWidgetSettings(QDialog):
         self.webview = AnkiWebView(parent=self, title="deep_dive_widget_settings")
         lay.addWidget(self.webview)
         self.bridge = Bridge(self.webview, self)
-        for name, fn in (("init", self._init), ("ws_set", self._set), ("ws_click", self._click),
-                         ("wo_set", self._opt_set), ("wo_do", self._opt_do),
-                         ("ws_text", self._text), ("te_data", self._te_data)):
+        for name, fn in (("init", self._init), ("wo_set", self._opt_set), ("wo_do", self._opt_do),
+                         ("te_data", self._te_data)):
             self.bridge.register(name, fn)
-        # a change the dialog finishes a moment later (its live update timer, a control shown after it): sent then
-        self._push_timer = QTimer(self)
-        self._push_timer.setSingleShot(True)
-        self._push_timer.setInterval(120)
-        self._push_timer.timeout.connect(self._push)
-        if self.qt:
-            dlg.finished.connect(self._dialog_finished)
         self._load()
 
     def _load(self):
@@ -480,19 +246,6 @@ class WebWidgetSettings(QDialog):
         self.webview.stdHtml('<div id="dds-root"></div><script>' + dev_flag() + 'DD.widgetSettingsBoot && DD.widgetSettingsBoot();</script>',
                              css=[_url(self._addon, n) + q for n in _CSS],
                              js=[_url(self._addon, n) + q for n in _JS])
-
-    def _title(self):
-        return self.dlg.windowTitle() if self.qt else self.dlg.title()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        if not self.qt:
-            return
-        # the dialog's own windows (the color picker, a question) open over this one
-        try:
-            self.dlg.setGeometry(self.geometry())
-        except Exception:
-            pass
 
     def _theme(self):
         from .theme import build_theme
@@ -517,29 +270,20 @@ class WebWidgetSettings(QDialog):
         except Exception:
             i18n = {}
         state = self._state()
-        focus = None
-        if self.opts is not None:
-            # (the schema's groups: "Edit Buttons..." opens on the Range Buttons)
-            focus = {"range_btn": "ranges"}.get(self._focus)
-        else:
-            target = getattr(self.dlg, f"{self._focus}_group", None) if self._focus else None
-            if target is not None:
-                focus = self.mirror._id(target)
+        focus = {"range_btn": "ranges"}.get(self._focus)  # ("Edit Buttons..." opens on the Range Buttons)
         return {"state": state, "theme": self._theme(), "i18n": i18n, "focus": focus}
 
     def _state(self):
-        st = self._tree()
+        st = self._schema_state()
         self._last = json.dumps(st, sort_keys=True)
         return st
 
-    def _tree(self):
-        return self._schema_state() if self.opts is not None else self.mirror.tree()
-
     def _push(self):
-        if (self.qt and self.dlg.result()) or not self.isVisible():
+        """The state sent to the page after a change made outside it (the color picker's live colors)."""
+        if not self.isVisible():
             return
         try:
-            st = self._tree()
+            st = self._schema_state()
             js = json.dumps(st, sort_keys=True)
             if js != self._last:
                 self._last = js
@@ -547,55 +291,12 @@ class WebWidgetSettings(QDialog):
         except Exception as e:
             page_log(f"widget settings push: {e!r}")
 
-    def _set(self, id, value=None):
-        w = self.mirror.ids.get(str(id)) if self.mirror else None
-        if w is None:
-            return self._state()
-        try:
-            if hasattr(w, "slider") and hasattr(w, "spin"):
-                w.slider.setValue(int(value))  # (not w.setValue: it holds the signals the live preview listens to)
-            elif isinstance(w, QCheckBox):
-                w.setChecked(bool(value))
-            elif isinstance(w, QComboBox):
-                w.setCurrentIndex(int(value))
-            elif isinstance(w, QLineEdit):
-                w.setText(str(value or ""))
-            elif isinstance(w, QSpinBox):
-                w.setValue(int(value))
-        except Exception:
-            log_swallowed()
-        self._push_timer.start()
-        return self._state()
-
-    # ---- the text widget's sentence (the web text editor, in place of the dialog's TextLabelEditor) ----
     def _te_data(self):
+        """What the text editor offers (text_editor.editor_data): its stats, its time spans."""
         from .text_editor import editor_data
 
         d = self.dlg  # (the time spans: the config the Qt editor reads them from)
         return editor_data(getattr(d, "theme_config", None) or getattr(d, "addon_config", None))
-
-    def _text(self, value=""):
-        from .text_editor import keep_default
-
-        d = self.dlg
-        if not hasattr(self, "_text_stored"):
-            self._text_stored = d.widget_def.get("template", "")
-        template = keep_default(str(value or ""), self._text_stored)
-        d.widget_def["template"] = template
-        d.local_config["template"] = template
-        try:
-            d._trigger_live_update()
-        except Exception:
-            log_swallowed()
-        return True
-
-    def _click(self, id):
-        w = self.mirror.ids.get(str(id)) if self.mirror else None
-        if isinstance(w, QPushButton) and w.isEnabled():
-            # later: a click can open a window of its own (the color picker), which waits for its answer
-            QTimer.singleShot(0, w.click)
-            QTimer.singleShot(0, self._push_timer.start)
-        return True
 
     # ---- the page drawn from the option schema (widget_options.py) ----
     def _color_of(self, o):
@@ -624,10 +325,10 @@ class WebWidgetSettings(QDialog):
         foot = [{"id": "reset", "text": tr("Reset to Defaults"), "role": "reset", "en": True},
                 {"id": "cancel", "text": tr("Cancel"), "role": "cancel", "en": True},
                 {"id": "save", "text": tr("Save"), "role": "save", "en": True}]
-        return {"schema": True, "groups": groups, "foot": foot, "title": self._title()}
+        return {"groups": groups, "foot": foot, "title": self.dlg.title()}
 
     def _preview(self):
-        """The widget shows the dialog's configs as they are now (what the dialog's apply_live_changes starts)."""
+        """The widget shows the configs being edited as they are now."""
         try:
             from . import live_preview
 
@@ -761,33 +462,18 @@ class WebWidgetSettings(QDialog):
         except Exception as e:
             log_warn(f"widget settings save: {e!r}", tag="WEB")
         self._cancelling = True
-        if self.qt:
-            self.dlg.accept()  # (its finished signal closes this window)
-        else:
-            self.done(1)
+        self.done(1)
         self._preview()
 
-    def _dialog_finished(self, result):
-        self.dlg._web_open = False
-        self._cancelling = True
-        self.done(int(result))
-
     def reject(self):
-        # the window's X or Escape: as the dialog's Cancel (its finished signal then closes this window)
+        # Cancel, the window's X or Escape
         if not self._cancelling:
             self._cancelling = True
-            if not self.qt:
-                self._cancel_state()
-            else:
-                try:
-                    self.dlg.reject()
-                    return
-                except Exception:
-                    log_swallowed()
+            self._cancel_state()
         super().reject()
 
     def _cancel_state(self):
-        """Cancel without the Qt dialog: the configs and own colors as they were, the widgets shown with them."""
+        """Cancel: the configs and own colors as they were, the widgets shown with them."""
         from ..details.logic import widget_settings_state
         from . import live_preview
 

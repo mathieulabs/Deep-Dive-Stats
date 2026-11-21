@@ -12,7 +12,6 @@ from . import Config, Period
 from .stat_card import _build_stat_values_map
 from .time_units import apply_time_unit as _apply_time_unit
 from .....logic.stat_cards import DECK_STATE_FIELDS, HISTORY_DERIVED_FIELDS, STAT_VALUE_FIELD_BINDINGS
-animations_enabled = lambda *_a, **_k: False
 from .....logic.tabs import DEFAULT_DETAILS_TABS
 from .....logic.logger import log_swallowed
 from ......i18n import tr, tr_n, tr_name

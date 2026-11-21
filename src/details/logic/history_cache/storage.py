@@ -2,7 +2,10 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 import zlib
 
-from .shared import mw, os, pickle, time
+import os
+import pickle
+import time
+from aqt import mw
 from ....const.addon_dir import addon_removed
 from ..logger import log_swallowed
 from .exclusion import exclusion_signature

@@ -1,7 +1,3 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Heatmap data and palette helpers."""
-
-
-class HeatmapWidget:
-    """Placeholder kept for isinstance() checks after removing the native Qt heatmap widget."""

@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Margins around the pinned widgets overlay (left/right share one value)."""
 
-from ..imports import Config
+from .....ui import Config
 
 DEFAULT_SIDE = 20
 DEFAULT_TOP = 0
@@ -19,7 +19,7 @@ def _clamped(conf, key, default):
 
 
 # -- the spaces between boxes and between lines --------------------------------------
-# Each one can be changed by dragging it (gap_handle.py). Changed ones are kept in
+# Each one can be changed by dragging it (pinned.js). Changed ones are kept in
 # Config.PINNED_GAPS by key: "box:<box above>" for the space under a box, and
 # "line:<box>:<line index>" for the space under a line of a box. The others use the
 # default: the "Space Between Lines" setting, the same for every space (between two lines

@@ -290,7 +290,9 @@
     timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/>',
     layers: '<path d="M12 3 2 8l10 5 10-5-10-5zM2 13l10 5 10-5M2 18l10 5 10-5"/>',
     check: '<circle cx="12" cy="12" r="9"/><path d="m9 12 2 2 4-4"/>',
-    flame: '<path d="M12 3q1 4 4 6.5t3 5.5a7 7 0 1 1-14 0c0-1.6.5-3.2 1.5-4.5 1 1.5 2 2 2.5 2-.5-2.5.5-5.5 3-9.5z"/>',
+    // spans x 3.5-21.5: reaches as far right as the other icons (a bit further, as its tip tapers),
+    // so the gap to the label looks the same on every card; its right side one even curve up to the tip
+    flame: '<path d="M12.5 2C14.5 6 21.5 8 21.5 13a9 9 0 1 1-18 0c0-2 .6-3.8 1.8-5.2 1.1 1.7 2.3 2.4 2.9 2.4-.6-3 .8-6.2 4.3-8.2z"/>',
     trophy: '<path d="M6 9H4a2 2 0 0 1-2-2V5h4M18 9h2a2 2 0 0 0 2-2V5h-4M6 4h12v5a6 6 0 0 1-12 0V4zM12 15v5M8 20h8"/>',
     calendar: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>',
     again: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"/>',
@@ -363,6 +365,10 @@
       t.appendChild(mkSvg('inline', '2.1'));
       const sp = document.createElement('span'); sp.textContent = lbl;
       t.appendChild(sp);
+      // an empty twin of the icon after the title: the title itself sits centered over the value. It shrinks
+      // first when the card is tight, so the card's width doesn't change (idealW counts the icon once)
+      const bal = document.createElement('i'); bal.className = 'dd-sc-ico-bal';
+      t.appendChild(bal);
     } else {
       t.textContent = lbl;
       if (p && mode === 'watermark') d.appendChild(mkSvg('watermark ' + pos, '1.5'));
@@ -444,6 +450,9 @@
             root.appendChild(ln);
           });
         } else {
+          // the same cards in the same places: their new values, and the lines hold the new card objects (their
+          // color, label, style: a theme change kept the old colors until the window was built again)
+          lines = groupLines(cards);
           cards.forEach(function(c){
             const d = byKey[c.key]; if (!d) return;
             setValue(d, c.key, c.value);

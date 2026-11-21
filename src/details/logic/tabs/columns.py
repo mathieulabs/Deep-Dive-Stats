@@ -3,8 +3,8 @@
 """The deck table's columns: every one that can be shown, and the ones shown (one list for every time span).
 
 The columns were chosen per time span (show_* in each span); the first span's choice is taken over the first time
-the list is read. The old show_* of every span are still written when the list changes, so the native table (dev
-comparison mode) and anything else reading them shows the same columns."""
+the list is read. The old show_* of every span are still written when the list changes, so anything still reading
+them shows the same columns."""
 
 from .. import Config
 from ....i18n import N_

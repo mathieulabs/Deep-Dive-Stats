@@ -1,17 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from .shared import (
-    QObject,
-    QTimer,
-    log_debug,
-    log_error,
-    log_info,
-    mw,
-    os,
-    pyqtSignal,
-    threading,
-)
+import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
+from aqt.qt import QObject, QTimer, pyqtSignal
+from aqt import mw
+from ..logger import log_debug, log_error, log_info
 from ....const.addon_dir import addon_removed
 from ..logger import log_swallowed
 
@@ -105,8 +99,6 @@ class GlobalHistoryCacheCore:
             cls._instance._hier_prewarm_scheduled = False
             cls._instance._context_update_pending = False
             cls._instance._context_update_delay_ms = 70
-            # Hint consumed by the UI layer to refresh widgets in place instead of rebuilding overlays after some background merges.
-            cls._instance._pending_partial_widget_refresh = None
             # Dedicated lane for review-return refresh jobs so they do not queue behind generic background work.
             cls._instance._priority_refresh_executor = ThreadPoolExecutor(
                 max_workers=1,

@@ -2,10 +2,10 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """The guided tour of the pinned widgets, on the web block (pinned.js draws it: DDP.tour).
 
-Same steps, texts and demo scenes as the Qt tour (details/widgets/common/guided_tour.py), which still
-does the work on the settings: a demo scene is the user's settings file with another layout, theme or
-text, and the file goes back byte for byte when the demo steps are left or the tour ends. Here the
-block is built again in place for each scene (pinned.refresh_block) instead of the Qt overlay.
+The steps, texts and demo scenes come from details/widgets/common/guided_tour.py, which also does the work on
+the settings: a demo scene is the user's settings file with another layout, theme or text, and the file goes back
+byte for byte when the demo steps are left or the tour ends. The block is built again in place for each scene
+(pinned.refresh_block).
 
 It starts by itself once, the first time the block shows on the deck list, and again from the menu."""
 
@@ -39,19 +39,13 @@ def _timed(name):
 _state = {"running": False, "scheduled": False, "tries": 0, "patched": False}
 
 
-def _targets():
-    return {gt._target_all: "all", gt._target_add: "add", gt._target_text: "text",
-            gt._target_menu_widget: "menu", gt._target_span: "span", gt._target_zoom: "zoom"}
-
-
 def payload():
     from ..i18n import tr
 
-    keys = _targets()
     touch = gt._touch_texts()
     steps = []
     for scene, target, text, action in gt._steps():
-        steps.append({"scene": scene, "target": keys.get(target, "all"), "text": text, "action": action,
+        steps.append({"scene": scene, "target": target, "text": text, "action": action,
                       "touch_text": touch.get(action), "cycle": gt._cycle_scenes(action)})
     return {"steps": steps, "labels": {"title": tr("Quick tour"), "next": tr("Next"), "done": tr("Done"),
                                        "back": tr("Back"), "skip": tr("Skip"),
@@ -185,7 +179,7 @@ def h_end(_wid=None):
     return True
 
 
-# ---- pictures of the real menus (built, never shown), as the Qt tour shows them ----------------------
+# ---- pictures of the menus (web_menus' entries drawn as a Qt menu, never shown), as the Qt tour shows them ----
 def _data_url(pm):
     from aqt.qt import QBuffer, QByteArray, QIODevice
 
@@ -215,45 +209,62 @@ def _pictures(menu, act):
     return out
 
 
-class _captured:
-    """QMenu.exec caught while a menu is built: the menu is kept, not shown (guided_tour._menu_picture)."""
+# the page's icon names (app.js ICONS) as the Qt icons of the pictures
+_QT_ICONS = {"external": "external-link", "maximize": "maximize", "plus": "plus", "gear": "settings",
+             "filetext": "file-text", "help": "help-circle", "calendar": "calendar", "zoom": "zoom-in",
+             "layers": "layers", "eye": "eye", "trash": "trash-2", "copy": "copy"}
 
-    def __enter__(self):
-        from aqt.qt import QMenu
 
-        self.menus = []
-        self.had = "exec" in QMenu.__dict__
-        self.saved = QMenu.__dict__.get("exec")
-        QMenu.exec = lambda menu, *a, **k: self.menus.append(menu)
-        return self
+def _qmenu(items, menu=None):
+    """A Qt menu of the page's entries (web_menus), for its picture: in the pinned widgets' theme. The entries'
+    keys are in the actions' data."""
+    import html
 
-    def __exit__(self, *exc):
-        from aqt.qt import QMenu
+    from ..details.ui import StyledMenu, get_svg_icon
+    from ..details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
 
-        if self.had:
-            QMenu.exec = self.saved
-        elif "exec" in QMenu.__dict__:
-            del QMenu.exec
-        return False
+    top = menu is None
+    if top:
+        menu = StyledMenu(None)
+        menu.setProperty("deepdivestats_theme_context", "pinned")
+        menu.setProperty("deepdivestats_ignore_forced_dark_theme", True)
+        try:
+            m = MainMenuWidgetManager.instance()
+            menu.setProperty("deepdivestats_config_override", dict(m._get_config_manager().config or {}))
+            menu._apply_theme_style()
+        except Exception:
+            log_swallowed()
+    for it in items:
+        if it == "sep":
+            menu.addSeparator()
+            continue
+        key, label, checked, icon, _mode, sub, disabled = it
+        label = html.unescape(label).replace("&", "&&")
+        if sub is not None:
+            act = menu.addMenu(label).menuAction()
+            _qmenu(sub, act.menu())
+        else:
+            act = menu.addAction(label)
+            if checked is not None:
+                act.setCheckable(True)
+                act.setChecked(bool(checked))
+        if icon in _QT_ICONS:
+            act.setIcon(get_svg_icon(_QT_ICONS[icon], size=16, context_ref=menu))
+        act.setData(key)
+        act.setEnabled(not disabled)
+    return menu
 
 
 def _menu_of(id, names):
     """The widget's right-click menu, with the first entry named in names lit."""
-    from aqt.qt import QPoint
-
-    from ..details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
-    from . import pinned
+    from . import pinned, web_menus
 
     d = pinned._def_of(id)
     if d is None:
         return None
-    m = MainMenuWidgetManager.instance()
-    with _captured() as c, pinned._web_menu(m, id):
-        m._context_menu.show(pinned._proxy(d), d, QPoint(0, 0), fixed_global_pos=QPoint(0, 0))
-    if not c.menus:
-        return None
-    menu = c.menus[0]
-    act = next((a for a in menu.actions() if a.text().replace("&", "") in names), None)
+    items = web_menus._clean(web_menus.context_menu(d).items)
+    menu = _qmenu(items)
+    act = next((a for a in menu.actions() if a.text().replace("&&", "&") in names), None)
     return _pictures(menu, act)
 
 
@@ -589,26 +600,24 @@ def h_gallery(which=None, _wid=None):
 def h_span(id=None, _wid=None):
     """The period list of the chart's label, for each period the step goes through (past month, year, all, when
     the list has them and the chart does not show it now): [{value, plain, lit, w, h, entry}]."""
-    from ..details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
-    from ..details.widgets.pinned.main_menu.ui.card_chips import fill_span_menu, themed_menu
-    from . import pinned
+    from . import pinned, web_menus
 
     d = pinned._def_of(id)
     if d is None:
         return []
     gt._span_id[:] = [id]  # the chart the "span:" scenes change
-    m = MainMenuWidgetManager.instance()
-    px = pinned._proxy(d)
-    probe = themed_menu(px, m)
-    fill_span_menu(probe, m, px, d)
-    values = [a.data() for a in probe.actions() if a.isCheckable() and isinstance(a.data(), int)]
-    probe.deleteLater()
+    items = web_menus._clean(web_menus.span_menu(d).items)
+
+    def value(it):  # a period's key: "s:<value>:<days>" (web_menus._fill_spans)
+        k = it[0] if isinstance(it, list) else ""
+        return int(k.split(":")[1]) if k.startswith("s:") else None
+
+    values = [value(it) for it in items if value(it) is not None]
     current = d.get("time_span")
     out = []
     for v in [v for v in (2, 3, -1, 8, 0) if v in values and v != current][:3]:
-        menu = themed_menu(px, m)
-        fill_span_menu(menu, m, px, d)
-        act = next((a for a in menu.actions() if a.data() == v), None)
+        menu = _qmenu(items)
+        act = next((a for a in menu.actions() if isinstance(a.data(), str) and a.data().startswith("s:%d:" % v)), None)
         out.append(dict(_pictures(menu, act), value=v, badge=_span_badge(v)))
     return out
 

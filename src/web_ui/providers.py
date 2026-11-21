@@ -645,7 +645,9 @@ def heatmap(deck, span, options=None):
         if last is not None:
             anchor = {"first": None, "last": last.isoformat(), "full": True}
     except Exception:
-        pass
+        from ..details.logic.logger import log_swallowed
+
+        log_swallowed()
     return {"data": _plain(data), "anchor": anchor}
 
 
@@ -701,7 +703,7 @@ AZ_METRICS = ("ratings", "forgotten", "review_speed", "introduced", "resets")
 
 
 def adaptive(deck, span, first, last, source="activity", types=None):
-    """Native adaptive zoom (controls_parts/adaptive_zoom.try_adaptive_zoom): when the zoom shows 2 days or less,
+    """Adaptive zoom: when the zoom shows 2 days or less,
     the charts of days switch to 10-minute bins over those days. {} when the window is wider (or already 10 minutes).
     types: the charts shown; those of AZ_METRICS among them (and the one zoomed) get their 10-minute rows too."""
     from ..utils import rollover_hour
@@ -740,7 +742,7 @@ def adaptive(deck, span, first, last, source="activity", types=None):
 
     shown = filter_activity_types(hist, _setting("activity", "hidden_review_types", None))
     out["activity"] = {"rows": _daily_rows(attach_breakdown_totals(build_breakdown_rows(shown, count_key_style="plain"), shown), shown)}
-    # the start of each 10-minute row (ms), for the one-dot-per-review view (controls_parts/review_dots._parse)
+    # the start of each 10-minute row (ms), for the one-dot-per-review view
     from datetime import datetime
 
     def _ms(r):
@@ -861,7 +863,9 @@ def zoom_stats(deck, span, first=None, last=None, bounds=None):
                     if rl is not None:
                         anchor = {"first": anchor["first"], "last": rl.isoformat(), "full": True}
         except Exception:
-            pass
+            from ..details.logic.logger import log_swallowed
+
+            log_swallowed()
         out["heatmap"] = {"data": _plain(data), "anchor": anchor}
     except Exception as e:
         from ..details.logic.logger import log_warn
@@ -1537,7 +1541,9 @@ def warm_deck_stats(order):
                     _v, hit = _deck_stats(d)
                     done += 0 if hit else 1
                 except Exception:
-                    pass
+                    from ..details.logic.logger import log_swallowed
+
+                    log_swallowed()
                 time.sleep(0.005)
         finally:
             _WARM["busy"] = False
@@ -1550,7 +1556,9 @@ def warm_deck_stats(order):
 
             trace(f"table deck warm-up: {n} decks read ahead")
         except Exception:
-            pass
+            from ..details.logic.logger import log_swallowed
+
+            log_swallowed()
 
     mw.taskman.run_in_background(run, on_done=fin)
 
@@ -1606,7 +1614,9 @@ def _deck_table(deck, sort, expanded=None):
     try:
         warm_deck_stats([deck] + [t["did"] for t in out["deck_tabs"] if str(t["did"]) != str(deck)])
     except Exception:
-        pass
+        from ..details.logic.logger import log_swallowed
+
+        log_swallowed()
     out["tab"] = next((i for i, t in enumerate(out["deck_tabs"]) if str(t["did"]) == str(deck)), 0)
     out["tabs"] = [{k: t[k] for k in ("title", "did", "name", "kids", "open", "keep") if k in t} for t in out["deck_tabs"]]
     out["mode"] = "deck"
@@ -1640,7 +1650,7 @@ _add_extras()
 
 def review_events(deck, t0, t1):
     """One entry per review in [t0, t1) ms: (time, answer ms, button, kind, card id), the review types hidden on
-    Activity left out; None when there are too many (controls_parts/review_dots._apply)."""
+    Activity left out; None when there are too many."""
     from ..details.logic.data.transforms.activity_series import normalize_hidden_types
     from ..details.logic.history_provider import HistoryProvider
     from ..details.logic.history_provider.ops.review_events import fetch_review_events

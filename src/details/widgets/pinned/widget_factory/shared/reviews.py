@@ -118,48 +118,38 @@ def _load_activity_source(
     fail_if_not_cached=False,
     allow_context_slow_ops=False,
 ):
-    if is_direct_review_range(span):
-        history_bundle = load_oldest_first_review_history(
+    # A direct range (today, yesterday...) is read from the reviews, never from the context or the cache.
+    direct = is_direct_review_range(span)
+    if not direct:
+        ctx = get_pinned_context(
             deck_id,
             span,
-            cache=cache,
             cfg=cfg,
             custom_days=custom_days,
-            fail_if_not_cached=False,
+            fail_if_not_cached=fail_if_not_cached,
+            allow_slow_ops=allow_context_slow_ops,
         )
-        oldest_first = history_bundle["oldest_first"]
-        return {
-            "activity_data": build_activity_series(oldest_first),
-            "breakdown_data": build_breakdown_rows(oldest_first, count_key_style="plain"),
-            "raw_hist": oldest_first,
-            "history_is_none": False,
-        }
+        for src in (ctx, cache):
+            if src and "activity_data" in src:
+                return {
+                    "activity_data": src["activity_data"],
+                    "breakdown_data": src.get("activity_breakdown"),
+                    "raw_hist": list(reversed(src.get("reviews", []))),
+                    "history_is_none": False,
+                }
 
-    ctx = get_pinned_context(
-        deck_id,
-        span,
-        cfg=cfg,
-        custom_days=custom_days,
-        fail_if_not_cached=fail_if_not_cached,
-        allow_slow_ops=allow_context_slow_ops,
-    )
-    if ctx and "activity_data" in ctx:
-        return {
-            "activity_data": ctx["activity_data"],
-            "breakdown_data": ctx.get("activity_breakdown"),
-            "raw_hist": list(reversed(ctx.get("reviews", []))),
-            "history_is_none": False,
-        }
+    oldest_first, history_is_none = _oldest_first(deck_id, span, cache, cfg, custom_days, fail_if_not_cached and not direct)
+    return {
+        "activity_data": build_activity_series(oldest_first),
+        "breakdown_data": build_breakdown_rows(oldest_first, count_key_style="plain"),
+        "raw_hist": oldest_first,
+        "history_is_none": history_is_none and not direct,
+    }
 
-    if cache and "activity_data" in cache:
-        return {
-            "activity_data": cache["activity_data"],
-            "breakdown_data": cache.get("activity_breakdown"),
-            "raw_hist": list(reversed(cache.get("reviews", []))),
-            "history_is_none": False,
-        }
 
-    history_bundle = load_oldest_first_review_history(
+def _oldest_first(deck_id, span, cache, cfg, custom_days, fail_if_not_cached):
+    """The reviews of the span oldest first, and whether there was no history."""
+    bundle = load_oldest_first_review_history(
         deck_id,
         span,
         cache=cache,
@@ -167,13 +157,7 @@ def _load_activity_source(
         custom_days=custom_days,
         fail_if_not_cached=fail_if_not_cached,
     )
-    oldest_first = history_bundle["oldest_first"]
-    return {
-        "activity_data": build_activity_series(oldest_first),
-        "breakdown_data": build_breakdown_rows(oldest_first, count_key_style="plain"),
-        "raw_hist": oldest_first,
-        "history_is_none": history_bundle["history_is_none"],
-    }
+    return bundle["oldest_first"], bundle["history_is_none"]
 
 
 def load_retention_source(
@@ -184,42 +168,19 @@ def load_retention_source(
     custom_days=7,
     fail_if_not_cached=False,
 ):
-    if is_direct_review_range(span):
-        history_bundle = load_oldest_first_review_history(
-            deck_id,
-            span,
-            cache=cache,
-            cfg=cfg,
-            custom_days=custom_days,
-            fail_if_not_cached=False,
-        )
-        oldest_first = history_bundle["oldest_first"]
-        return {
-            "retention_data": build_retention_series(oldest_first, strict_series=RETENTION_SERIES_KEYS),
-            "raw_hist": oldest_first,
-            "history_is_none": False,
-        }
-
-    if cache and "retention_data" in cache:
+    direct = is_direct_review_range(span)
+    if not direct and cache and "retention_data" in cache:
         return {
             "retention_data": cache["retention_data"],
             "raw_hist": list(reversed(cache.get("reviews", []))),
             "history_is_none": False,
         }
 
-    history_bundle = load_oldest_first_review_history(
-        deck_id,
-        span,
-        cache=cache,
-        cfg=cfg,
-        custom_days=custom_days,
-        fail_if_not_cached=fail_if_not_cached,
-    )
-    oldest_first = history_bundle["oldest_first"]
+    oldest_first, history_is_none = _oldest_first(deck_id, span, cache, cfg, custom_days, fail_if_not_cached and not direct)
     return {
         "retention_data": build_retention_series(oldest_first, strict_series=RETENTION_SERIES_KEYS),
         "raw_hist": oldest_first,
-        "history_is_none": history_bundle["history_is_none"],
+        "history_is_none": history_is_none and not direct,
     }
 
 

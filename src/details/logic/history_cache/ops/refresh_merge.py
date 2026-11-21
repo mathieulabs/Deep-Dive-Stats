@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from ..shared import Period
+from ... import Period
 
 def merge_delta(cache, delta_map, is_undo=False):
     """Merges new reviews into existing TOTAL cache entries."""
@@ -88,10 +88,9 @@ def merge_delta(cache, delta_map, is_undo=False):
         d_stats = new_total.get("stats", {})
         e_stats = total_ctx["stats"]
 
-        need_streak_recalc = is_undo
-
-        if is_undo:
-            # Full recalc: data was removed, can't increment
+        need_streak_recalc = is_undo or "total_reviews" not in e_stats
+        if need_streak_recalc:
+            # Full recalc: an undo removed data (can't increment), or the cache has no totals yet
             for k in ["total_reviews", "total_time_ms", "total_passed", "rev_young", "pass_young", "rev_mat", "pass_mat"]:
                 e_stats[k] = 0
             for h in merged_history:
@@ -103,20 +102,6 @@ def merge_delta(cache, delta_map, is_undo=False):
                 e_stats["rev_mat"] += h.get("rev_mat", 0)
                 e_stats["pass_mat"] += h.get("pass_mat", 0)
             e_stats["active_days"] = sum(1 for h in merged_history if h.get("reviews", 0) > 0)
-        elif "total_reviews" not in e_stats:
-            # Uninitialized cache, fall back to full-pass for safety
-            for k in ["total_reviews", "total_time_ms", "total_passed", "rev_young", "pass_young", "rev_mat", "pass_mat"]:
-                e_stats[k] = 0
-            for h in merged_history:
-                e_stats["total_reviews"] += h.get("reviews", 0)
-                e_stats["total_time_ms"] += h.get("time_ms", 0)
-                e_stats["total_passed"] += h.get("passed", 0)
-                e_stats["rev_young"] += h.get("rev_young", 0)
-                e_stats["pass_young"] += h.get("pass_young", 0)
-                e_stats["rev_mat"] += h.get("rev_mat", 0)
-                e_stats["pass_mat"] += h.get("pass_mat", 0)
-            e_stats["active_days"] = sum(1 for h in merged_history if h.get("reviews", 0) > 0)
-            need_streak_recalc = True
         else:
             # Incremental: each new_item carries delta amounts (augmented bins hold only the added counts, new bins their full counts), so add them to the existing totals.
             new_dates_added = set()

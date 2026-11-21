@@ -23,7 +23,7 @@ def register_hooks(manager):
     gui_hooks.profile_did_open.append(manager._on_profile_did_open)
 
     try:
-        from ..imports import sync_theme_manager_and_notify
+        from ....chart_utils.theme import sync_theme_manager_and_notify
 
         sync_theme_manager_and_notify(manager._get_config_manager().config, source="pinned_register")
     except Exception:
@@ -64,7 +64,7 @@ def on_operation_did_execute(manager, changes, handler):
         deck_config_changed = bool(getattr(changes, "deck_config", False))
         if (deck_changed or deck_config_changed) and mw.state != "review":
             try:
-                from ..imports import GlobalHistoryCache
+                from .....logic.history_cache import GlobalHistoryCache
 
                 GlobalHistoryCache()._invalidate_hierarchy_context(
                     reason="deck_change" if deck_changed else "deck_config_change"
@@ -98,7 +98,7 @@ def run_operation_refresh(manager):
     states_only = False
     try:
         from ...widget_factory.utils import PinnedDataManager, invalidate_max_ids_cache, _get_max_ids
-        from ..imports import GlobalHistoryCache
+        from .....logic.history_cache import GlobalHistoryCache
         from .....logic.history_cache.ops.refresh_monitoring import capture_db_fingerprint
 
         ghc = GlobalHistoryCache()
@@ -132,7 +132,7 @@ def run_operation_refresh(manager):
     except Exception:
         log_swallowed()
     try:
-        from ..imports import GlobalHistoryCache
+        from .....logic.history_cache import GlobalHistoryCache
 
         ghc = GlobalHistoryCache()
         # a callback, even one doing nothing: refresh_incremental skips the refreshes without one while reviewing
@@ -150,7 +150,6 @@ def _noop():
 
 def on_profile_did_open(manager):
     manager._mark_config_dirty()
-    manager.__class__._last_max_ids = None
     try:
         # Ids belong to the previous profile.
         from ...widget_factory import utils as _wf_utils
@@ -160,7 +159,7 @@ def on_profile_did_open(manager):
     except Exception:
         log_swallowed()
     try:
-        from ..imports import sync_theme_manager_and_notify
+        from ....chart_utils.theme import sync_theme_manager_and_notify
 
         sync_theme_manager_and_notify(manager._get_config_manager().config, source="pinned_profile_open")
     except Exception:
@@ -168,6 +167,6 @@ def on_profile_did_open(manager):
 
 
 def on_theme_change(manager):
-    from ..imports import sync_theme_manager_from_config
+    from ....chart_utils.theme import sync_theme_manager_from_config
 
     sync_theme_manager_from_config(manager._get_config_manager().config, emit=True, source="anki_theme_change")

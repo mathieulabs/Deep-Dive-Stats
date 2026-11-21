@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from .widget_settings import WidgetSettingsDialog
+from .widget_settings import widget_settings_dialog
 
-__all__ = ["DeckSettingsDialog", "WidgetSettingsDialog"]
+__all__ = ["widget_settings_dialog"]

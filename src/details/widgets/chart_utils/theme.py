@@ -768,6 +768,10 @@ def sync_theme_manager_from_config(conf, emit=False, source=None):
     """Sync theme manager runtime state from a config dict."""
     cfg = conf if isinstance(conf, dict) else {}
     _new_sig = theme_config_signature(cfg)
+    # the cached palettes are keyed by the modes only, but read the preset and its colors from the config: another
+    # preset with the same mode (a dark theme for a light one, a preview) kept the old colors until Anki restarted
+    if _new_sig is None or _new_sig != _LAST_SYNCED_THEME_SIGNATURE[0]:
+        _THEME_MANAGER.invalidate_cache()
     _LAST_SYNCED_THEME_SIGNATURE[0] = _new_sig
     _THEME_MANAGER.set_details_theme_mode(resolve_details_theme_mode_from_config(cfg))
     _THEME_MANAGER.set_pinned_use_active_theme(bool(cfg.get(Config.PINNED_USE_ACTIVE_THEME, False)))

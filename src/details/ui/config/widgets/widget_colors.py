@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-"""The "Colors" section of a widget's settings dialog (charts, heatmap and stat cards),
-placed right under General.
+"""The colors of a widget's settings (charts, heatmap and stat cards; the page draws them: web_ui/widget_settings.py
+_Colors).
 
-It lists the data colors the widget uses. By default they are the shared colors of
+They are the data colors the widget uses. By default they are the shared colors of
 Settings > Colors: a color changed here changes everywhere it is used, at once and outside
 the dialog's Save/Cancel, like in Settings > Colors. Opened from a pinned widget with the
 separate pinned theme on, the pinned colors are edited instead.
@@ -17,13 +17,10 @@ Config.DASH_STAT_COLORS.
 from __future__ import annotations
 
 from aqt import mw
-from aqt.qt import QCheckBox, QComboBox, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, Qt, QVBoxLayout, QWidget
 
 from ... import Config
-from ...theme.icons import get_svg_icon
-from .....qss import set_qss
 from ....logic.logger import log_swallowed
-from .....i18n import tr, N_, tr_name
+from .....i18n import N_
 
 OWN_KEY = "own_colors"
 
@@ -369,18 +366,10 @@ def cancel_own_colors(dialog):
 
 
 def _live_target(dialog):
-    """The widget's card on screen: the dialog's parent, or for a Deep Dive stat card the
-    card itself inside its row."""
-    target = dialog.parent()
-    if target is None or not (dialog.type == "stat_card" and dialog.is_dashboard_context):
-        return target
-    from ....widgets.stats_cards import StatCardWidget
-
-    key = dialog.widget_def.get("stat_key")
-    for card in target.findChildren(StatCardWidget):
-        if getattr(card, "config_key", None) == key:
-            return card
-    return None
+    """The widget's card on screen: the dialog's parent (none for a Deep Dive stat card: the page shows its colors)."""
+    if dialog.type == "stat_card" and dialog.is_dashboard_context:
+        return None
+    return dialog.parent()
 
 
 def sync_own_colors(dialog):
@@ -393,322 +382,6 @@ def sync_own_colors(dialog):
         apply_own_colors(_live_target(dialog), _own_colors(dialog))
     except Exception:
         log_swallowed()
-
-
-# The section
-
-def _heatmap_palette(dialog, box):
-    """The heatmap's palette (also in its right-click menu): the presets and the user's own gradients, saved to come
-    back to and switch between (each a name and 2 to 12 colors, the least activity first)."""
-    from ....widgets.charts.heatmap.palettes import (CUSTOM, DEFAULT_COLORS, MAX_COLORS, MIN_COLORS, PALETTES,
-                                                     customs_of, new_id, palette_of)
-
-    conf = dialog.addon_config
-    row = QHBoxLayout()
-    row.addWidget(QLabel(tr("Palette")))
-    row.addStretch()
-    combo = QComboBox(dialog)
-    row.addWidget(combo)
-    new_btn = QPushButton(tr("New gradient"), dialog)
-    new_btn.setToolTip(tr("A new gradient of your own, saved with the others (starts from the one shown)"))
-    row.addWidget(new_btn)
-    box.addLayout(row)
-    dialog.hm_palette_combo = combo
-    dialog.hm_customs = customs_of(conf.get)
-
-    # the chosen gradient: its name, its colors, a color more or less, delete it
-    editor = QWidget(dialog)
-    ed_box = QVBoxLayout(editor)
-    ed_box.setContentsMargins(12, 0, 0, 0)
-    name_row = QHBoxLayout()
-    name_row.addWidget(QLabel(tr("Name")))
-    name_edit = QLineEdit(editor)
-    name_row.addWidget(name_edit, 1)
-    del_btn = QPushButton(tr("Delete"), editor)
-    name_row.addWidget(del_btn)
-    ed_box.addLayout(name_row)
-    colors_host = QWidget(editor)
-    colors_box = QVBoxLayout(colors_host)
-    colors_box.setContentsMargins(0, 0, 0, 0)
-    ed_box.addWidget(colors_host)
-    from ..dialogs.heatmap_gradient import stops_row
-
-    stop_row, rem_btn, add_btn, show_strip = stops_row(editor)
-    ed_box.insertLayout(1, stop_row)  # under the name, over the colors
-    box.addWidget(editor)
-
-    def current():
-        key = combo.currentData() or ""
-        return next((p for p in dialog.hm_customs if CUSTOM + p["id"] == key), None)
-
-    def fill_combo(select):
-        combo.blockSignals(True)
-        combo.clear()
-        for key, label in PALETTES:
-            combo.addItem(tr_name(label), key)
-        if dialog.hm_customs:
-            combo.insertSeparator(combo.count())
-            for p in dialog.hm_customs:
-                combo.addItem(p["name"], CUSTOM + p["id"])
-        combo.setCurrentIndex(max(0, combo.findData(select)))
-        combo.blockSignals(False)
-
-    def clear_layout(lay):
-        while lay.count():
-            item = lay.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
-            elif item.layout() is not None:
-                clear_layout(item.layout())
-
-    def set_color(i, color):
-        p = current()
-        if p is not None and i < len(p["colors"]):
-            p["colors"][i] = color
-            show_strip(p["colors"])
-            dialog.apply_live_changes()
-
-    def build_colors():
-        clear_layout(colors_box)
-        p = current()
-        if p is None:
-            return
-        n = len(p["colors"])
-        for i in range(n):
-            if i == 0:
-                label = tr("Low")
-            elif i == n - 1:
-                label = tr("High")
-            else:
-                label = tr("Middle") if n == 3 else "%s %d" % (tr("Middle"), i)
-            _color_row(
-                dialog, colors_box, label,
-                current_fn=lambda i=i: (current() or {"colors": DEFAULT_COLORS})["colors"][i],
-                is_default_fn=lambda: True,  # a gradient of the user's has no default color: no arrow back
-                set_fn=lambda color, i=i: set_color(i, color),
-                reset_fn=lambda: None,
-                reset_tip="",
-            )
-        add_btn.setEnabled(n < MAX_COLORS)
-        rem_btn.setEnabled(n > MIN_COLORS)
-        show_strip(p["colors"])
-
-    def sync(*_args):
-        p = current()
-        editor.setVisible(p is not None)
-        if p is not None:
-            name_edit.blockSignals(True)
-            name_edit.setText(p["name"])
-            name_edit.blockSignals(False)
-        build_colors()
-        # Multicolor only changes the chosen color's shades
-        dialog.multi_hue_cb.setEnabled((combo.currentData() or "") == "")
-
-    def on_new(_checked=False):
-        from ....widgets.charts.heatmap.palettes import seed_colors
-        from ...theme import get_theme_effective_is_dark
-        from .....const.theme.color_resolver import get_color
-
-        pid = new_id(dialog.hm_customs)
-        # from the palette shown (a preset's colors, the chosen color's shades, the gradient shown)
-        seed = seed_colors(combo.currentData() or "", dialog.hm_customs, get_color(conf, Config.HEATMAP_COLOR, "details"),
-                           dark=get_theme_effective_is_dark(conf))
-        dialog.hm_customs.append({"id": pid, "name": tr("Gradient {number}", number=pid), "colors": seed})
-        fill_combo(CUSTOM + pid)
-        sync()
-        dialog.apply_live_changes()
-        name_edit.setFocus()
-        name_edit.selectAll()
-
-    def on_delete(_checked=False):
-        from aqt.utils import askUser
-
-        p = current()
-        if p is None or not askUser(tr("Delete the gradient {name}?", name=p["name"]), parent=dialog):
-            return
-        dialog.hm_customs = [x for x in dialog.hm_customs if x is not p]
-        fill_combo("")
-        sync()
-        dialog.apply_live_changes()
-
-    def on_name(text):
-        p = current()
-        if p is None or not text.strip():
-            return
-        p["name"] = text.strip()
-        combo.setItemText(combo.currentIndex(), p["name"])
-        dialog.apply_live_changes()
-
-    def _mix(a, b):
-        try:
-            ra, rb = int(a.lstrip("#")[:6], 16), int(b.lstrip("#")[:6], 16)
-        except ValueError:
-            return b
-        ch = [((ra >> s & 255) + (rb >> s & 255)) // 2 for s in (16, 8, 0)]
-        return "#%02x%02x%02x" % tuple(ch)
-
-    def on_add(_checked=False):
-        p = current()
-        if p is None or len(p["colors"]) >= MAX_COLORS:
-            return
-        # between the last two (the highest stays the highest)
-        p["colors"].insert(len(p["colors"]) - 1, _mix(p["colors"][-2], p["colors"][-1]))
-        build_colors()
-        dialog.apply_live_changes()
-
-    def on_remove(_checked=False):
-        p = current()
-        if p is None or len(p["colors"]) <= MIN_COLORS:
-            return
-        p["colors"].pop(len(p["colors"]) - 2)  # the last one before the highest
-        build_colors()
-        dialog.apply_live_changes()
-
-    def load(c):
-        dialog.hm_customs = customs_of(c.get)
-        fill_combo(palette_of(c.get, dialog.hm_customs))
-        sync()
-
-    def reset():
-        # back to the chosen color; the saved gradients stay
-        fill_combo("")
-        sync()
-
-    combo.currentIndexChanged.connect(sync)
-    new_btn.clicked.connect(on_new)
-    del_btn.clicked.connect(on_delete)
-    name_edit.textChanged.connect(on_name)
-    add_btn.clicked.connect(on_add)
-    rem_btn.clicked.connect(on_remove)
-    dialog.hm_palette_load = load
-    dialog.hm_palette_reset = reset
-    load(conf)
-
-
-def _color_row(dialog, box, label, current_fn, is_default_fn, set_fn, reset_fn, reset_tip):
-    """label, a swatch to pick a color and a button back to the default one. Returns
-    (swatch, show): show() repaints the row from current_fn / is_default_fn."""
-    row = QHBoxLayout()
-    row.addWidget(QLabel(label))
-    row.addStretch()
-    swatch = QPushButton(dialog)  # parented: a lone button would show as a window
-    swatch.setFixedSize(28, 22)
-    swatch.setCursor(Qt.CursorShape.PointingHandCursor)
-    swatch.setToolTip(tr("Click to pick a color"))
-    reset = QPushButton(dialog)
-    reset.setIcon(get_svg_icon("rotate-ccw", size=13, context_ref=dialog))
-    reset.setFixedSize(22, 22)
-    reset.setCursor(Qt.CursorShape.PointingHandCursor)
-    reset.setToolTip(reset_tip)
-    set_qss(reset, "QPushButton { background: transparent; border: none; } QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }")
-
-    def show():
-        set_qss(swatch, f"background-color: {current_fn()}; border: 1px solid rgba(128,128,128,0.45); border-radius: 4px;")
-        reset.setVisible(not is_default_fn())
-
-    def pick(_checked=False):
-        from ..shared.color_picker import pick_color_live
-
-        def live(hex_):
-            set_fn(hex_)
-            show()
-
-        pick_color_live(dialog, current_fn(), tr("Pick Color"), live)
-
-    def back(_checked=False):
-        reset_fn()
-        show()
-
-    swatch.clicked.connect(pick)
-    reset.clicked.connect(back)
-    show()
-    row.addWidget(swatch)
-    row.addWidget(reset)
-    box.addLayout(row)
-    return swatch, show
-
-
-def build_widget_color_section(dialog):
-    """The Colors group (not yet in the dialog), or None when the widget has no colors."""
-    keys = color_keys_for(dialog)
-    if not keys:
-        return None
-    from ....widgets.chart_utils.own_colors import clean_own_colors
-
-    dialog._own_colors_backup = clean_own_colors(dialog.widget_def.get(OWN_KEY))
-    group = QGroupBox(tr("Colors"))
-    box = QVBoxLayout(group)
-    own_cb = QCheckBox(tr("Own colors (this widget only)"))
-    own_cb.setToolTip(tr("Off: the shared colors of Settings > Colors. On: colors for this widget only."))
-    own_cb.setChecked(_own_colors(dialog) is not None)
-    box.addWidget(own_cb)
-    dialog.own_colors_cb = own_cb
-    dialog.widget_color_buttons = {}
-    shows = []
-
-    def is_own():
-        return own_cb.isChecked()
-
-    def current(key):
-        own = (_own_colors(dialog) or {}).get(key) if is_own() else None
-        return own or _shared_current(dialog, key)
-
-    def is_default(key):
-        if is_own():
-            return (_own_colors(dialog) or {}).get(key) is None
-        return str(_shared_current(dialog, key)).lower() == str(_shared_baseline(dialog, key)).lower()
-
-    def set_color(key, color):
-        if is_own():
-            colors = dict(_own_colors(dialog) or {})
-            colors[key] = color
-            _store_own_colors(dialog, colors)
-        else:
-            set_shared_color(dialog, key, color)
-
-    def reset_color(key):
-        if is_own():
-            colors = dict(_own_colors(dialog) or {})
-            colors.pop(key, None)
-            _store_own_colors(dialog, colors)
-        else:
-            set_shared_color(dialog, key, _shared_baseline(dialog, key))
-
-    for key, label in keys:
-        swatch, show = _color_row(
-            dialog,
-            box,
-            tr_name(label),
-            current_fn=lambda key=key: current(key),
-            is_default_fn=lambda key=key: is_default(key),
-            set_fn=lambda color, key=key: set_color(key, color),
-            reset_fn=lambda key=key: reset_color(key),
-            reset_tip=tr("Back to the shared color"),
-        )
-        dialog.widget_color_buttons[key] = swatch
-        shows.append(show)
-
-    if dialog.type == "heatmap":
-        # the heatmap's other color choice (also in its right-click menu): one hue per level instead of shades
-        dialog.multi_hue_cb = QCheckBox(tr("Multicolor Intensity"))
-        dialog.multi_hue_cb.setChecked(bool(dialog.addon_config.get(Config.HEATMAP_MULTI_HUE_INTENSITY, False)))
-        box.addWidget(dialog.multi_hue_cb)
-        _heatmap_palette(dialog, box)
-
-    def refresh():
-        group.setToolTip(tr_name(_OWN_TIP if is_own() else _SHARED_TIP))
-        for show in shows:
-            show()
-
-    def on_own_toggled(checked):
-        # On starts with no own color set (the widget looks the same); off drops them.
-        _store_own_colors(dialog, {} if checked else None)
-        refresh()
-
-    own_cb.toggled.connect(on_own_toggled)
-    dialog._refresh_widget_colors = refresh
-    refresh()
-    return group
 
 
 def auto_title_color(dialog):

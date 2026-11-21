@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-"""Short guided tour of the pinned widgets on Anki's main screen.
+"""Short guided tour of the pinned widgets on Anki's main screen: its steps, texts and demo scenes, drawn by the
+web block (web_ui/tour.py, pinned.js).
 
 It starts once by itself, the first time pinned widgets are on screen (also after an
 update, for those who already had the add-on), and again from the Deep Dive menu. Each
@@ -16,9 +17,8 @@ at the next start."""
 import json
 import os
 import time
-import weakref
 
-from aqt.qt import QPoint, QRect, QTimer, QWidget
+from aqt.qt import QTimer
 
 from ...logic.logger import log_swallowed
 from ...logic.user_state import load_state, save_state, state_path
@@ -30,8 +30,6 @@ _RETRY_MS = 4000
 _MAX_TRIES = 150  # 10 minutes: a first cache build of a big collection can take that long
 
 _done = None
-_pinned = weakref.WeakSet()
-_tour = None
 
 
 # -- state ---------------------------------------------------------------------------
@@ -62,130 +60,10 @@ def _mark_done():
 
 
 # -- targets -------------------------------------------------------------------------
-
-def _visible(w):
-    try:
-        return w is not None and w.isVisible() and w.width() > 20 and w.height() > 20
-    except RuntimeError:
-        return False
-
-
-def _pinned_widgets():
-    # Only the widgets shown now: in the pinned area of the screen (not one still a window
-    # of its own while being built, nor one kept from an earlier layout until it is
-    # deleted: the light took those in on a layout's first showing).
-    overlay = None
-    try:
-        from ..pinned.main_menu.manager import MainMenuWidgetManager
-        if MainMenuWidgetManager.instance_exists():
-            overlay = MainMenuWidgetManager.instance()._overlay
-    except Exception:
-        overlay = None
-    out = []
-    for w in list(_pinned):
-        try:
-            if not _visible(w) or w.isWindow():
-                continue
-            if overlay is not None and not overlay.isAncestorOf(w):
-                continue
-            out.append(w)
-        except RuntimeError:
-            continue
-    return out
-
-
-def _is_chart(w):
-    return getattr(w, "_dd_more_button", None) is not None and type(w).__name__ != "StatCardWidget"
-
-
-def _rect_in(win, w):
-    return QRect(w.mapTo(win, QPoint(0, 0)), w.size())
-
-
-def _target_chart(win):
-    charts = [w for w in _pinned_widgets() if _is_chart(w)]
-    return _rect_in(win, charts[0]) if charts else None
-
-
-def _pick_zoom_chart():
-    """The chart the zoom step drags on: Activity first (one bar per day, the drag zone
-    maps right onto the days), else the first chart that zooms."""
-    found = [
-        c for w in _pinned_widgets() for c in w.findChildren(QWidget)
-        if hasattr(c, "set_zoom_range") and type(c).__name__ != "HeatmapWidget" and _visible(c)
-    ]
-    found.sort(key=lambda c: 0 if type(c).__name__.startswith("Activity") else 1)
-    return found[0] if found else None
-
-
-def _target_zoom(win):
-    c = _pick_zoom_chart()
-    if c is None:
-        return None
-    w = next((w for w in _pinned_widgets() if w.isAncestorOf(c)), None)
-    return _rect_in(win, w if w is not None else c)
-
-
-def _target_all(win):
-    rects = [_rect_in(win, w) for w in _pinned_widgets()]
-    if not rects:
-        return None
-    r = rects[0]
-    for x in rects[1:]:
-        r = r.united(x)
-    return r
-
-
-def _menu_target():
-    """The widget the right-click step uses: the calendar when it is pinned (the one
-    people least expect a menu on), else the first chart."""
-    charts = [w for w in _pinned_widgets() if _is_chart(w)]
-    return next((w for w in charts if _is_heatmap(w)), charts[0] if charts else None)
-
+# Each step names what it lights up ("all", "add", "text", "menu", "span", "zoom"); the page finds it (pinned.js).
 
 # The widgets the add step pins for a moment, by scene ("add:chart", "add:stat").
 _add_demo_pins = {}
-# The id of the widget whose menu the add step shows at this moment (the light goes on it).
-_add_menu_widget = [None]
-
-
-def _add_anchor(which):
-    """The widget the add step opens its menu on: a chart (not the calendar) to add a chart,
-    a stat card to add a stat card. Add Widget puts the new one right after it."""
-    ws = _pinned_widgets()
-    if which == "stat":
-        stat = next((w for w in ws if type(w).__name__ == "StatCardWidget"), None)
-        if stat is not None:
-            return stat
-    return _span_widget() or next((w for w in ws if _is_chart(w) and not _is_heatmap(w)), None) or _menu_target()
-
-
-def _added_widget():
-    """The widget the add step just pinned (its scene is shown), or None."""
-    scene = _demo["scene"] or ""
-    pin = _add_demo_pins.get(scene[4:]) if scene.startswith("add:") else None
-    if pin is None:
-        return None
-    return next((w for w in _pinned_widgets() if getattr(w, "widget_id", None) == pin["id"]), None)
-
-
-def _target_add(win):
-    """The add step's light: the widget just added while it shows, else the one whose menu
-    opens."""
-    w = _added_widget()
-    if w is not None:
-        return _rect_in(win, w)
-    # By id: the screen is rebuilt between the two menus (the added widget shown, then
-    # taken away), so the widget objects of the first build are gone.
-    wid = _add_menu_widget[0]
-    if wid == "plus":
-        rect = getattr(_tour, "_plus_rect", None)  # the "+" at the end of a line
-        return QRect(rect).adjusted(-6, -6, 6, 6) if rect is not None else None
-    w = next((x for x in _pinned_widgets() if wid and getattr(x, "widget_id", None) == wid), None)
-    if w is not None:
-        return _rect_in(win, w)
-    w = _add_anchor("chart")
-    return _rect_in(win, w) if w is not None else None
 
 
 def _add_choices():
@@ -213,72 +91,40 @@ def _add_choices():
     return chart, stat
 
 
-def _target_menu_widget(win):
-    w = _menu_target()
-    return _rect_in(win, w) if w is not None else None
-
-
-def _is_heatmap(w):
-    return type(w).__name__ == "HeatmapWidget" or any(
-        type(c).__name__ == "HeatmapWidget" for c in w.findChildren(QWidget)
-    )
-
-
-def _span_widget():
-    """The chart whose time span the span step changes: Activity when it is pinned."""
-    charts = [w for w in _pinned_widgets() if _is_chart(w) and not _is_heatmap(w)]
-    # Charts over time first: their look changes with the span (card counts would not).
-    for names in (("ActivityChart", "ActivityStackedChart"), ("RetentionChart",), ("AddedChartWidget",)):
-        for w in charts:
-            if any(type(c).__name__ in names for c in w.findChildren(QWidget)):
-                return w
-    return charts[0] if charts else None
-
-
-def _target_span(win):
-    ws = [w for w in _pinned_widgets() if _span_id and getattr(w, "widget_id", None) == _span_id[0]]
-    return _rect_in(win, ws[0]) if ws else _target_chart(win)
-
-
-def _target_text(win):
-    texts = [w for w in _pinned_widgets() if getattr(w, "wtype", None) == "text_label"]
-    return _rect_in(win, texts[0]) if texts else _target_all(win)
-
-
 def _steps():
     """(demo scene or None, target, text, live action or None) of each step."""
     add = tr("Add Widget...").rstrip(".…")
     return [
-        (None, _target_all, tr("Here are a few ways to set up this screen."), None),
-        (_LAYOUT_SCENES[0], _target_all, tr(
+        (None, "all", tr("Here are a few ways to set up this screen."), None),
+        (_LAYOUT_SCENES[0], "all", tr(
             "Any chart or stat from the Deep Dive window can go here, as many as you like, in any order."
         ), "layouts"),
-        (None, _target_add, tr(
+        (None, "add", tr(
             "To add one, click the + that shows at the end of a line (or between two lines), or right "
             "click a widget and choose {add}. In the Deep Dive window, the pin next to a chart's title "
             "puts it here.", add=add,
         ), "add"),
-        (_theme_scenes()[0], _target_all, tr(
+        (_theme_scenes()[0], "all", tr(
             "You can change the colors too: one theme for every widget, or a color per chart or stat "
             "(right click, then its color or {settings}).", settings=tr("Settings"),
         ) + " " + tr(
             "Over a background image, the boxes can be see-through and blurred too: lower Background Opacity and "
             "raise Background Blur in {settings}.", settings=tr("Settings"),
         ), "themes"),
-        (_TEXT_SCENES[0], _target_text, tr(
+        (_TEXT_SCENES[0], "text", tr(
             "The text widget lets you write your own sentence with live stats in it, like today's reviews, "
             "your streak or your retention. Right click, then {edit}.", edit=tr("Edit Text and Settings...").rstrip(".…"),
         ), "texts"),
-        (None, _target_menu_widget, tr("Right click a widget (or click ⋯) for all its options."), "menu"),
-        (None, _target_span, tr(
+        (None, "menu", tr("Right click a widget (or click ⋯) for all its options."), "menu"),
+        (None, "span", tr(
             "Each widget can have its own deck and time span. Click the label next to a chart's title, "
             "or right click, then {decks} or {span}.",
             decks=tr("Select Decks...").rstrip(".…"), span=tr("Time Span"),
         ), "spans"),
-        (None, _target_zoom, tr(
+        (None, "zoom", tr(
             "Drag across a chart to zoom in (or Ctrl + mouse wheel). The ↺ button goes back to the full view."
         ), "zoom"),
-        (None, _target_all, tr(
+        (None, "all", tr(
             "Drag a widget onto another line, or between two lines to start a new one. Use the ⠿ handle "
             "on the left of a line to move the whole line, and drag the space between two lines to resize it."
         ), "swap"),
@@ -793,9 +639,7 @@ def _end_demo():
 def end_for_profile_close(*_args):
     """The profile closes (profile switch, Anki quits) during the tour: the user's own
     settings go back to their file at once, before the next profile or a later start reads
-    it, and the tour goes away. No rebuild: the screen is going away."""
-    global _tour
-    tour, _tour = _tour, None
+    it. No rebuild: the screen is going away."""
     if _demo["text"] is not None:
         try:
             if _demo["scene"] is not None:
@@ -806,22 +650,11 @@ def end_for_profile_close(*_args):
             pass
         except Exception:
             log_swallowed()
-    if tour is not None:
-        try:
-            tour._top_timer.stop()
-            tour._action_timer.stop()
-            tour._win.removeEventFilter(tour)
-            tour.hide()
-            tour.deleteLater()
-        except RuntimeError:
-            pass
-        except Exception:
-            log_swallowed()
 
 
 def restore_after_crash():
     """A demo that did not end (Anki closed or crashed during it): put the settings back."""
-    if _tour is not None or _demo["text"] is not None:
+    if _demo["text"] is not None:
         return
     path = _backup_path()
     if not os.path.exists(path):
@@ -836,9 +669,6 @@ def restore_after_crash():
         os.remove(path)
     except Exception:
         log_swallowed()
-
-
-# -- overlay -------------------------------------------------------------------------
 
 
 # -- starting ------------------------------------------------------------------------

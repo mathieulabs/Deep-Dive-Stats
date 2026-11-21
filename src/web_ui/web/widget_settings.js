@@ -1,13 +1,10 @@
-// A widget's settings (widget_settings.py), with the look of the web Settings (settings.js's controls). Two kinds of
-// state come from Python:
-//  - schema: the widget type's options (widget_options.py), groups of switches, sliders, menus, colors. A change is
-//    sent by its key (wo_set), a button by its name (wo_do); the page is drawn again from the state sent back;
-//  - else: the controls of the Qt settings dialog, kept hidden in Python (the types not converted yet). Each change
-//    goes back to the Qt control it stands for (ws_set / ws_click).
+// A widget's settings (widget_settings.py), with the look of the web Settings (settings.js's controls): the widget
+// type's options (widget_options.py), groups of switches, sliders, menus, colors, the text widget's sentence. A
+// change is sent by its key (wo_set), a button by its name (wo_do); the page is drawn again from the state sent back.
 // The text comes already translated from Python: the page is data-nt.
 (function(){
   'use strict';
-  let U = null, root = null, mainEl = null, footEl = null, ST = null, titleEl = null;
+  let U = null, root = null, mainEl = null, footEl = null, ST = null;
 
   function fail(e){
     DD.log('widget settings: ' + e);
@@ -17,145 +14,6 @@
   function apply(st){
     if (st){ ST = st; render(); }
   }
-  function setv(id, value){ return DD.call('ws_set', {id: id, value: value}).then(apply).catch(fail); }
-  function click(id){ return DD.call('ws_click', {id: id}).catch(fail); }
-
-  // ---- one control ----
-  function control(n){
-    const el = U.el;
-    switch (n.t){
-      case 'check': return U.sw(n.on, function(v){ setv(n.id, v); }, !n.en);
-      case 'slider': return slider(n);
-      case 'combo': return U.select(n.i, n.opts, function(v){ setv(n.id, Number(v)); }, !n.en);
-      case 'text': {
-        const t = U.textInput(n.v, function(v){ setv(n.id, v); }, {placeholder: n.ph, id: n.id});
-        t.disabled = !n.en;
-        return t;
-      }
-      case 'num': {
-        const box = el('span', 'dws-num');
-        box.appendChild(U.numInput(n.v, n.min, n.max, function(v){ setv(n.id, v); }, !n.en));
-        if (n.suffix && n.suffix.trim()) box.appendChild(el('span', 'dws-unit', n.suffix.trim()));
-        return box;
-      }
-      case 'button': {
-        const b = U.btn(n.text, 'small', function(){ click(n.id); }, n.tip || null);
-        b.disabled = !n.en;
-        return b;
-      }
-      case 'icon': {
-        const b = U.iconBtn('dds-x set dws-icon', n.icon, n.tip || null);
-        b.disabled = !n.en;
-        b.onclick = function(){ click(n.id); };
-        return b;
-      }
-      case 'swatch': {
-        const b = U.swatch(n.color, function(){ click(n.id); }, n.tip || null);
-        b.disabled = !n.en;
-        return b;
-      }
-      case 'strip': {
-        const d = el('span', 'dws-strip');
-        d.style.backgroundImage = n.css;  // (the image under the border too: else its start shows again there)
-        if (n.tip) d.title = n.tip;
-        return d;
-      }
-      case 'pic': {
-        const img = el('img', 'dws-pic');
-        img.src = n.src; img.width = n.w; img.height = n.h;
-        return img;
-      }
-      case 'label': return el('span', 'dws-text', n.text);
-    }
-    return null;
-  }
-  function slider(n){
-    const fmt = function(v){ return v + (n.suffix || ''); };
-    return U.slider(n.v, n.min, n.max, n.step, fmt, function(v){ setv(n.id, v); }, !n.en);
-  }
-
-  // ---- the blocks: a setting per line, its name on the left ----
-  function flat(items){
-    const out = [];
-    items.forEach(function(n){
-      if (n.t === 'row' || n.t === 'box') flat(n.items).forEach(function(m){ out.push(m); });
-      else out.push(n);
-    });
-    return out;
-  }
-  // a row of the dialog: a label names the controls after it; a switch or a slider is a line of its own
-  function row(items, parent){
-    let label = null, tipText = '', ctrls = [];
-    function flush(){
-      if (label !== null || ctrls.length){
-        // the arrow back to the default before what it resets: the swatch / field keeps its place when it is gone
-        const resets = ctrls.filter(function(c){ return c.n.t === 'icon' && c.n.icon === 'reset'; });
-        const others = ctrls.filter(function(c){ return resets.indexOf(c) < 0; });
-        const els = resets.concat(others).map(function(c){ return c.e; }).filter(Boolean);
-        const wide = ctrls.some(function(c){ return c.n.t === 'strip'; });
-        const f = U.field(noColon(label || ''), tipText || null, els, {off: ctrls.length && ctrls.every(function(c){ return c.n.en === false; })});
-        if (wide) f.classList.add('dws-wide');
-        parent.appendChild(f);
-      }
-      label = null; tipText = ''; ctrls = [];
-    }
-    flat(items).forEach(function(n){
-      if (n.t === 'label'){
-        flush();
-        label = n.text; tipText = n.tip || '';
-      } else if (n.t === 'check' || n.t === 'slider'){
-        if (label !== null && !ctrls.length && n.t === 'slider'){ ctrls.push({n: n, e: slider(n)}); flush(); return; }
-        flush();
-        block(n, parent);
-      } else if (n.t === 'group' || n.t === 'texteditor'){
-        flush();
-        block(n, parent);
-      } else {
-        if (n.tip && !tipText && n.t !== 'icon' && n.t !== 'swatch' && n.t !== 'button' && n.t !== 'strip') tipText = n.tip;
-        ctrls.push({n: n, e: control(n)});
-      }
-    });
-    flush();
-  }
-  function block(n, parent){
-    const el = U.el;
-    if (n.t === 'group'){
-      const sec = U.section(n.title, n.tip || null);
-      sec.dataset.id = n.id;
-      blocks(n.items, sec);
-      parent.appendChild(sec);
-    } else if (n.t === 'check'){
-      parent.appendChild(U.field(n.label, n.tip || null, control(n), {off: !n.en}));
-    } else if (n.t === 'slider'){
-      parent.appendChild(U.field(noColon(n.label), n.tip || null, slider(n), {off: !n.en}));
-    } else if (n.t === 'label'){
-      const p = el('p', 'dws-note', n.text);
-      parent.appendChild(p);
-    } else if (n.t === 'texteditor'){
-      parent.appendChild(textEditor(n));
-    } else if (n.t === 'box'){
-      n.items.forEach(function(m){ block(m, parent); });  // (lines one under the other)
-    } else if (n.t === 'row'){
-      row(n.items, parent);
-    } else {
-      row([n], parent);
-    }
-  }
-  function blocks(items, parent){
-    // the lines outside a group (the "Own style" switch and its note) sit together in a box of their own
-    let loose = null;
-    items.forEach(function(n){
-      if (parent === mainEl && n.t !== 'group'){
-        if (!loose){ loose = U.section(null, null); loose.classList.add('dws-loose'); parent.appendChild(loose); }
-        block(n, loose);
-        return;
-      }
-      loose = null;
-      block(n, parent);
-    });
-  }
-
-  // ---- the page drawn from the option schema ----
   function oset(key, value){ return DD.call('wo_set', {key: key, value: value}).then(apply).catch(fail); }
   function odo(act, key){
     return DD.call('wo_do', {act: act, key: key || null}).then(function(st){ if (st && st.groups) apply(st); }).catch(fail);
@@ -191,6 +49,7 @@
       }
       case 'ranges': ranges(n, parent); return;
       case 'palette': palette(n, parent); return;
+      case 'texteditor': parent.appendChild(textEditor(n)); return;
     }
     if (ctl) parent.appendChild(U.field(noColon(n.label), n.tip || null, ctl, {off: off}));
   }
@@ -271,16 +130,16 @@
   }
 
   // the text widget's sentence (text_editor.js): one editor for the window, kept as the page is drawn again (its
-  // cursor, its undo); each change written to the widget a moment after it is typed
+  // cursor, its undo); each change written to the widget a moment after it is typed (the page not drawn again)
   const editors = {};
   function textEditor(n){
-    let x = editors[n.id];
+    let x = editors[n.key];
     if (!x){
       const wrap = U.el('div', 'dws-texted');
       wrap.style.cssText = 'display:flex;flex-direction:column;min-height:300px;margin:4px 0 8px';
-      x = editors[n.id] = {wrap: wrap};
+      x = editors[n.key] = {wrap: wrap};
       x.ed = DD.textEditor(wrap, {template: n.v || '', onChange: function(t){
-        DD.call('ws_text', {value: t}).catch(fail);
+        DD.call('wo_set', {key: n.key, value: t}).catch(fail);
       }});
     }
     return x.wrap;
@@ -298,8 +157,7 @@
     const ws = window.getSelection(), inText = a && a.closest && a.closest('.dws-texted');
     const textRange = inText && ws.rangeCount ? ws.getRangeAt(0).cloneRange() : null;
     while (mainEl.firstChild) mainEl.removeChild(mainEl.firstChild);
-    if (ST.schema) schemaBlocks(ST.groups || [], mainEl);
-    else blocks(ST.items || [], mainEl);
+    schemaBlocks(ST.groups || [], mainEl);
     mainEl.scrollTop = top;
     if (keep){
       const n = mainEl.querySelector('[data-keep="' + keep + '"]');
@@ -312,7 +170,7 @@
     while (footEl.firstChild) footEl.removeChild(footEl.firstChild);
     (ST.foot || []).forEach(function(f){
       let b;
-      const press = ST.schema ? function(){ odo(f.id); } : function(){ click(f.id); };
+      const press = function(){ odo(f.id); };
       if (f.role === 'reset'){
         b = U.btn('', 'dws-reset', press);
         b.appendChild(U.icon('reset'));

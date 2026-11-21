@@ -21,6 +21,7 @@ from ..details.logic.logger import log_error, log_warn
 from . import providers
 from .theme import build_theme
 from .trace import dev_flag, is_dev, page_log, trace
+from .update_restart import ask_restart, is_stale_import
 
 _WEB_DIR = "src/web_ui/web"
 _JS = ["dd-core.js", "stats.js", "charts/activity.js", "charts/dots.js", "charts/hover.js", "charts/zoom_camera.js", "charts/discrete.js",
@@ -488,9 +489,9 @@ def _boot(deck_id, is_browser, token):
     }
 
 
-# ---- the card around a widget: widget_factory/styler.apply_style (glass, surface, border) ----------------
+# ---- the card around a widget (glass, surface, border) -------------------------------------------------------
 def _card_look(conf, wtype, own):
-    """CSS of a pinned card, computed as styler.apply_style does for charts, text widgets and the heatmap."""
+    """CSS of a pinned card: the charts, the text widgets and the heatmap."""
     from ..const.config import Config
 
     c = dict(conf)
@@ -737,7 +738,7 @@ def _block(deck_id, is_browser):
 
 
 def _empty_hint(is_browser):
-    """Nothing pinned at all (empty_hint.py): a discreet dashed "+ Add a widget" card on the main screen, its "x"
+    """Nothing pinned at all: a discreet dashed "+ Add a widget" card on the main screen, its "x"
     hiding it for good (Settings > Pinned Widgets brings it back). Not for widgets only hidden on this deck."""
     from ..const.config import Config
     from ..details.logic.widget_registry import WidgetRegistry
@@ -989,9 +990,9 @@ def stat_spec(entries, deck, conf=None):
                 raw_val = converted
         value = str(raw_val)
         own_style = bool(d.get("use_custom_style", False))
-        cconf = dict(conf, **d) if own_style else conf  # its own Settings over the shared ones (styler.apply_style)
+        cconf = dict(conf, **d) if own_style else conf  # its own Settings over the shared ones
         cscale = scale_ratio_from_percent(cconf.get(Config.FACECARDS_SCALE, 100)) if own_style else scale
-        # its width is measured by the page (stats.js idealW: StatCardWidget.get_ideal_width at its scale "s")
+        # its width is measured by the page (stats.js idealW, at its scale "s")
         cards.append({"key": wid, "stat_key": key, "label": label, "value": value, "s": cscale,
                       "color": color, "row": 0, "own_color": bool(colors.get(key)), "style": _stat_own_style(conf, d),
                       "tm": _title_mult(cconf) if own_style else None})
@@ -1058,9 +1059,8 @@ def _h_text(id=None, deck=None):
 
 
 def _h_menu(id=None, x=0, y=0, deck=None, zoom=None, own=False, count=False, _wid=None):
-    """The right-click menu of a pinned widget, shown by the page: {items, open} (web_menus: the native menu's
-    entries, never shown itself). own: its entries that change this chart alone (its header's options icon);
-    count: their number only, {n}."""
+    """The right-click menu of a pinned widget, shown by the page: {items, open} (web_menus). own: its entries that
+    change this chart alone (its header's options icon); count: their number only, {n}."""
     from . import web_menus
 
     if zoom is not None:
@@ -1140,11 +1140,12 @@ def _h_widget_settings(id=None, _wid=None):
 
     def run():
         try:
+            from ..details.ui.config.dialogs import widget_settings as opener
             from ..details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
 
             m = MainMenuWidgetManager.instance()
-            with _web_menu(m, d.get("id")):
-                m._open_widget_settings(_proxy(d), d)
+            opener.focus_next = "range_btn"  # (the window opens on the Range Buttons)
+            m._open_widget_settings(_proxy(d), d)
         except RuntimeError:
             return
         except Exception as e:
@@ -1163,7 +1164,7 @@ def _h_menu_pick(key=None, on=None, _wid=None):
     return web_menus.pick(key, on)
 
 
-# Zoom link of the page's charts (the menu asks pinned/zoom_link.py, patched by _web_menu): the charts left out of it
+# Zoom link of the page's charts (their right click, web_menus): the charts left out of it
 _UNLINKED = {}
 
 
@@ -1178,85 +1179,6 @@ def _push_unlinked():
         pass
 
 
-class _web_menu:
-    """While the native menu is open: its "Fullscreen" shows the page's card fullscreen, and its zoom link entries
-    read and change the page's charts (the stand-in card has no chart of its own)."""
-
-    def __init__(self, manager, wid):
-        self.m, self.wid = manager, wid
-
-    def __enter__(self):
-        from ..details.widgets.pinned import zoom_link as zl
-
-        self.zl, self.saved = zl, {k: getattr(zl, k) for k in ("has_charts", "counts", "is_linked", "set_linked", "set_all_linked")}
-        ids, wid = list(_state.get("zoom_ids") or []), self.wid
-
-        def set_linked(_w, v):
-            if v:
-                _UNLINKED.pop(wid, None)
-            else:
-                _UNLINKED[wid] = True
-            _push_unlinked()
-
-        def set_all(_m, v):
-            for i in ids:
-                if v:
-                    _UNLINKED.pop(i, None)
-                else:
-                    _UNLINKED[i] = True
-            _push_unlinked()
-
-        zl.has_charts = lambda _w: wid in ids
-        zl.counts = lambda _m: (sum(1 for i in ids if i not in _UNLINKED), sum(1 for i in ids if i in _UNLINKED))
-        zl.is_linked = lambda _w: wid not in _UNLINKED
-        zl.set_linked = set_linked
-        zl.set_all_linked = set_all
-        cm = self.m._context_menu
-        self.fs = cm.__dict__.get("_open_fullscreen")
-
-        def fullscreen(_w):
-            deck, browser = _page()
-            web = mw.deckBrowser.web if browser else mw.overview.web
-            web.eval("window.DDP && DDP.fullscreen(%s)" % json.dumps(wid))
-
-        cm._open_fullscreen = fullscreen
-        # "About This Chart": the explanation shown by the page, where the menu was (a Qt popup would be anchored on
-        # the hidden stand-in card: nothing would show)
-        from ..details.widgets.common import chart_help as ch
-
-        self.ch, self.help = ch, ch.add_help_action
-
-        def add_help(menu, chart_type, _anchor, _orig=ch.add_help_action):
-            act = _orig(menu, chart_type, _anchor)
-            if act is not None:
-                try:
-                    act.triggered.disconnect()
-                except (TypeError, RuntimeError):
-                    pass
-
-                def show(_=False):
-                    deck, browser = _page()
-                    web = mw.deckBrowser.web if browser else mw.overview.web
-                    web.eval("window.DDP && DDP.showHelp && DDP.showHelp(%s)" % json.dumps(wid))
-
-                act.triggered.connect(show)
-            return act
-
-        ch.add_help_action = add_help
-        return self
-
-    def __exit__(self, *_exc):
-        for k, v in self.saved.items():
-            setattr(self.zl, k, v)
-        self.ch.add_help_action = self.help
-        cm = self.m._context_menu
-        if self.fs is None:
-            cm.__dict__.pop("_open_fullscreen", None)
-        else:
-            cm._open_fullscreen = self.fs
-        return False
-
-
 def _h_chip(id=None, which="span", x=0, y=0, top=None, deck=None, _wid=None):
     """A click on the period / deck label of a card: the period list, shown by the page ({items}, web_menus), or
     the deck dialog (card_chips)."""
@@ -1266,59 +1188,25 @@ def _h_chip(id=None, which="span", x=0, y=0, top=None, deck=None, _wid=None):
         from . import web_menus
 
         return web_menus.span(id)
-    QTimer.singleShot(0, lambda: _show_chip(id, which, float(x or 0), float(y or 0), None if top is None else float(top)))
+    QTimer.singleShot(0, lambda: _choose_decks(id))
     return True
 
 
-def _show_chip(wid, which, x, y, top=None):
-    from aqt.qt import QPoint, QTimer
-
+def _choose_decks(wid):
+    """The deck dialog of a card's deck label; the main screen rebuilt if it changed."""
     try:
         from ..details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
-        from ..details.widgets.pinned.main_menu.ui.card_chips import choose_decks, fill_span_menu, hide_card_labels, themed_menu
-        from ..i18n import tr
+        from ..details.widgets.pinned.main_menu.ui.card_chips import choose_decks
+        from . import web_menus
 
         d = _def_of(wid)
         if d is None:
             return
         m = MainMenuWidgetManager.instance()
         m._config_manager = m._get_config_manager(force_refresh=True)
-        web = mw.web
         seen = {"c": _config_snapshot()}
-        px = _proxy(d)
-        if which == "deck":
-            choose_decks(m, px, d)
-        else:
-            zoom = float(web.zoomFactor() or 1.0)
-            menu = themed_menu(px, m)
-            fill_span_menu(menu, m, px, d)
-            menu.addSeparator()
-            hide = menu.addAction(tr("Hide these labels"))
-            hide.triggered.connect(lambda _=False: hide_card_labels(m))
-            # above the label when the screen has room there (the menu then covers the title
-            # row and the cards above, not the chart), else under it
-            at = web.mapToGlobal(QPoint(int(round(x * zoom)), int(round(y * zoom))))
-            if top is not None:
-                try:
-                    up = web.mapToGlobal(QPoint(int(round(x * zoom)), int(round(top * zoom)))).y() - menu.sizeHint().height() - 2
-                    screen = web.screen().availableGeometry() if web.screen() is not None else None
-                    if screen is not None and up >= screen.top():
-                        at = QPoint(at.x(), up)
-                except RuntimeError:
-                    pass
-            menu.exec(at)
-
-        def check():
-            if _state.get("listening"):
-                return  # the config listener rebuilds the block (refresh_block)
-            now = _config_snapshot()
-            if now != seen["c"]:
-                seen["c"] = now
-                refresh_block()
-
-        check()
-        for ms in (400, 1500):
-            QTimer.singleShot(ms, check)
+        choose_decks(m, _proxy(d), d)
+        web_menus._check(seen)
     except Exception as e:
         log_error(f"web pinned chip: {e!r}")
 
@@ -1355,7 +1243,7 @@ def _config_snapshot():
         return None
 
 
-# ---- what the chart modules save: on the pinned widget's own definition (the pinned builders' keys) ----
+# ---- what the chart modules save: on the pinned widget's own definition ----
 _KEYS = {"breakdown_enabled": "show_breakdown", "visibility": "visible_series"}
 
 
@@ -1699,6 +1587,8 @@ def _on_message(handled, message, context):
                 answer(True, fut.result())
             except Exception as e:
                 log_error(f"web pinned {cmd!r}: {e!r}")
+                if is_stale_import(e):
+                    ask_restart(e)
                 answer(False, repr(e))
 
         from .ui_share import ui_first
@@ -1709,5 +1599,7 @@ def _on_message(handled, message, context):
             answer(True, _probe.timed(f"pinned {cmd}", fn, **args))
         except Exception as e:
             log_error(f"web pinned {cmd!r}: {e!r}")
+            if is_stale_import(e):
+                ask_restart(e)
             answer(False, repr(e))
     return (True, None)

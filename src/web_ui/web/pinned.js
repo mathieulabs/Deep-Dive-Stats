@@ -678,7 +678,7 @@
     DDP.menuAgain = function(r){ pyMenu(r, menuShownAt); };
     DDP.menu = pyMenu;
     // a chart's own options, as in the Deep Dive (app.js ownOpt): an icon after its pills, the entries of its right
-    // click that change this chart alone (web_menus.own_items), the options of its header's icon first (Include
+    // click that change this chart alone (web_menus: its own entries), the options of its header's icon first (Include
     // Suspended Cards...: discrete.js DD.optionsPill), its Day Slider last. Whether it has any is asked on its first
     // hover (a menu built by Python: nothing more while the main screen is built), then kept for the widget
     const ownN = DDP._ownN || (DDP._ownN = {});
@@ -861,6 +861,9 @@
     function placeMore(card){
       const head = card.querySelector('.dd-head'), sp = head && head.querySelector('.dd-spacer'), hb = sp && sp.querySelector('.dd-hbtns');
       if (!hb){ card.classList.add('nomore'); return; }
+      // the pills gliding (a heatmap's view switch): measured now they are halfway; the switch places it itself
+      const pl = head.querySelector('.dd-pills');
+      if (pl && pl.getAnimations && pl.getAnimations({subtree: true}).some(function(a){ return a.playState === 'running'; })) return;
       const hr = head.getBoundingClientRect(), sr = sp.getBoundingClientRect();
       let right = hr.right - (parseFloat(getComputedStyle(head).paddingRight) || 0);
       // the leftmost thing drawn on the right of the empty stretch (a pill, a chip, the zoom arrow...), however deep
@@ -886,8 +889,19 @@
       });
       const w = hb.offsetWidth || 22;
       if (right - left < w + 6){ card.classList.add('nomore'); card.classList.remove('dd-help-yield'); return; }
+      // already shown (the mouse in the card): it glides to its new place with the pills (320 ms), not at once
+      const nr = (sr.right - right + 4) + 'px', wasOff = card.classList.contains('nomore');
       card.classList.remove('nomore');
-      hb.style.right = (sr.right - right + 4) + 'px';
+      if (hb.style.right !== nr){
+        const seen = !wasOff && hb.style.right && card.matches(':hover') && +getComputedStyle(hb).opacity > 0.05 && hb.animate && DD.anim && DD.anim.on;
+        const x0 = seen ? hb.getBoundingClientRect().left : 0;
+        if (hb.getAnimations) hb.getAnimations().forEach(function(a){ a.cancel(); });
+        hb.style.right = nr;
+        if (seen){
+          const dx = x0 - hb.getBoundingClientRect().left;
+          if (Math.abs(dx) >= 0.5) hb.animate([{translate: dx + 'px 0'}, {translate: '0 0'}], {duration: 320 * (DD.calm ? DD.calm() : 1), easing: 'cubic-bezier(.33,1,.68,1)'});
+        }
+      }
       // the "⋯" before the "?": room for one only, the "?" is hidden
       card.classList.toggle('dd-help-yield', !!qr && qr.right + 2 > right - 4 - w);
     }
@@ -918,11 +932,12 @@
       if (DD.dev) DD.trace('BROWSE ' + (card.querySelector('.dd-title') ? card.querySelector('.dd-title').textContent : '') + ': ' + (spec ? JSON.stringify(spec) : 'nothing under the mouse'));
       if (spec) DDP.call('browse', Object.assign({_wid: card.dataset.wid, deck: S.boot.deck}, spec)).catch(function(e){ DD.trace('BROWSE failed: ' + (e && e.message || e)); });
     });
-    // Anki's zoom changes the pixel ratio but not the CSS sizes: the charts are told to size their canvases again
-    // (their ResizeObserver), else they are drawn for the old ratio and look blurred.
-    // The plots are made a pixel narrower for one frame: put back two frames later, as a media-query change runs before
+    // Anki's zoom changes the pixel ratio: the charts watch their size in device pixels (DD.frame.observe) and are
+    // drawn again for it at once. One still drawn for the old ratio (blurred) is told to size its canvas again:
+    // the plots are made a pixel narrower for one frame, put back two frames later, as a media-query change runs before
     // that frame's requestAnimationFrame callbacks (put back in the first one, the layout never sees the narrower
-    // plots, no ResizeObserver runs, and a chart can stay drawn for the old ratio)
+    // plots, no ResizeObserver runs, and a chart can stay drawn for the old ratio). Only then: done at every zoom, each
+    // chart was drawn a pixel narrower then wide again, and bounced inside its card
     let sharpAfter = 0;
     function nudge(){
       root.querySelectorAll('.dd-plot').forEach(function(p){ p.style.width = 'calc(100% - 1px)'; });
@@ -934,7 +949,7 @@
       const on = function(){
         mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on);
         DD.trace('SHARP dpr change -> ' + (window.devicePixelRatio || 1).toFixed(3));
-        nudge();
+        requestAnimationFrame(function(){ requestAnimationFrame(function(){ checkSharp('zoom'); }); });
         clearTimeout(sharpAfter); sharpAfter = setTimeout(function(){ checkSharp('after zoom'); }, 400);
         watchDpr();
       };
@@ -1077,7 +1092,7 @@
     DDP.call('text', {id: w.id, deck: boot.deck}).then(function(html){ put(html); }).catch(function(){});
   }
 
-  // The card's look (styler.apply_style, computed in Python): glass surface, hairline border, its hover
+  // The card's look (computed in Python, pinned._card_look): glass surface, hairline border, its hover
   function applyLook(el, look){
     if (!look) return;
     // the tint of the settings, as it is, with Auto glass or not: one default suits both (config.py)
@@ -1150,7 +1165,12 @@
   // the settings dialogs' live preview (preview_styles): new looks for the boxes, the stat cards' glass, the theme
   DDP.restyle = function(p){
     if (!S || !p) return;
-    if (p.theme) setTheme(S.root, p.theme);
+    // another theme previewed: the charts repainted with it too (their canvases kept the old one's texts)
+    if (p.theme){
+      const other = JSON.stringify(DD.theme || null) !== JSON.stringify(p.theme);
+      setTheme(S.root, p.theme);
+      if (other) S.root.querySelectorAll('[data-wid]').forEach(function(el){ const i = el._ddp && el._ddp.inst; try { if (i && i.setTheme) i.setTheme(DD.theme); } catch (e) {} });
+    }
     statFx(S.root, p.stat_fx);
     let relay = false;
     Object.keys(p.looks || {}).forEach(function(id){
@@ -1220,6 +1240,7 @@
 
   // ---- zoom shared between the pinned charts (pinned/zoom_link.py): one chart zoomed, the others linked to it
   // zoom to the same dates; the reset arrow in the header (add_pinned_zoom_reset_button) while zoomed ----
+  const ZF = DD.zoomFlow;  // (charts/zoom_camera.js: shared with the Deep Dive)
   const zoomed = {};  // widget id -> {w, z, btn}
   const EXP = {};     // widget id -> true | 'busy' when temporarily zoomed out past its saved time span
   let zbusy = false;
@@ -1269,7 +1290,7 @@
         if (span[0] === 0 && span[1] === e.z.count() - 1){ if (e.z.get()) quiet(id, function(){ e.z.set(null); }); showReset(e); return; }
         const cur = e.z.get(), r = [span[0], span[1] + 1];
         if (!cur || cur[0] !== r[0] || cur[1] !== r[1]){
-          const vis = inView(id), held = vis && adaptiveCan(e, r) ? hold(e, cur) : null;
+          const vis = inView(id), held = vis && adaptiveCan(e, r) ? ZF.hold(e.z, cur) : null;
           quiet(id, function(){ e.z.set(r[0], r[1]); }); e.last = r;
           if (held || (!vis && adaptiveCan(e, r))) tryAdaptive(e, r, held);  // each linked chart goes to its 10-minute view too
         }
@@ -1279,145 +1300,61 @@
   }
   DDP.setUnlinked = function(map){ Object.keys(zoomed).forEach(function(id){ zoomed[id].unlinked = !!(map || {})[id]; }); if (S) S.boot.unlinked = map || {}; };
 
-  // ---- adaptive zoom (pinned builders' _on_adaptive_zoom, like controls_parts/adaptive_zoom): a zoom down to 2 days
+  // ---- adaptive zoom (as in the Deep Dive, app.js): a zoom down to 2 days
   // switches Activity / Retention / Added and the charts of answers by day (providers.AZ_METRICS) to 10-minute bins over
   // those days, zooming from the held picture of the days; out of the whole 10-minute view (wheel) or the reset arrow
   // brings the days back ----
   const AZT = {activity: 1, retention: 1, added: 1, ratings: 1, forgotten: 1, review_speed: 1, introduced: 1, resets: 1}, AZ = {};
-  function adaptiveCan(e, range){
-    if (!AZT[e.w.type] || AZ[e.w.id] || !range || !e.z.swap || range[1] - range[0] > 3) return false;
-    const f = e.z.label(range[0]), l = e.z.label(range[1] - 1);
-    return !!(f && l && !/\d:\d\d$/.test(f));
-  }
-  function hold(e, prev){
-    if (!DD.holdPicture || !e.z.snap) return null;
-    const P = e.z.snap(); if (!P || !P.img.width) return null;
-    const h = {P: P, win: (prev || [0, e.z.count()]).slice(), end: DD.holdPicture(e.z.canvas, P)};
-    setTimeout(function(){ h.end(); }, 1500);
-    return h;
-  }
-  function swapPictured(e, data, range, alignRight, wa, wb, held){
-    const z = e.z;
-    if (!z.picture || !DD.pictureZoom){ if (held) held.end(); z.swap(data, range, alignRight); return; }
-    let before;
-    if (held){ before = held.P; if (held.win){ wa = held.win; wb = z.get() || [0, z.count()]; } } else before = z.picture();
-    const prev = DD._noAnim; DD._noAnim = true; try { z.swap(data, range, alignRight); } finally { DD._noAnim = prev; }
-    const after = z.picture();
-    if (held) held.end();
-    DD.pictureZoom(z.canvas, before, after, wa, wb, 300);
-  }
+  function adaptiveCan(e, range){ return !!AZT[e.w.type] && !AZ[e.w.id] && ZF.canAdapt(e.z, range); }
+  function swapPictured(e, data, range, alignRight, wa, wb, held){ ZF.swapPictured(e.z, data, range, alignRight, wa, wb, held, true); }
   function tryAdaptive(e, range, held){
     const f = e.z.label(range[0]), l = e.z.label(range[1] - 1), n = e.z.count(), my = e.azSeq = (e.azSeq || 0) + 1;
     DDP.call('adaptive', {id: e.w.id, first: f, last: l, deck: S ? S.boot.deck : null}).then(function(r){
       const cur = e.z.get();
       if (my !== e.azSeq || AZ[e.w.id] || !r || !r.data || !cur || cur[0] !== range[0] || cur[1] !== range[1]){ if (held) held.end(); return; }
-      const alignRight = (range[0] + range[1]) / (2 * Math.max(1, n)) >= 0.5;  // compute_transition_align_right
+      const alignRight = ZF.alignRight(range, n);
       AZ[e.w.id] = {first: f, last: l, alignRight: alignRight, times: r.times || null};
       swapPictured(e, r.data, null, alignRight, null, null, held);
       showReset(e);
       refreshDots(e, false);
     }).catch(function(){ if (held) held.end(); });
   }
-  function labelsOf(type, p){
-    if (!p) return [];
-    if (type === 'activity') return (p.rows || []).map(function(r){ return String(r.date); });
-    if (type === 'added') return (p.rows || []).map(function(r){ return String(r.pretty_date); });
-    if (Array.isArray(p.rows)) return p.rows.map(function(r){ return String(r.date); });  // (the charts of answers by day)
-    const d = p.data || {}; for (const k in d){ if (Array.isArray(d[k]) && d[k].length) return d[k].map(function(x){ return String(x[0]); }); }
-    return [];
-  }
   function leaveAdaptive(e, toWider){
     const az = AZ[e.w.id]; if (!az) return;
     // what is on screen (the dots, or the 10-minute bars) held still until the days are in, then one zoom from it
     // into them
-    let held = null;
-    const P = !DD.holdPicture || !e.z.picture ? null : ((e.dots && e.dots.visible()) ? e.dots.picture() : e.z.picture());
+    const held = ZF.holdShown(e.z, e.dots);
     dotsToBars(e, true);
-    if (P && P.img && P.img.width){ held = {P: P, win: null, end: DD.holdPicture(e.z.canvas, P)}; setTimeout(function(){ held.end(); }, 1500); }
+    ZF.holdNow(e.z, held);
     delete AZ[e.w.id]; e.azSeq = (e.azSeq || 0) + 1;
     DDP.call('data', {id: e.w.id, deck: S ? S.boot.deck : null}).then(function(d){
       if (AZ[e.w.id] || !d){ if (held) held.end(); return; }
-      const L = labelsOf(e.w.type, d), a = L.indexOf(az.first), b = L.lastIndexOf(az.last) + 1, n = L.length;
-      let range = null;
-      if (toWider && a >= 0 && b > a){  // widen_zoom_window: one wheel step wider, wider than the 2-day threshold
-        let nl = Math.min(n, Math.max(b - a + 1, Math.floor((b - a) * 1.15), 4));
-        let s0 = Math.round((a + b) / 2 - nl / 2); s0 = Math.max(0, Math.min(s0, n - nl));
-        range = nl >= n ? null : [s0, s0 + nl];
-      }
-      let wa = null, wb = null;
-      if (a >= 0 && b > a){
-        const cur = e.z.get(), cnt = Math.max(1, e.z.count()), s0 = cur ? cur[0] : 0, e0 = cur ? cur[1] : cnt, D = b - a;
-        wa = [a + s0 / cnt * D, a + e0 / cnt * D]; wb = range ? range.slice() : [0, n];
-      }
-      swapPictured(e, d, range, az.alignRight, wa, wb, held);
-      e.last = range; showReset(e);
-      if (toWider) linkFrom(e.w.id, range);
+      const W = ZF.leaveWindows(ZF.labelsOf(e.w.type, d), az.first, az.last, e.z, toWider);
+      swapPictured(e, d, W.range, az.alignRight, W.wa, W.wb, held);
+      e.last = W.range; showReset(e);
+      if (toWider) linkFrom(e.w.id, W.range);
     }).catch(function(){ if (held) held.end(); });
   }
 
   // ---- one dot per review (as in the Deep Dive): in the
   // 10-minute view zoomed to 3 hours or less, Activity shows each review as a dot; the bars sink while the dots
   // pop in (_SinkOut + their intro); back to the bars by a picture zoom; the dots window moves by camera zoom ----
-  const DOTS_MAX = 3 * 3600 * 1000, BIN10 = 600000;
-  function barsWindow(e){
-    const az = AZ[e.w.id], cur = e.z.get(), n = e.z.count(), s0 = cur ? cur[0] : 0, e0 = cur ? cur[1] : n;
-    return (az && az.times && az.times[s0] != null && az.times[e0 - 1] != null) ? [az.times[s0], az.times[e0 - 1] + BIN10] : null;
+  function dotsOf(e){
+    return e.dotsFlow || (e.dotsFlow = ZF.dots({
+      get: function(){ return e.dots ? {D: e.dots, z: e.z} : null; },
+      active: function(){ return !!AZ[e.w.id]; },
+      times: function(){ const az = AZ[e.w.id]; return az ? az.times : null; },
+      fetch: function(t0, t1){ return DDP.call('review_events', {id: e.w.id, t0: t0, t1: t1, deck: S ? S.boot.deck : null}); },
+      leave: function(){ leaveAdaptive(e, true); },
+      onSet: function(){ e.last = e.z.get(); showReset(e); },
+    }));
   }
-  function dotsToBars(e, instant){
-    const D = e.dots; if (!D) return;
-    e.dotsSeq = (e.dotsSeq || 0) + 1; clearTimeout(e.dotsTm);
-    if (!D.visible()) return;
-    const before = !instant ? D.picture() : null, wd = D.window(), wbars = barsWindow(e);
-    D.hide(); e.z.canvas.style.visibility = '';
-    if (before && DD.pictureZoom) DD.pictureZoom(e.z.canvas, before, e.z.picture(), wd, wbars, 300);
-  }
-  function refreshDots(e, immediate){
-    if (!e.dots || e.w.type !== 'activity') return;
-    if (!e.dots.visible() && !AZ[e.w.id]) return;
-    clearTimeout(e.dotsTm);
-    if (immediate) applyDots(e); else e.dotsTm = setTimeout(function(){ applyDots(e); }, 120);
-  }
-  function applyDots(e){
-    const D = e.dots, z = e.z, az = AZ[e.w.id], rng = z.get();
-    if (!az || !az.times || !rng){ dotsToBars(e); return; }
-    const t0 = az.times[Math.max(0, rng[0])], t1 = az.times[Math.min(az.times.length, rng[1]) - 1] + BIN10;
-    if (!(t1 > t0) || t1 - t0 > DOTS_MAX){ dotsToBars(e); return; }
-    const my = e.dotsSeq = (e.dotsSeq || 0) + 1;
-    DDP.call('review_events', {id: e.w.id, t0: t0, t1: t1, deck: S ? S.boot.deck : null}).then(function(r){
-      if (my !== e.dotsSeq || !AZ[e.w.id]) return;
-      if (!r || !r.events){ dotsToBars(e); return; }
-      const m = z.mode();
-      D.setMode(m.mode === 'time' ? 'time' : 'reviews', m.breakdown);
-      if (D.visible()){
-        const before = D.picture(), wa = D.window();
-        if (D.setEvents(r.events, t0, t1) === 'set' && DD.pictureZoom) DD.pictureZoom(D.canvas, before, D.picture(), wa, [t0, t1], 300);
-        return;
-      }
-      const before = z.picture();
-      D.setEvents(r.events, t0, t1);
-      // the axes go from the bars' to the dots' while the bars sink (dots.js sinkOut), the dots' own held back meanwhile
-      const na = (before && DD.sinkOut && D.axisInfo) ? D.axisInfo() : null;
-      if (na && D.holdAxes) D.holdAxes(300);
-      z.canvas.style.visibility = 'hidden';
-      D.show(true);
-      if (before && DD.sinkOut) DD.sinkOut(z.canvas, before, 300, na);
-    }).catch(function(){});
-  }
-  // Ctrl+wheel out of the whole dots window: the 10-minute zoom widens by a step right away
+  function dotsToBars(e, instant){ dotsOf(e).toBars(instant); }
+  function refreshDots(e, immediate){ if (e.w.type === 'activity') dotsOf(e).refresh(immediate); }
+  // Ctrl+wheel out of the whole dots window (the chart showing its dots)
   DD._dotsZoomOut = function(frac){
     const id = Object.keys(zoomed).filter(function(k){ const e = zoomed[k]; return e.dots && e.dots.visible(); })[0];
-    const e = id && zoomed[id], az = e && AZ[e.w.id]; if (!az || !az.times) return;
-    const D = e.dots, z = e.z, times = az.times, n = times.length;
-    const cur = z.get() || [0, n], cs = Math.max(0, cur[0]), ce = Math.min(n, cur[1]);
-    const w = D.window(), span = (w[1] - w[0]) * 1.25, n0 = w[0] + frac * (w[1] - w[0]) - frac * span, n1 = n0 + span;
-    const br = (x) => { let i = 0; while (i < n && times[i] <= x) i++; return i; }, bl = (x) => { let i = 0; while (i < n && times[i] < x) i++; return i; };
-    let s0 = Math.max(0, br(n0) - 1), e0 = Math.min(n, bl(n1 - BIN10) + 1);
-    s0 = Math.min(s0, cs); e0 = Math.max(e0, ce);
-    if (s0 === cs && e0 === ce){ s0 = Math.max(0, cs - 1); e0 = Math.min(n, ce + 1); }
-    if (s0 >= cs && e0 <= ce){ leaveAdaptive(e, true); return; }  // the whole 10-minute view: back to the days
-    const prev = DD._noAnim; DD._noAnim = true; try { z.set(s0, e0); } finally { DD._noAnim = prev; }
-    e.last = z.get(); showReset(e);
-    refreshDots(e, true);
+    if (id) dotsOf(zoomed[id]).zoomOut(frac);
   };
 
   function restorePinnedExpanded(e){
@@ -1462,19 +1399,9 @@
           if (!d || !d.inst){ delete EXP[o.w.id]; return; }
           EXP[o.w.id] = true;
           if (o.z.swap){ o.z.swap(data, null, true); }
-          else { const prev = DD._noAnim; DD._noAnim = true; try { d.inst.update(data); } finally { DD._noAnim = prev; } }
-          let a = -1, b = -1, n = o.z.count ? o.z.count() : 0;
-          for (let i = 0; i < n; i++){
-            const l = o.z.label(i);
-            if (l === first && a < 0) a = i;
-            if (l === last) b = i;
-          }
-          if (a < 0 || b < a){ a = Math.max(0, n - 30); b = n - 1; }
-          const spanLen = Math.max(2, b - a + 1);
-          const newA = Math.max(0, a - Math.max(3, Math.round(spanLen * 0.28)));
-          const newB = Math.min(n - 1, b);
-          if (newA === 0 && newB >= n - 1) o.z.set(null);
-          else o.z.set(newA, newB + 1);
+          else ZF.noAnim(function(){ d.inst.update(data); });
+          const win = ZF.expandWindow(o.z, first, last);
+          if (win) o.z.set(win[0], win[1]); else o.z.set(null);
           o.last = o.z.get();
           showReset(o);
         });
@@ -1504,7 +1431,7 @@
     z.onChange = function(r){
       const prev = e.last; e.last = r ? r.slice() : null;
       showReset(e);
-      if (!AZ[w.id] && adaptiveCan(e, r)) tryAdaptive(e, r, hold(e, prev));
+      if (!AZ[w.id] && adaptiveCan(e, r)) tryAdaptive(e, r, ZF.hold(e.z, prev));
       if (AZ[w.id]) refreshDots(e, false);
       linkFrom(w.id, r);
     };
@@ -2226,15 +2153,11 @@
   // thing live: the scenes one after the other (layouts, themes, texts), the "+" at the end
   // of a line, pictures of the real right-click menu and period list with a pointer, a chart zooming, the grip.
   // =====================================================================================================
-  const TOUR_SCENE_MS = 2600, TOUR_PAD = 6;
+  // The overlay, pointer, picture, dots, keys and tween are DD.tourKit's (dd-core.js), shared with the Deep Dive's tour.
+  const TOUR_SCENE_MS = 2600, TOUR_PAD = 6, K = DD.tourKit;
   let T = null;
-  function tourVis(el){ if (!el) return null; const r = el.getBoundingClientRect(); return r.width > 20 && r.height > 20 ? r : null; }
-  function tourUnite(rs){
-    rs = rs.filter(Boolean); if (!rs.length) return null;
-    const x0 = Math.min.apply(null, rs.map(function(r){ return r.left; })), y0 = Math.min.apply(null, rs.map(function(r){ return r.top; }));
-    const x1 = Math.max.apply(null, rs.map(function(r){ return r.right; })), y1 = Math.max.apply(null, rs.map(function(r){ return r.bottom; }));
-    return {left: x0, top: y0, right: x1, bottom: y1, width: x1 - x0, height: y1 - y0};
-  }
+  function tourVis(el){ return K.rect(el, 20); }
+  const tourUnite = K.unite;
   function tourCharts(){ return S ? Array.from(S.root.querySelectorAll('.ddp-card.dd-card[data-wid]')).filter(function(el){ return el.dataset.type !== 'heatmap'; }) : []; }
   // the chart the span step changes: one over time first (its look changes with the period)
   function tourSpanCard(){
@@ -2281,24 +2204,12 @@
     const rr = S.root.getBoundingClientRect(), x = rr.left + pt.x, y = rr.top + pt.y;
     return {line: b.el, pt: pt, r: {left: x - 6, top: y - 6, right: x + 26, bottom: y + 26, width: 32, height: 32}};
   }
-  function tourEls(){
-    const ov = document.createElement('div'); ov.className = 'ddp-tour';
-    ov.innerHTML = '<div class="ddp-tour-hole"></div><img class="ddp-tour-pic"><div class="ddp-tour-ptr"></div>' +
-      '<div class="ddp-tour-card"><div class="ddp-tour-head"><span class="ddp-tour-title"></span><span class="ddp-tour-dots"></span></div>' +
-      '<div class="ddp-tour-text"></div><div class="ddp-tour-row"><button class="ddp-tour-back"></button><span></span><button class="ddp-tour-skip"></button><button class="ddp-tour-next"></button></div></div>';
-    ov.querySelector('.ddp-tour-ptr').innerHTML = '<svg width="20" height="24" viewBox="0 0 20 24"><path d="M2 1.5v18l4.6-4.3 3.2 7.1 3-1.4-3.1-6.9H16z" fill="#fff" stroke="#111" stroke-width="1.3" stroke-linejoin="round"/></svg>';
-    document.body.appendChild(ov);
-    const q = function(c){ return ov.querySelector(c); };
-    return {ov: ov, hole: q('.ddp-tour-hole'), card: q('.ddp-tour-card'), text: q('.ddp-tour-text'), dots: q('.ddp-tour-dots'), pic: q('.ddp-tour-pic'),
-      ptr: q('.ddp-tour-ptr'), back: q('.ddp-tour-back'), skip: q('.ddp-tour-skip'), next: q('.ddp-tour-next')};
-  }
   DDP.tourClose = function(){ tourClose(); };  // tour.stop: its screen left (the Deep Dive window over it)
   DDP.tour = function(p){
     if (T || !S || !p || !p.steps) return;
     if (DD.dev) DD.trace('TOUR start win=' + window.innerWidth + 'x' + window.innerHeight + ' dpr=' + (window.devicePixelRatio || 1) + ' steps=' + p.steps.map(function(x){ return x.action || '-'; }).join(','));
-    const el = tourEls(), L = p.labels || {};
-    el.ov.querySelector('.ddp-tour-title').textContent = L.title || 'Quick tour';
-    el.back.textContent = L.back || 'Back'; el.skip.textContent = L.skip || 'Skip';
+    const L = p.labels || {}, el = K.build(L);
+    el.title.textContent = L.title || 'Quick tour';
     el.ov.style.setProperty('--ddp-tour-acc', (DD.theme && DD.theme.chart && DD.theme.chart.accent) || '#58a6ff');
     // steps whose thing is not on screen are left out (a demo step brings its own scene)
     const steps = p.steps.filter(function(st){ return st.scene || tourRect(st.target); });
@@ -2308,11 +2219,7 @@
     el.back.addEventListener('click', function(){ tourGo(T.i - 1); });
     el.skip.addEventListener('click', tourClose);
     el.ov.addEventListener('wheel', function(ev){ window.scrollBy(0, ev.deltaY); ev.preventDefault(); }, {passive: false});
-    T.key = function(ev){
-      if (ev.key === 'Escape'){ ev.preventDefault(); tourClose(); }
-      else if (ev.key === 'ArrowRight' || ev.key === 'Enter'){ ev.preventDefault(); tourGo(T.i + 1); }
-      else if (ev.key === 'ArrowLeft'){ ev.preventDefault(); tourGo(T.i - 1); }
-    };
+    T.key = K.keys(tourClose, function(d){ if (T) tourGo(T.i + d); });
     document.addEventListener('keydown', T.key, true);
     // the page never stays scrolled sideways under the tour (a demo widget wider for a moment moved it)
     (function follow(){ if (!T) return; if (window.scrollX) window.scrollTo(0, window.scrollY);
@@ -2512,11 +2419,7 @@
       T.el.text.textContent = (tourTouch() && st.touch_text) || st.text;
       T.el.back.style.visibility = i > 0 ? '' : 'hidden';
       T.el.next.textContent = i === T.steps.length - 1 ? (T.L.done || 'Done') : (T.L.next || 'Next');
-      if (!T.el.dots.children.length){
-        T.el.dots.innerHTML = T.steps.map(function(_s, k){ return '<i data-k="' + k + '"></i>'; }).join('');
-        T.el.dots.querySelectorAll('i').forEach(function(d){ d.addEventListener('click', function(){ tourGo(+d.dataset.k); }); });
-      }
-      Array.from(T.el.dots.children).forEach(function(d, k){ d.className = k === i ? 'on' : k < i ? 'seen' : ''; });
+      K.dots(T.el, T.steps.length, i, tourGo);
       tourScroll(st);
       tourPlace(true, true);
       tourAction(st);
@@ -2649,18 +2552,11 @@
     return best && best[0] < over(x, y) ? [best[1], best[2]] : [x, y];
   }
   // ---- the step's live part ----
-  function tourPtr(x, y, show){
-    const p = T.el.ptr;
-    if (show === false || tourTouch()){ p.style.opacity = '0'; return; }
-    p.style.opacity = '1'; p.style.left = Math.round(x) + 'px'; p.style.top = Math.round(y) + 'px';
-  }
+  function tourPtr(x, y, show){ K.ptr(T.el, x, y, show); }
   function tourPic(src, x, y, w, h){
-    const im = T.el.pic;
-    if (!src){ if (im.style.display === 'block') tlog('picture hidden'); im.style.display = 'none'; return; }
-    if (im.getAttribute('src') !== src) im.setAttribute('src', src);
-    im.style.display = 'block'; im.style.left = Math.round(x) + 'px'; im.style.top = Math.round(y) + 'px';
-    im.style.width = Math.round(w) + 'px'; im.style.height = Math.round(h) + 'px';
-    const W = window.innerWidth, H = window.innerHeight, q = {left: x, top: y, width: w, height: h};
+    const was = T.el.pic.style.display === 'block', q = K.pic(T.el, src, x, y, w, h);
+    if (!q){ if (was) tlog('picture hidden'); return; }
+    const W = window.innerWidth, H = window.innerHeight;
     tlog('picture ' + trc(q) + (x < 0 || y < 0 || x + w > W || y + h > H ? ' !! off window ' + W + 'x' + H : '') + (tcross(T.el.card.getBoundingClientRect(), q) ? ' !! under the card' : ''));
   }
   function tourAction(st){
@@ -2713,15 +2609,10 @@
     (T.hidden || []).forEach(function(h){ h[0].style.opacity = h[1]; }); T.hidden = [];
     tourPtr(0, 0, false);
   }
-  const inOutCubic = function(t){ return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
   // a tween on the frames, dropped when the step changes
   function tourTween(ms, fn, done){
-    const g = T.gen, t0 = performance.now();
-    (function f(now){
-      if (!T || T.gen !== g) return;
-      const t = Math.min(1, (now - t0) / ms); fn(inOutCubic(t));
-      if (t < 1) requestAnimationFrame(f); else if (done) done();
-    })(t0);
+    const g = T.gen;
+    K.tween(ms, K.ease.cubic, function(){ return !!T && T.gen === g; }, fn, done);
   }
   // _carry: the pointer on the copy first, then both move together (the copy to rect `to`, scaled)
   function tourCarry(g, to, grab, grabTo, ms, pause, done){

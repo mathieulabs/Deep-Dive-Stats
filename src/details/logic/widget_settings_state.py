@@ -2,15 +2,13 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """A widget's settings being edited, without a window: which configs they live in and their Cancel backup.
 
-What the Qt WidgetSettingsDialog sorted out before building its controls, kept here so that the web page
-(web_ui/widget_settings.py) needs no hidden Qt dialog:
+What the web page of a widget's settings (web_ui/widget_settings.py) edits:
   - global_config: the shared style (the pinned config, or a Deep Dive section's style dict);
   - local_config: the widget's own settings (its definition by default);
   - addon_config: the one its controls write to (local with "Own style" on, else global);
   - theme_config: a full config for its colors (the pinned theme when opened from a pinned widget);
   - is_dashboard_context: a Deep Dive stat card (its settings are in the Deep Dive's config);
-  - is_pinned_mode: the pinned config is the one edited.
-The Qt dialog runs the same setup on itself (setup(self, ...)), so both read the same."""
+  - is_pinned_mode: the pinned config is the one edited."""
 
 from __future__ import annotations
 
@@ -24,7 +22,7 @@ from .logger import log_swallowed
 
 
 def setup(obj, widget_def, parent=None, global_config=None, local_config=None, theme_config=None):
-    """Fill obj (a WidgetSettingsState or the Qt dialog) with the configs of widget_def's settings."""
+    """Fill obj (a WidgetSettingsState) with the configs of widget_def's settings."""
     obj.widget_def = widget_def
     obj.widget_id = widget_def.get("id")
     obj.type = widget_def.get("type")
@@ -128,7 +126,7 @@ class WidgetSettingsState:
         try:
             from ..widgets.chart_utils.own_colors import clean_own_colors
 
-            # (widget_colors' Cancel puts these back; the Qt dialog keeps them when it builds its Colors box)
+            # (widget_colors' Cancel puts these back)
             self._own_colors_backup = clean_own_colors(widget_def.get("own_colors"))
         except Exception:
             log_swallowed()

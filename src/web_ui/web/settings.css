@@ -317,11 +317,13 @@ body .dds-toast.show{opacity:1;transform:translate(-50%,0)}
 #dds-root .dg-group{padding:2px 8px 2px;color:var(--s-dim);font-size:11px;flex:none}
 #dds-root .dg-main{overflow-y:auto;overflow-x:hidden;min-height:0;padding:0 14px 0 0}
 #dds-root .dg-sec{margin-bottom:8px}
+#dds-root .dg-sechint{margin:0 0 6px;max-width:520px;color:var(--s-dim);font-size:12px;line-height:1.5}
 #dds-root .dg-sechead{margin:0;padding:10px 0 8px;color:var(--s-dim);font-size:11px;font-weight:700;letter-spacing:.6px;white-space:pre}
 #dds-root .dg-grid{display:grid;gap:14px;justify-content:start}
 /* as many columns as the window holds (maximized, full screen): the tiles keep their size (their previews are drawn at it) */
 #dds-root .dg-grid-chart,#dds-root .dg-grid-text{grid-template-columns:repeat(auto-fill,236px)}
 #dds-root .dg-grid-stat{grid-template-columns:repeat(auto-fill,172px)}
+#dds-root .dg-grid-saved{grid-template-columns:repeat(auto-fill,236px);align-items:start}
 #dds-root .dg-empty{padding:40px 0;text-align:center;color:var(--s-dim)}
 #dds-root .dg-foot{align-items:center;padding:10px 20px}
 #dds-root .dg-foot-left{display:flex;align-items:center;gap:8px;margin-right:auto;min-width:0}

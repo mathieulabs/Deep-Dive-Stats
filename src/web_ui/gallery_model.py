@@ -46,6 +46,8 @@ class Tile:
         self.count = int(count) if count is not None else (1 if pinned else 0)
         self.text = None
         self.marks = False
+        self.saved_id = None  # a saved widget's (My Widgets)
+        self.saved_def = None
 
     def set_count(self, n):
         self.count = max(0, int(n))
@@ -80,6 +82,7 @@ class GalleryModel:
         self.choice = None  # the one picked (a gallery without on_add closes on it)
         self.sections = []  # [{"key", "family", "title", "tiles": [Tile]}]
         self.tiles = {}
+        self._next_tile = 0
         self._build()
 
     # -- content ----------------------------------------------------------------------------
@@ -102,7 +105,8 @@ class GalleryModel:
         return tiles
 
     def _tile(self, tiles, *args, **kw):
-        t = Tile(str(len(self.tiles)), *args, **kw)
+        self._next_tile += 1  # (not the count of tiles: a saved one deleted, the next one made took a used id)
+        t = Tile(str(self._next_tile - 1), *args, **kw)
         t.marks = self.toggle and t.family != "text"
         tiles.append(t)
         self.tiles[t.id] = t
@@ -123,6 +127,10 @@ class GalleryModel:
         from ..details.logic.stat_cards import get_stat_card_default_title, get_stat_card_name
         from ..i18n import N_, tr, tr_name
 
+        saving = not self.toggle and self._on_add is not None and self._only is None and self.context == "pinned"
+        saved = self._saved_items() if saving else []
+        if saving:
+            self._saved_section([e for e in saved if e["def"].get("type") != "text_label"])
         pins = self._registry()
         types = {d.get("type") for d in pins}
         stats = {d.get("stat_key") for d in pins if d.get("type") == "stat_card"}
@@ -157,9 +165,104 @@ class GalleryModel:
             return
         tiles = self._section("text", "text", tr("Text"))
         count = self._texts if self.toggle else (counts[("text_label", None)] if counts is not None else None)
-        t = self._tile(tiles, Choice("text_label", N_("Text Widget")), tr("Text Widget"), "text",
-                       f"{tr('Text Widget')} {tr('Text')}", TEXT_PIC, show_name=False, count=count)
+        # (named under it when adding: the one that makes a new text, set apart from the saved ones after it)
+        t = self._tile(tiles, Choice("text_label", N_("Text Widget")), tr("New Text Widget") if not self.toggle else tr("Text Widget"),
+                       "text", f"{tr('Text Widget')} {tr('New Text Widget')} {tr('Text')}", TEXT_PIC,
+                       show_name=not self.toggle, count=count)
         t.text = tr("Write your own sentence, with live stats in it.")
+        # the saved texts after it, where a text is looked for (My Widgets, at the top, was out of view)
+        for e in saved:
+            if e["def"].get("type") == "text_label":
+                self._saved_tile(tiles, e)
+
+    @staticmethod
+    def _saved_items():
+        from ..details.logic import saved_widgets
+        from ..details.logic.logger import log_swallowed
+
+        try:
+            return saved_widgets.all_saved()
+        except Exception:
+            log_swallowed()
+            return []
+
+    def _saved_section(self, items):
+        """My Widgets: the charts and stat cards saved by name, each added again with its settings (saved_widgets;
+        the saved texts are in Text)."""
+        from ..i18n import tr
+
+        tiles = self._section("saved", "saved", tr("My Widgets"))
+        # (shown empty too: where they go, and how)
+        self.sections[-1]["hint"] = tr("Right click a chart or a stat card on the main screen, then Save Widget As..., to keep "
+                                       "it here with its settings.")
+        for e in items:
+            self._saved_tile(tiles, e)
+
+    def _saved_tile(self, tiles, e):
+        from ..details.widgets.pinned.main_menu.ui.add_widget_menu import Choice
+        from ..i18n import tr
+
+        d = dict(e["def"])
+        wtype = d.get("type")
+        fam = "stat" if wtype == "stat_card" else ("text" if wtype == "text_label" else "chart")
+        name = str(e.get("name") or "")
+        choice = Choice(wtype, d.get("label") or name, stat_key=d.get("stat_key"),
+                        template=d.get("template") if fam == "text" else None, saved=d)
+        pic = {"chart": CHART_PIC, "stat": STAT_PIC, "text": TEXT_PIC}[fam]
+        t = self._tile(tiles, choice, name, fam, f"{name} {tr('My Widgets')} {wtype}", pic)
+        t.saved_id, t.saved_def = e.get("sid"), d
+        if fam == "text":
+            t.text = _plain(d.get("template")) or name
+        return t
+
+    def rename_saved(self, tid, name):
+        from ..details.logic import saved_widgets
+
+        t = self.tiles.get(str(tid))
+        if t is None or not t.saved_id or not saved_widgets.rename(t.saved_id, name):
+            return False
+        t.name = str(name).strip()
+        t.search = f"{t.name} {t.search}".lower()
+        return True
+
+    def delete_saved(self, tid):
+        from ..details.logic import saved_widgets
+
+        t = self.tiles.get(str(tid))
+        if t is None or not t.saved_id or not saved_widgets.delete(t.saved_id):
+            return False
+        self.tiles.pop(t.id, None)
+        for sec in self.sections:
+            if t in sec["tiles"]:
+                sec["tiles"].remove(t)
+        return True
+
+    def add_saved(self, sid):
+        """The tile of the saved widget sid (in Text for a text, else My Widgets): made, or brought up to date when
+        its name was there."""
+        from ..details.logic import saved_widgets
+
+        e = saved_widgets.get(sid)
+        key = "text" if e is not None and e["def"].get("type") == "text_label" else "saved"
+        sec = next((x for x in self.sections if x["key"] == key), None)
+        if e is None or sec is None:
+            return None
+        old = next((x for x in self.tiles.values() if x.saved_id == sid), None)
+        if old is not None and old not in sec["tiles"]:  # (the name now of another kind: the old tile goes)
+            for x in self.sections:
+                if old in x["tiles"]:
+                    x["tiles"].remove(old)
+            del self.tiles[old.id]
+            old = None
+        t = self._saved_tile(sec["tiles"], e)
+        if old is not None:  # (in its place, keeping its id: the page updates that tile)
+            sec["tiles"].remove(t)
+            del self.tiles[t.id]
+            t.id = old.id
+            sec["tiles"][sec["tiles"].index(old)] = t
+            self.tiles[t.id] = t
+            t.set_count(old.count)
+        return t
 
     def inner(self, t):
         """The size a tile's preview is drawn at (inside its frame for a chart)."""
@@ -176,6 +279,8 @@ class GalleryModel:
             action = tr("Shown in Deep Dive: click to remove it") if t.pinned else tr("Click to add it to Deep Dive")
         else:
             action = tr("Click to add another. − removes one.") if t.count else tr("Click to add it")
+            if t.saved_id:
+                action += " " + tr("Right click to rename or delete it.")
         about = ""
         if t.choice.stat_key is None:
             try:
@@ -183,7 +288,9 @@ class GalleryModel:
 
                 about = help_text(t.choice.widget_type) or ""
             except Exception:
-                pass
+                from ..details.logic.logger import log_swallowed
+
+                log_swallowed()
         return [about, action]
 
     # -- the period and decks of the widgets added -------------------------------------------
@@ -244,8 +351,12 @@ class GalleryModel:
         choice = t.choice
         d = {"id": f"dd_gallery:{choice.widget_type}:{choice.stat_key or ''}", "type": choice.widget_type,
              "label": choice.label, "stat_key": choice.stat_key}
+        if t.saved_def:
+            d = dict(t.saved_def, id=f"dd_gallery:saved:{t.saved_id}")  # its settings, its period
         span, days, deck_ids = self.fields_for(choice)
-        if span is None:
+        if span is None and t.saved_def and t.saved_def.get("time_span") is not None:
+            span, days = t.saved_def.get("time_span"), t.saved_def.get("custom_days")
+        elif span is None:
             span = default_span(choice.widget_type, choice.stat_key)
         if span is not None:
             d["time_span"] = span
@@ -287,15 +398,16 @@ class GalleryModel:
 
             log_swallowed()
 
-    def pick(self, tid, template=None, view=None):
+    def pick(self, tid, template=None, view=None, save_name=None):
         """A tile clicked. "close" when the gallery closes on it (no on_add). template: the text widget's sentence,
-        written in the gallery page's text editor (None: the Qt editor asks it)."""
+        written in the gallery page's text editor (None: no text added); save_name: that text also saved under this
+        name in My Widgets."""
         t = self.tiles.get(str(tid))
         if t is None:
             return None
         if self.toggle and t.family == "text":
             add = self._on_add_text
-            new_id = None if add is None else (add() if template is None else add(template))
+            new_id = None if add is None or template is None else add(template)
             if new_id:
                 self._added.setdefault(t.id, []).append(new_id)
                 t.set_count(t.count + 1)
@@ -323,7 +435,20 @@ class GalleryModel:
                 self._apply_view(t.choice.widget_type, view, wid=new_id)
             self._added.setdefault(t.id, []).append(new_id)
             t.set_count(t.count + 1)
+            if save_name and t.family == "text" and template is not None:
+                self._save_added(new_id, save_name)
         return None
+
+    def _save_added(self, wid, name):
+        from ..details.logic import saved_widgets
+        from ..details.logic.logger import log_swallowed
+
+        try:
+            d = next((x for x in self._registry() if x.get("id") == wid), None)
+            if d is not None:
+                self.add_saved(saved_widgets.save(d, name)[0])
+        except Exception:
+            log_swallowed()
 
     def remove_one(self, tid):
         """The "−": the last one added from here, else the last of its kind."""
@@ -339,6 +464,8 @@ class GalleryModel:
             return
         if ids:
             wid = ids.pop()
+        elif t.saved_id:
+            return  # (only the ones added from it here)
         else:
             mine = [d.get("id") for d in self._registry()
                     if d.get("type") == t.choice.widget_type
@@ -367,7 +494,8 @@ class GalleryModel:
             self._added = {}
             for t in self.tiles.values():
                 c = t.choice
-                t.set_count(counts[("stat_card", c.stat_key) if c.widget_type == "stat_card" else (c.widget_type, None)])
+                t.set_count(0 if t.saved_id else
+                            counts[("stat_card", c.stat_key) if c.widget_type == "stat_card" else (c.widget_type, None)])
             return
         charts, stats = self._on_reset()
         charts, stats = set(charts), set(stats)
@@ -386,3 +514,14 @@ class GalleryModel:
             elif t.pinned and t.family == "chart":
                 charts.add(t.choice.widget_type)
         return charts, stats
+
+
+def _plain(html_text):
+    """A text widget's sentence as plain text (its preview in the tile)."""
+    import html
+    import re
+
+    s = re.sub(r"<br\s*/?>|</(p|div|li)>", " ", str(html_text or ""), flags=re.I)
+    s = html.unescape(re.sub(r"<[^>]+>", "", s))
+    s = re.sub(r"\s+", " ", s).strip()
+    return s[:140] + ("…" if len(s) > 140 else "")

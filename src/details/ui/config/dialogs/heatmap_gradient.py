@@ -13,6 +13,7 @@ from aqt.qt import (
 
 from ... import Config
 from ...theme import get_settings_dialog_style
+from ...theme.icons import get_svg_icon
 from ....widgets.charts.heatmap.palettes import (CUSTOM, DEFAULT_COLORS, MAX_COLORS, MIN_COLORS, customs_of, new_id,
                                                   palette_of)
 from .....qss import set_qss
@@ -89,10 +90,52 @@ def stops_row(parent):
     return row, minus, plus, show
 
 
+def _color_row(dialog, box, label, current_fn, is_default_fn, set_fn, reset_fn, reset_tip):
+    """label, a swatch to pick a color and a button back to the default one. Returns
+    (swatch, show): show() repaints the row from current_fn / is_default_fn."""
+    row = QHBoxLayout()
+    row.addWidget(QLabel(label))
+    row.addStretch()
+    swatch = QPushButton(dialog)  # parented: a lone button would show as a window
+    swatch.setFixedSize(28, 22)
+    swatch.setCursor(Qt.CursorShape.PointingHandCursor)
+    swatch.setToolTip(tr("Click to pick a color"))
+    reset = QPushButton(dialog)
+    reset.setIcon(get_svg_icon("rotate-ccw", size=13, context_ref=dialog))
+    reset.setFixedSize(22, 22)
+    reset.setCursor(Qt.CursorShape.PointingHandCursor)
+    reset.setToolTip(reset_tip)
+    set_qss(reset, "QPushButton { background: transparent; border: none; } QPushButton:hover { background: rgba(128,128,128,0.18); border-radius: 4px; }")
+
+    def show():
+        set_qss(swatch, f"background-color: {current_fn()}; border: 1px solid rgba(128,128,128,0.45); border-radius: 4px;")
+        reset.setVisible(not is_default_fn())
+
+    def pick(_checked=False):
+        from ..shared.color_picker import pick_color_live
+
+        def live(hex_):
+            set_fn(hex_)
+            show()
+
+        pick_color_live(dialog, current_fn(), tr("Pick Color"), live)
+
+    def back(_checked=False):
+        reset_fn()
+        show()
+
+    swatch.clicked.connect(pick)
+    reset.clicked.connect(back)
+    show()
+    row.addWidget(swatch)
+    row.addWidget(reset)
+    box.addLayout(row)
+    return swatch, show
+
+
 def edit_gradient(parent, conf, write, on_change, new=False, seed=None):
     """conf: the add-on config (dict); write(key, value) saves one value; on_change() shows the change.
     new: a new gradient from `seed` (the colors of the palette shown), chosen at once; else the chosen one."""
-    from ..widgets.widget_colors import _color_row
 
     customs = customs_of(conf.get)
     key = palette_of(conf.get, customs)

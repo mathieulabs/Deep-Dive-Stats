@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Deep Dive Stats contributors
-from ..shared import Period, log_info, mw, time
+import time
+from aqt import mw
+from ... import Period
+from ...logger import log_info
 from ...history_provider import HistoryProvider
 from ...logger import log_swallowed
 
