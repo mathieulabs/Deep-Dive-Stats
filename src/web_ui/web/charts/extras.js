@@ -147,9 +147,19 @@
         return parts.join('  ·  ');
       }
       // Total and average per day of a count (forgotten: lapses, introduced: cards)
-      let tot = 0, act = 0;
-      rows.forEach(function(r){ const v = Number(r.reviews) || 0; tot += v; if (v > 0) act++; });
-      const per = o.avg_on_active_days ? (act || 1) : (rows.length || 1);
+      // Sub-day (10-min) rows end in HH:MM (144 bins per logical day): group by logical day so /day doesn't divide by 10-min bins.
+      let tot = 0, act = 0, nDays = 0;
+      const subDay = rows.some(function(r){ return r && r.date && /\d\d:\d\d$/.test(r.date); });
+      if (subDay){
+        const byDay = {};
+        rows.forEach(function(r, i){ const k = Math.floor(i / 144), v = Number(r && r.reviews) || 0; tot += v; byDay[k] = (byDay[k] || 0) + v; });
+        const ks = Object.keys(byDay); nDays = ks.length;
+        ks.forEach(function(k){ if (byDay[k] > 0) act++; });
+      } else {
+        rows.forEach(function(r){ const v = Number(r.reviews) || 0; tot += v; if (v > 0) act++; });
+        nDays = rows.length;
+      }
+      const per = o.avg_on_active_days ? (act || 1) : (nDays || 1);
       const noun2 = unit === 'lapses' ? ['lapse', 'lapses'] : (unit === 'cards' ? ['card', 'cards'] : ['review', 'reviews']);
       const avg = tot / per;
       const cnt = function(v, txt){ return DD.tn('{n} ' + noun2[0], '{n} ' + noun2[1], v, {n: txt}); };
@@ -447,6 +457,22 @@
       destroy: function(){ DD.frame.remove(frame); resizer.disconnect(); el.innerHTML = ''; if (statEl) statEl.textContent = ''; const p = head && head.querySelector('.dd-pills'); if (p) p.innerHTML = ''; },
     };
   }
+  // A part of a grid chart that stays the same through its animations (its empty cells and its axes' labels; the
+  // B-W Matrix's cells in its intro, a plain fade), drawn once on a canvas of the chart's size and copied onto it at
+  // each frame, at the opacity set. Drawn again each frame, ~300 cells and their labels took 10 to 30 ms a frame in
+  // Anki: the page could not keep up with a scroll as such a chart came in (its intro), and the scroll jumped.
+  // memo: the chart's own {cv, b, key}; b: the grid shown (a new one draws it again); key: what else it depends on.
+  function sheet(g, memo, b, key, paint){
+    const cv = g.canvas, T = g.getTransform();
+    key = key + '|' + cv.width + 'x' + cv.height + '|' + T.a + ',' + T.d;
+    if (!memo.cv || memo.b !== b || memo.key !== key){
+      memo.cv = memo.cv || document.createElement('canvas');
+      memo.cv.width = cv.width; memo.cv.height = cv.height; memo.b = b; memo.key = key;
+      const o = memo.cv.getContext('2d');
+      o.setTransform(T); paint(o);
+    }
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(memo.cv, 0, 0); g.restore();
+  }
   // ---- Week by Hour: 7 days by 24 hours, each cell as dark as its reviews ----
   const FONT = '11px "Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif';
   function weekMount(el, ctx){
@@ -698,7 +724,16 @@
       statEl.textContent = b ? DD.tn('{n} card', '{n} cards', b.total, {n: fmt(b.total)}) + '  ·  ' + DD.t('Average retrievability: {value}%', {value: trim(b.rMean, 1)}) + '  ·  ' + DD.t('Median stability: {value}', {value: sxrDays(b.sMedian)}) : '';
     }
     function resize(){ const f = DD.fitCanvas(canvas, g); st.w = f.w; st.h = f.h; }
+    // (kept while the grid and the canvas's size stay: its labels are measured)
+    const geoMemo = new WeakMap();
     function geometry(b){
+      const m = b && geoMemo.get(b);
+      if (m && m.w === st.w && m.h === st.h) return m.geo;
+      const geo = geometry0(b);
+      if (b) geoMemo.set(b, {w: st.w, h: st.h, geo: geo});
+      return geo;
+    }
+    function geometry0(b){
       g.font = FONT;
       const nc = b ? b.nc : 1, nr = b ? b.nr : 1;
       let lw = 0;
@@ -734,32 +769,40 @@
         return 'rgba(' + Math.round(lo.r + t * (hi.r - lo.r)) + ',' + Math.round(lo.g + t * (hi.g - lo.g)) + ',' + Math.round(lo.b + t * (hi.b - lo.b)) + ',' + a + ')';
       };
       const gap = Math.min(2, Math.min(geo.cw, geo.ch) * 0.2), radius = Math.max(0.5, Math.min(geo.cw, geo.ch) * 0.18);
-      const rr = function(x, y, w, h){ g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, radius); else g.rect(x, y, w, h); };
+      const rr = function(o, x, y, w, h){ o.beginPath(); if (o.roundRect) o.roundRect(x, y, w, h, radius); else o.rect(x, y, w, h); };
+      const cell = function(rowT, c){ return [geo.left + c * geo.cw + gap / 2, geo.top + rowT * geo.ch + gap / 2, Math.max(1, geo.cw - gap), Math.max(1, geo.ch - gap)]; };
+      // the empty cells and the axes (sheet: drawn once per grid)
+      sheet(g, main ? memoMain : memoPrev, b, (dark ? 1 : 0) + (C.text_secondary || ''), function(o){
+        o.fillStyle = empty;
+        for (let rowT = 0; rowT < geo.nr; rowT++) for (let c = 0; c < geo.nc; c++){ const q = cell(rowT, c); rr(o, q[0], q[1], q[2], q[3]); o.fill(); }
+        o.font = FONT; o.fillStyle = C.text_secondary || '#888';
+        // the stability at the edges of the rows (one in so many when they are thin)
+        o.textAlign = 'right'; o.textBaseline = 'middle';
+        const everyR = Math.max(1, Math.ceil(14 / geo.ch));
+        for (let k = 0; k <= geo.nr; k += everyR) o.fillText(b.sText(b.edge(k)), geo.left - 6, Math.max(geo.top + 5, Math.min(geo.top + geo.nr * geo.ch - 5, geo.top + (geo.nr - k) * geo.ch)));
+        // the retrievability at the edges of the columns
+        o.textAlign = 'center'; o.textBaseline = 'top';
+        const everyC = Math.max(1, Math.ceil((o.measureText('100%').width + 8) / geo.cw));
+        for (let c = 0; c <= geo.nc; c += everyC) o.fillText(trim((b.rLo + c * b.wm) / 10, 1) + '%', geo.left + c * geo.cw, geo.top + geo.nr * geo.ch + 2);
+        // the axes' names
+        o.fillText(DD.t('Retrievability'), geo.left + geo.nc * geo.cw / 2, geo.top + geo.nr * geo.ch + 16);
+        o.save(); o.translate(4, geo.top + geo.nr * geo.ch / 2); o.rotate(-Math.PI / 2); o.textBaseline = 'top';
+        o.fillText(DD.t('Stability'), 0, 0); o.restore();
+      });
+      // the cells with cards, over them
       for (let rowT = 0; rowT < geo.nr; rowT++){
         const row = geo.nr - 1 - rowT;
         for (let c = 0; c < geo.nc; c++){
-          const x = geo.left + c * geo.cw + gap / 2, y = geo.top + rowT * geo.ch + gap / 2, w = Math.max(1, geo.cw - gap), h = Math.max(1, geo.ch - gap);
-          rr(x, y, w, h); g.fillStyle = empty; g.fill();
-          const sh = shareOf(c + ',' + row);
-          if (sh > 0){ rr(x, y, w, h); g.fillStyle = fill(sh); g.fill(); }
-          if (main && st.hover === rowT * geo.nc + c){ rr(x, y, w, h); g.strokeStyle = U.rgba(C.text_primary || '#ffffff', 200 / 255); g.lineWidth = 1.2; g.stroke(); }
+          const sh = shareOf(c + ',' + row), hov = main && st.hover === rowT * geo.nc + c;
+          if (!(sh > 0) && !hov) continue;
+          const q = cell(rowT, c);
+          if (sh > 0){ rr(g, q[0], q[1], q[2], q[3]); g.fillStyle = fill(sh); g.fill(); }
+          if (hov){ rr(g, q[0], q[1], q[2], q[3]); g.strokeStyle = U.rgba(C.text_primary || '#ffffff', 200 / 255); g.lineWidth = 1.2; g.stroke(); }
         }
       }
-      g.font = FONT; g.fillStyle = C.text_secondary || '#888';
-      // the stability at the edges of the rows (one in so many when they are thin)
-      g.textAlign = 'right'; g.textBaseline = 'middle';
-      const everyR = Math.max(1, Math.ceil(14 / geo.ch));
-      for (let k = 0; k <= geo.nr; k += everyR) g.fillText(b.sText(b.edge(k)), geo.left - 6, Math.max(geo.top + 5, Math.min(geo.top + geo.nr * geo.ch - 5, geo.top + (geo.nr - k) * geo.ch)));
-      // the retrievability at the edges of the columns
-      g.textAlign = 'center'; g.textBaseline = 'top';
-      const everyC = Math.max(1, Math.ceil((g.measureText('100%').width + 8) / geo.cw));
-      for (let c = 0; c <= geo.nc; c += everyC) g.fillText(trim((b.rLo + c * b.wm) / 10, 1) + '%', geo.left + c * geo.cw, geo.top + geo.nr * geo.ch + 2);
-      // the axes' names
-      g.fillText(DD.t('Retrievability'), geo.left + geo.nc * geo.cw / 2, geo.top + geo.nr * geo.ch + 16);
-      g.save(); g.translate(4, geo.top + geo.nr * geo.ch / 2); g.rotate(-Math.PI / 2); g.textBaseline = 'top';
-      g.fillText(DD.t('Stability'), 0, 0); g.restore();
       g.globalAlpha = 1;
     }
+    const memoMain = {}, memoPrev = {};
     // a cell: its column, its row from the bottom, the ranges it holds
     function cellOf(i){
       const b = st.bins; if (!b || i == null || i < 0) return null;
@@ -836,7 +879,8 @@
   function bwSame(a, b){ return !!(a && b && a.lo === b.lo && a.hi === b.hi); }
   function bwMount(el, ctx){
     el.innerHTML = '<div class="dd-plot"><canvas></canvas><div class="dd-tip"></div></div>';
-    const plot = el.firstChild, canvas = plot.querySelector('canvas'), g = canvas.getContext('2d');
+    const plot = el.firstChild, canvas = plot.querySelector('canvas');
+    let g = canvas.getContext('2d');  // (the under canvas's, while introDraw paints it)
     const head = ctx.head, statEl = head && head.querySelector('.dd-stat');
     const st = {data: ctx.data || {}, opts: Object.assign({}, ctx.options || {}), from: {}, t: ctx.animate ? 0 : 1, start: null, hover: -1, geo: null, w: 1, h: 1, last: true};
     st.canvas = canvas; st.b = bwGrid(st.data);
@@ -916,57 +960,111 @@
       if (!(key in m)) m[key] = cellLabel0(v, w, h);
       return m[key];
     }
+    // The intro (every cell fading in at once): its empty cells and axes on a canvas under the chart's, its cells drawn
+    // once on the chart's canvas, faded in by the canvas's opacity: nothing drawn at each frame (copying the two
+    // pictures took ~8 ms a frame in Anki, and a scroll bringing this row in ran at 30 fps)
+    let under = null, introKey = '', introB = null;
+    function introDraw(){
+      const C = DD.theme.chart, key = [canvas.width, canvas.height, st.hover, st.b.total, C.is_dark, C.text_primary, C.text_secondary].join('|');
+      if (key !== introKey || introB !== st.b){
+        introKey = key; introB = st.b;
+        if (!under){
+          under = document.createElement('canvas');
+          under.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none';
+          plot.insertBefore(under, canvas);
+          canvas.style.position = 'relative';
+        }
+        if (under.width !== canvas.width) under.width = canvas.width;
+        if (under.height !== canvas.height) under.height = canvas.height;
+        const u = under.getContext('2d'), main = g;
+        u.setTransform(1, 0, 0, 1, 0, 0); u.clearRect(0, 0, under.width, under.height); u.setTransform(main.getTransform());
+        main.clearRect(0, 0, st.w, st.h);
+        st.geo = geometry(st.b);
+        g = u; try { layer(st.b, st.data, gap, shown, 1, true, null, true); } finally { g = main; }
+        layer(st.b, st.data, gap, shown, 1, true, 'intro', false, true);
+        under.style.display = '';
+        canvas.style.willChange = 'opacity';
+      }
+      canvas.style.opacity = String(st.t);
+    }
+    function introEnd(){
+      if (!under || under.style.display === 'none') return;
+      under.style.display = 'none'; canvas.style.opacity = ''; canvas.style.willChange = ''; introKey = ''; introB = null;
+    }
     function draw(){
+      if (st.prev === undefined && st.t < 1 && st.b && !Object.keys(st.from).length){ introDraw(); return; }
+      introEnd();
       g.clearRect(0, 0, st.w, st.h);
       st.geo = geometry(st.b);
       if (st.prev !== undefined && st.t < 1){
         const e = crossEase(st.t), pb = st.prev, nb = st.b, one = function(){ return 1; };
-        layer(pb, st.prevData, function(k){ return bwGap(pb, k); }, one, 1 - e, false);
-        layer(nb, st.data, function(k){ return bwGap(nb, k); }, one, e, true);
-      } else layer(st.b, st.data, gap, shown, 1, true);
+        layer(pb, st.prevData, function(k){ return bwGap(pb, k); }, one, 1 - e, false, 'prev');
+        layer(nb, st.data, function(k){ return bwGap(nb, k); }, one, e, true, 'next');
+      } else layer(st.b, st.data, gap, shown, 1, true, st.t < 1 && !Object.keys(st.from).length ? 'intro' : null);
     }
-    // a grid (b, of its payload d) at an opacity; main: the one shown (its hovered cell outlined)
-    function layer(b, d, gapOf, shownOf, alpha, main){
+    const memoMain = {}, memoPrev = {}, memoIntro = {}, memoOut = {}, memoUnder = {};
+    // a grid (b, of its payload d) at an opacity; main: the one shown (its hovered cell outlined); fade: its cells stay
+    // as they are through the animation, drawn once and copied at its opacity: 'intro' (every cell fades in), 'prev' /
+    // 'next' (another deck's grid: the old one fades out as the new one fades in; drawn cell by cell, both grids took
+    // 7 to 22 ms a frame, and a scroll bringing it in stuttered)
+    // sheetOnly: its empty cells and axes alone; cellsOnly: its cells alone, at full opacity (the intro, introDraw)
+    function layer(b, d, gapOf, shownOf, alpha, main, fade, sheetOnly, cellsOnly){
       if (!b || alpha <= 0) return;
       const C = DD.theme.chart, dark = !!C.is_dark, geo = geometry(b);
       g.globalAlpha = alpha;
       const more = d.more || C.easy || '#3b82f6', less = d.less || C.again || '#ef4444';
       const empty = dark ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.047)';
       const sp = Math.min(2, Math.min(geo.cw, geo.ch) * 0.2), radius = Math.max(0.5, Math.min(geo.cw, geo.ch) * 0.18);
-      const rr = function(x, y, w, h){ g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, radius); else g.rect(x, y, w, h); };
-      let font = null;
-      for (let rowT = 0; rowT < geo.nr; rowT++){
-        const row = b.hi - rowT;
-        for (let c = 0; c < 10; c++){
-          const x = geo.left + c * geo.cw + sp / 2, y = geo.top + rowT * geo.ch + sp / 2, w = Math.max(1, geo.cw - sp), h = Math.max(1, geo.ch - sp);
-          rr(x, y, w, h); g.fillStyle = empty; g.fill();
-          const key = row + ',' + (c + 1), v = gapOf(key), a = shownOf(key);
-          if (v != null && a > 0){
+      const rr = function(o, x, y, w, h){ o.beginPath(); if (o.roundRect) o.roundRect(x, y, w, h, radius); else o.rect(x, y, w, h); };
+      const cell = function(rowT, c){ return [geo.left + c * geo.cw + sp / 2, geo.top + rowT * geo.ch + sp / 2, Math.max(1, geo.cw - sp), Math.max(1, geo.ch - sp)]; };
+      // the empty cells and the axes (sheet: drawn once per grid)
+      if (!cellsOnly) sheet(g, main ? (sheetOnly ? memoUnder : memoMain) : memoPrev, b, (dark ? 1 : 0) + (C.text_secondary || ''), function(o){
+        o.fillStyle = empty;
+        for (let rowT = 0; rowT < geo.nr; rowT++) for (let c = 0; c < 10; c++){ const q = cell(rowT, c); rr(o, q[0], q[1], q[2], q[3]); o.fill(); }
+        o.font = FONT; o.fillStyle = C.text_secondary || '#888';
+        // the stability at the edges of the rows (one in so many when they are thin)
+        o.textAlign = 'right'; o.textBaseline = 'middle';
+        const everyR = Math.max(1, Math.ceil(14 / geo.ch));
+        for (let k = 0; k <= geo.nr; k += everyR) o.fillText(sxrDays(edge(b.lo + k)), geo.left - 6, Math.max(geo.top + 5, Math.min(geo.top + geo.nr * geo.ch - 5, geo.top + (geo.nr - k) * geo.ch)));
+        // the difficulty of each column
+        o.textAlign = 'center'; o.textBaseline = 'top';
+        for (let c = 0; c < 10; c++) o.fillText(String(c + 1), geo.left + (c + 0.5) * geo.cw, geo.top + geo.nr * geo.ch + 2);
+        o.fillText(DD.t('Difficulty'), geo.left + 5 * geo.cw, geo.top + geo.nr * geo.ch + 16);
+        o.save(); o.translate(4, geo.top + geo.nr * geo.ch / 2); o.rotate(-Math.PI / 2); o.textBaseline = 'top';
+        o.fillText(DD.t('Stability'), 0, 0); o.restore();
+      });
+      // the cells with answers, over them (o: the context drawn on; at: their opacity, times alpha)
+      const cells = function(o, at){
+        let font = null;
+        for (let rowT = 0; rowT < geo.nr; rowT++){
+          const row = b.hi - rowT;
+          for (let c = 0; c < 10; c++){
+            const key = row + ',' + (c + 1), v = gapOf(key), a = at(key);
+            if (v == null || !(a > 0)) continue;
+            const q = cell(rowT, c), x = q[0], y = q[1], w = q[2], h = q[3];
             // (the colour by the size of the gap; a tiny one still shows the cell has its answers)
-            rr(x, y, w, h); g.fillStyle = U.rgba(v >= 0 ? more : less, (0.08 + 0.82 * Math.min(1, Math.abs(v) / BW_FULL)) * a); g.fill();
+            rr(o, x, y, w, h); o.fillStyle = U.rgba(v >= 0 ? more : less, (0.08 + 0.82 * Math.min(1, Math.abs(v) / BW_FULL)) * a); o.fill();
             // its % (the gap it goes to: no digits rolling while it changes)
             const nv = bwGap(b, key), lab = cellLabel(b, key, nv != null ? nv : v, w, h, nv != null);
             if (fontMoved){ font = null; fontMoved = false; }
             if (lab){
-              if (lab[1] !== font){ g.font = lab[1]; font = lab[1]; }
-              g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = C.text_primary || '#222';
-              g.globalAlpha = a * alpha; g.fillText(lab[0], x + w / 2, y + h / 2); g.globalAlpha = alpha;
+              if (lab[1] !== font){ o.font = lab[1]; font = lab[1]; }
+              o.textAlign = 'center'; o.textBaseline = 'middle'; o.fillStyle = C.text_primary || '#222';
+              const ga = o.globalAlpha; o.globalAlpha = a * ga; o.fillText(lab[0], x + w / 2, y + h / 2); o.globalAlpha = ga;
             }
           }
-          if (main && st.hover === rowT * 10 + c){ rr(x, y, w, h); g.strokeStyle = U.rgba(C.text_primary || '#ffffff', 200 / 255); g.lineWidth = 1.2; g.stroke(); }
         }
+      };
+      if (sheetOnly){ g.globalAlpha = 1; return; }
+      if (fade){
+        g.globalAlpha = cellsOnly ? alpha : fade === 'intro' ? alpha * st.t : alpha;
+        sheet(g, fade === 'prev' ? memoOut : memoIntro, b, (dark ? 1 : 0) + more + less + (C.text_primary || ''), function(o){ cells(o, function(){ return 1; }); });
+        g.globalAlpha = alpha;
+      } else cells(g, shownOf);
+      if (main && st.hover >= 0 && st.hover < geo.nr * 10){
+        const q = cell(Math.floor(st.hover / 10), st.hover % 10);
+        rr(g, q[0], q[1], q[2], q[3]); g.strokeStyle = U.rgba(C.text_primary || '#ffffff', 200 / 255); g.lineWidth = 1.2; g.stroke();
       }
-      g.font = FONT; g.fillStyle = C.text_secondary || '#888';
-      // the stability at the edges of the rows (one in so many when they are thin)
-      g.textAlign = 'right'; g.textBaseline = 'middle';
-      const everyR = Math.max(1, Math.ceil(14 / geo.ch));
-      for (let k = 0; k <= geo.nr; k += everyR) g.fillText(sxrDays(edge(b.lo + k)), geo.left - 6, Math.max(geo.top + 5, Math.min(geo.top + geo.nr * geo.ch - 5, geo.top + (geo.nr - k) * geo.ch)));
-      // the difficulty of each column
-      g.textAlign = 'center'; g.textBaseline = 'top';
-      for (let c = 0; c < 10; c++) g.fillText(String(c + 1), geo.left + (c + 0.5) * geo.cw, geo.top + geo.nr * geo.ch + 2);
-      g.fillText(DD.t('Difficulty'), geo.left + 5 * geo.cw, geo.top + geo.nr * geo.ch + 16);
-      g.save(); g.translate(4, geo.top + geo.nr * geo.ch / 2); g.rotate(-Math.PI / 2); g.textBaseline = 'top';
-      g.fillText(DD.t('Stability'), 0, 0); g.restore();
       g.globalAlpha = 1;
     }
     stats(); pill(); resize();

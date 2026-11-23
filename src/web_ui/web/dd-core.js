@@ -36,7 +36,31 @@
   };
   DD.charts = {};
   DD.settings = {};
-  DD.registerChart = function(type, def){ DD.charts[type] = fsrsGuard(def); };
+  DD.registerChart = function(type, def){ DD.charts[type] = painted(type, fsrsGuard(def)); };
+  // A chart whose colours come with its data (Week by Hour, SxR, B-W Matrix, First Answer Retention): a new theme
+  // brings them (DD.theme.paint[type], window.py _push_theme) and the chart repaints at once with its last data, not
+  // animated, instead of when its data is read again a moment later
+  function painted(type, def){
+    if (!def || typeof def.mount !== 'function') return def;
+    const mount = def.mount;
+    return Object.assign({}, def, {mount: function(el, ctx){
+      const inst = mount.call(def, el, ctx);
+      if (!inst || typeof inst.update !== 'function') return inst;
+      let last = ctx && ctx.data;
+      const up = inst.update, theme = inst.setTheme;
+      inst.update = function(d){ last = d; return up.apply(inst, arguments); };
+      inst.setTheme = function(){
+        const r = theme ? theme.apply(inst, arguments) : undefined;
+        const c = DD.theme && DD.theme.paint && DD.theme.paint[type];
+        if (c && last && typeof last === 'object' && !last.error && !last._empty){
+          const p = DD._noAnim; DD._noAnim = true;
+          try { inst.update(Object.assign({}, last, c)); } finally { DD._noAnim = p; }
+        }
+        return r;
+      };
+      return inst;
+    }});
+  }
   // A chart whose recall needs the formulas of an FSRS version this add-on does not know gets {fsrs_unsupported}
   // from Python (providers.fetch): a note stands in its card instead of numbers that would be wrong. The note's
   // instance mounts the real chart if supported data comes later, then hands every call on to it.
@@ -91,7 +115,8 @@
   }
   // A chart's place while its data loads (Deep Dive reads most of them after opening): a faint light passing across
   // its card, no shape (a sketch of bars or of a frame stood where a pie came, its axes elsewhere). With animations
-  // off, three still dots. Removed at once when the chart mounts (its own intro then: no fade on top of it)
+  // off, three still dots. When the chart comes, its light stops where it is and fades in 220 ms (app.js: removed at
+  // once, it vanished mid-card)
   DD.loadingPlaceholder = function(){
     if (!(DD.anim && DD.anim.on)) return '<div class="dd-loading dd-loading-still" aria-hidden="true"><i></i><i></i><i></i></div>';
     const sp = DD.speed ? DD.speed() : 1;
@@ -132,6 +157,12 @@
     if (DD._perfNotes && DD._perfNotes.length < 20) DD._perfNotes.push('answer ' + w.cmd);
     delete waiting[id];
     if (ok) w.resolve(payload); else w.reject(new Error(payload));
+    // dev trace: the page's time on a Python answer (its callbacks, run right after this), when it is long
+    if (DD.dev && window.MessageChannel){
+      const t = performance.now(), mc = new MessageChannel();
+      mc.port1.onmessage = function(){ const ms = performance.now() - t; if (ms >= 8) DD.trace('PERFTRACE answer ' + w.cmd + ' handled=' + ms.toFixed(1) + 'ms'); mc.port1.close(); };
+      mc.port2.postMessage(0);
+    }
   };
   // The header stats & adaptive action pills: stats shrink to icon -> hidden on narrow cards, and action pills
   // tighten spacing before collapsing into a single compact menu button instead of truncating to "..."
@@ -608,7 +639,7 @@
     if (!DD.dev || !window.pycmd) return;
     if (DD._pw) DD._pw.stop();
     const raf0 = DD._raf0 || (DD._raf0 = window.requestAnimationFrame.bind(window));
-    const W = DD._pw = {t0: performance.now(), gaps: [], js: [], cur: 0, slow: {}, long: [], last: null, done: false};
+    const W = DD._pw = {t0: performance.now(), gaps: [], js: [], cur: 0, slow: {}, charts: {}, long: [], last: null, done: false};
     DD._logHold = (DD._logHold || 0) + 1;
     window.requestAnimationFrame = function(cb){
       return raf0(function(ts){
@@ -619,13 +650,34 @@
         }
       });
     };
+    W.main = [];
+    try { W.mc = new MessageChannel(); W.mc.port1.onmessage = function(){ if (W.mcAt != null){ W.main.push(performance.now() - W.mcAt); W.mcAt = null; } }; } catch (e) { W.mc = null; }
+    // the page's changes (style, class, text, nodes) over the watch, by where they are: what makes the browser work
+    // out styles and layout again at each frame
+    W.dom = {}; W.domN = 0;
+    let mo = null;
+    try {
+      mo = new MutationObserver(function(ms){
+        ms.forEach(function(m){
+          let el = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+          const card = el && el.closest ? el.closest('[data-type]') : null;
+          const at = (card ? card.dataset.type + ' ' : '') + (el ? el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '') : '?') + ' ' + (m.type === 'attributes' ? m.attributeName : m.type);
+          W.dom[at] = (W.dom[at] || 0) + 1; W.domN++;
+        });
+      });
+      mo.observe(document.body, {subtree: true, attributes: true, childList: true, characterData: true});
+    } catch (e) { mo = null; }
     let obs = null;
     try { obs = new PerformanceObserver(function(l){ l.getEntries().forEach(function(e){ W.long.push([Math.round(e.startTime - W.t0), Math.round(e.duration)]); }); }); obs.observe({entryTypes: ['longtask']}); } catch (e) { obs = null; }
     (function fr(now){
       if (W.done) return;
-      if (W.last != null){ W.gaps.push([Math.round(now - W.t0), now - W.last]); W.js.push(W.cur); }
+      if (W.last != null){ W.gaps.push([Math.round(now - W.t0), now - W.last, W.py]); W.js.push(W.cur); }
+      W.py = !!(DD._pending && DD._pending().length);  // an answer awaited from Python over the next frame
       W.cur = 0; W.last = now;
       if (now - W.t0 >= ms){ W.stop(); return; }
+      // the page's whole work on this frame, from its start (now) through scripts, style, layout and paint: a message
+      // posted now comes after it
+      if (W.mc){ W.mcAt = now; W.mc.port2.postMessage(0); }
       raf0(fr);
     })(performance.now());
     W.stop = function(){
@@ -635,15 +687,42 @@
       DD._logHold = Math.max(0, (DD._logHold || 1) - 1);
       const g = W.gaps.map(function(x){ return x[1]; }).sort(function(p, q){ return p - q; });
       const p95 = g.length ? g[Math.min(g.length - 1, Math.floor(g.length * 0.95))] : 0, avg = g.length ? g.reduce(function(p, q){ return p + q; }, 0) / g.length : 0;
-      const bad = W.gaps.filter(function(x){ return x[1] > 25; }).map(function(x){ return '+' + x[0] + ':' + Math.round(x[1]); });
+      const bad = W.gaps.filter(function(x){ return x[1] > 25; }).map(function(x){ return '+' + x[0] + ':' + Math.round(x[1]) + (x[2] ? 'py' : ''); });
+      // the frames while Python computed an answer for the page (py) and the others: whether its work is what slows them
+      const pyN = W.gaps.filter(function(x){ return x[2]; }), pyBad = pyN.filter(function(x){ return x[1] > 25; }).length;
+      const idN = W.gaps.length - pyN.length, idBad = bad.length - pyBad;
       const jsAvg = W.js.length ? W.js.reduce(function(p, q){ return p + q; }, 0) / W.js.length : 0, jsMax = W.js.length ? Math.max.apply(null, W.js) : 0;
+      const mn = W.main.slice().sort(function(p, q){ return p - q; });
+      const mainAvg = mn.length ? mn.reduce(function(p, q){ return p + q; }, 0) / mn.length : 0, mainP95 = mn.length ? mn[Math.min(mn.length - 1, Math.floor(mn.length * 0.95))] : 0;
+      if (W.mc) try { W.mc.port1.close(); } catch (e) {}
+      if (mo) try { mo.disconnect(); } catch (e) {}
+      const domTop = Object.keys(W.dom).sort(function(p, q){ return W.dom[q] - W.dom[p]; }).slice(0, 8).map(function(k){ return k + ' x' + W.dom[k]; });
       const slow = Object.keys(W.slow).sort(function(p, q){ return W.slow[q] - W.slow[p]; }).slice(0, 4).map(function(k){ return Math.round(W.slow[k]) + 'ms ' + k.slice(0, 50); });
+      const chTop = Object.keys(W.charts).sort(function(p, q){ return W.charts[q].ms - W.charts[p].ms; }).slice(0, 8)
+        .map(function(k){ const c = W.charts[k]; return k + ':' + c.ms.toFixed(0) + 'ms(max ' + c.max.toFixed(1) + ',n=' + c.n + ')'; });
       DD.trace('ANIMTRACE PERF ' + label + ': ' + W.gaps.length + ' frames in ' + Math.round(performance.now() - W.t0) + ' ms | gap avg ' + avg.toFixed(1) + ', p95 ' + Math.round(p95) +
-        ', worst ' + Math.round(g[g.length - 1] || 0) + ' ms; ' + bad.length + ' over 25 ms ' + (bad.length ? '[' + bad.slice(0, 12).join(' ') + ']' : '') +
+        ', worst ' + Math.round(g[g.length - 1] || 0) + ' ms; ' + bad.length + ' over 25 ms ' + (bad.length ? '[' + bad.slice(0, 12).join(' ') + ']' : '') + ' (Python computing: ' + pyBad + ' of ' + pyN.length + ' frames over 25 ms; idle: ' + idBad + ' of ' + idN + ')' +
+        ' | page work per frame (scripts to paint) avg ' + mainAvg.toFixed(1) + ', p95 ' + Math.round(mainP95) + ' ms' +
+        ' | page changes ' + W.domN + (domTop.length ? ' [' + domTop.join(', ') + ']' : '') +
         ' | script in frames avg ' + jsAvg.toFixed(1) + ', worst ' + jsMax.toFixed(1) + ' ms' + (slow.length ? ' | slowest: ' + slow.join(' ; ') : '') +
+        (chTop.length ? ' | charts: ' + chTop.join(', ') : '') +
         ' | long tasks ' + (W.long.length ? W.long.map(function(x){ return '+' + x[0] + ':' + x[1] + 'ms'; }).join(' ') : 'none'));
       flushLog();
     };
+  };
+  DD.perfMark = function(label, ms, extra){
+    if (!DD.dev) return;
+    DD.trace('PERFTRACE ' + label + ' ' + (+ms).toFixed(1) + 'ms' + (extra ? ' ' + extra : ''));
+  };
+  DD.perfScroll = function(el, label){
+    if (!DD.dev || !el) return;
+    let last = -1e9;
+    el.addEventListener('scroll', function(){
+      const now = performance.now();
+      if (now - last < 1200 || DD._pw) return;
+      last = now;
+      DD.perfWatch(label, 900);
+    }, {passive: true});
   };
   // ("ResizeObserver loop completed with undelivered notifications": no error, the browser delivers them at the next
   // frame; while cards change size it came dozens of times a second, each one written to the log)
@@ -1168,7 +1247,24 @@
     const b = DD.theme && DD.theme.backdrop;
     if (!b) return;
     const bodyEl = document.body;
-    if (!b.enabled){ bodyEl.style.background = b.flat; return; }
+    let bgEl = document.getElementById('dd-backdrop');
+    if (!b.enabled){
+      if (bgEl) bgEl.style.display = 'none';
+      bodyEl.style.background = b.flat;
+      bodyEl.style.backgroundAttachment = '';
+      return;
+    }
+    // Paint the 5-layer gradient + grain onto a dedicated GPU-promoted fixed layer instead of
+    // body { background-attachment: fixed }: avoids Chromium's BackgroundAttachmentFixed
+    // main-thread repaint on every scroll frame at 2560x1440.
+    if (!bgEl){
+      bgEl = document.createElement('div');
+      bgEl.id = 'dd-backdrop';
+      bgEl.setAttribute('aria-hidden', 'true');
+      bgEl.style.cssText = 'position:fixed;inset:0;z-index:-1;pointer-events:none;contain:strict;transform:translateZ(0);';
+      bodyEl.insertBefore(bgEl, bodyEl.firstChild);
+    }
+    bgEl.style.display = '';
     const w = window.innerWidth, h = window.innerHeight, span = Math.max(w, h);
     const layers = [];
     if (b.grain > 0) layers.push('url(' + grainTile(b.dark, b.grain) + ')');
@@ -1178,9 +1274,11 @@
     if (b.glow2_a > 0) layers.push('radial-gradient(circle ' + (span * 0.55).toFixed(0) + 'px at ' + (w * 0.02).toFixed(0) + 'px ' + (h * 1.18).toFixed(0) + 'px,' + eased(b.glow2, b.glow2_a) + ')');
     if (b.glow1_a > 0) layers.push('radial-gradient(circle ' + (span * 0.62).toFixed(0) + 'px at ' + (w * 0.66).toFixed(0) + 'px ' + (-h * 0.3).toFixed(0) + 'px,' + eased(b.glow1, b.glow1_a) + ')');
     layers.push('linear-gradient(180deg,' + b.top + ' 0%,' + b.mid + ' 55%,' + b.bottom + ' 100%)');
-    bodyEl.style.background = layers.join(',');
-    bodyEl.style.backgroundRepeat = b.grain > 0 ? 'repeat,' + layers.slice(1).map(function(){ return 'no-repeat'; }).join(',') : 'no-repeat';
-    bodyEl.style.backgroundAttachment = 'fixed';
+    bgEl.style.background = layers.join(',');
+    bgEl.style.backgroundRepeat = b.grain > 0 ? 'repeat,' + layers.slice(1).map(function(){ return 'no-repeat'; }).join(',') : 'no-repeat';
+    document.documentElement.style.background = b.flat;
+    bodyEl.style.background = 'transparent';
+    bodyEl.style.backgroundAttachment = '';
     bodyEl.style.opacity = '';
   };
   // the time of the window's last resize: work that can wait (the table's tabs read ahead) waits for it to end; Python
@@ -1286,17 +1384,26 @@
   // A chart coming into view starts its waiting animations once a good part of it shows (35 % of it, or of the
   // window for a tall one): started on its first pixel, a slow scroll only showed their end. Once playing, it
   // goes on until the chart has fully left.
-  const VIS_PART = 0.35;
+  // Scrolled into view, it waits for more of it (45 %): at 35 %, a quick scroll down played the intro while the card
+  // was still at the window's bottom, half hidden, and it looked already drawn once in sight. A chart already in the
+  // window as it opens keeps 35 % (a row cut by the window's bottom plays at once).
+  const VIS_PART = 0.35, VIS_SCROLL = 0.45;
+  // A chart in full screen (DD._fsCard, app.js) covers the others: they count as out of view (they were drawn under
+  // it at each of its zooms, ~10 hidden charts animating with it). What they missed is drawn as it closes (DD.fsEnd)
+  DD._fsCard = null;
+  const fsMissed = new Set();
+  function unseen(fn){ return !!(fn._el && (fn._el._ddVis === false || (DD._fsCard && fn._el !== DD._fsCard && !DD._fsCard.contains(fn._el)))); }
+  DD.fsEnd = function(){ DD._fsCard = null; const l = Array.from(fsMissed); fsMissed.clear(); l.forEach(function(fn){ DD.frame.drawNow(fn); }); DD.frame.kick(); };
   const io = window.IntersectionObserver ? new IntersectionObserver(function(es){
     es.forEach(function(en){
       const el = en.target;
       if (!en.isIntersecting){ el._ddVis = false; return; }
       const rb = en.rootBounds;
-      const enough = en.intersectionRatio >= VIS_PART || (rb && en.intersectionRect.height >= rb.height * VIS_PART);
+      const enough = en.intersectionRatio >= VIS_SCROLL || (rb && en.intersectionRect.height >= rb.height * VIS_SCROLL);
       if (enough || el._ddVis){ el._ddVis = true; el._ddSeen = true; DD.frame.kick(); }
       else el._ddVis = false;
     });
-  }, {rootMargin: '16px', threshold: [0, 0.1, 0.2, 0.3, VIS_PART, 0.5, 0.75, 1]}) : null;
+  }, {rootMargin: '16px', threshold: [0, 0.1, 0.2, 0.3, VIS_PART, VIS_SCROLL, 0.5, 0.75, 1]}) : null;
   const idleCbs = [];
   DD.onIdle = function(fn, maxWait){
     if (!running){ setTimeout(fn, 0); return; }
@@ -1312,36 +1419,70 @@
   DD._go = false;
   const goCbs = [];
   DD.onGo = function(fn){ if (DD._go) fn(); else goCbs.push(fn); };
-  DD.go = function(){ if (DD._go) return; DD._go = true; running = false; DD.frame.kick(); goCbs.splice(0).forEach(function(fn){ try { fn(); } catch (e) { DD.swallowed('DD.onGo', e); } }); };
+  // (a loop already asked for, by a chart mounted before, runs now with DD._go set: asked for again, the
+  // two ran side by side to the end of the opening, every chart drawn twice a frame)
+  DD.go = function(){ if (DD._go) return; DD._go = true; DD.frame.kick(); goCbs.splice(0).forEach(function(fn){ try { fn(); } catch (e) { DD.swallowed('DD.onGo', e); } }); };
   setTimeout(function(){ DD.go(); }, 3000);  // never kept waiting (a page shown another way)
+  const FRAME_BUDGET = 9;
+  // one loop asked for at a time (asked for twice, two ran side by side, every chart drawn twice a frame). Not told
+  // apart by the frame's time: a frame given the time of the one before stopped the only loop, for good (the charts
+  // shown after it stayed blank)
+  let asked = false;
+  function ask(){ if (!asked){ asked = true; requestAnimationFrame(loop); } }
   function loop(now){
+    asked = false;
     if (!DD._go){ running = false; return; }
     let busy = false, active = 0;
     const t0 = performance.now();
-    if (!run) run = {n: 0, start: now, last: now, maxGap: 0, js: 0, jsMax: 0, maxActive: 0, by: {}};
-    frames.forEach(function(fn){
-      if (fn._el && fn._el._ddVis === false){ fn._held = true; return; }
-      // dev trace: a chart that waited out of view comes in (its animations play now; twice = a bug)
-      if (fn._held){ fn._held = false; if (DD.dev) DD.trace('ANIMTRACE resume ' + ((fn._el.dataset && fn._el.dataset.type) || '?') + ': in view, its waiting animations play now'); }
+    if (!run) run = {n: 0, start: now, last: now, maxGap: 0, js: 0, jsMax: 0, maxActive: 0, by: {}, put: 0};
+    // A frame's drawing kept within FRAME_BUDGET ms: past it, the charts left are drawn on the next frame, first (each
+    // drawn at least every other frame). ~17 intros at once at the opening (Anki just started, its scripts not yet
+    // made fast) took 18-35 ms a frame: every frame of the page came late, two or three lost at a time; so the page
+    // keeps its pace and only a chart now and then skips one. Their animations go by the time, not the frame: a chart
+    // drawn a frame later is where it should be.
+    const order = [];
+    frames.forEach(function(fn){ if (fn._late) order.push(fn); });
+    frames.forEach(function(fn){ if (!fn._late) order.push(fn); });
+    let drawn = 0;
+    order.forEach(function(fn){
+      if (unseen(fn)){ fn._held = true; fn._late = false; return; }
+      if (!fn._late && drawn && performance.now() - t0 > FRAME_BUDGET){ fn._late = true; busy = true; run.put++; return; }
+      fn._late = false; drawn++;
+      // dev trace: a chart that waited out of view comes in: whether it had an animation waiting (it plays now) or
+      // comes in drawn as it ends
+      const back = !!fn._held;
+      fn._held = false;
       const ft0 = performance.now();
-      try { if (fn(now)){ busy = true; active++; } } catch (e) { DD.log('frame error: ' + e.message + ' @ ' + String(e.stack || '').split('\n').slice(1, 3).join(' | ')); }
+      try {
+        const moves = !!fn(now);
+        if (moves){ busy = true; active++; }
+        if (back && DD.dev) DD.trace('ANIMTRACE resume ' + ((fn._el.dataset && fn._el.dataset.type) || '?') + ': in view, ' + (moves ? 'ANIMATES now' : 'already still') + (fn._el._ddSeen ? '' : ' (never seen)'));
+      } catch (e) { DD.log('frame error: ' + e.message + ' @ ' + String(e.stack || '').split('\n').slice(1, 3).join(' | ')); }
       const fdt = performance.now() - ft0;
       if (fdt > 0.2){
         const k = (fn._el && fn._el.dataset && fn._el.dataset.type) || 'other';
         const b = run.by[k] || (run.by[k] = {ms: 0, n: 0, max: 0});
         b.ms += fdt; b.n++; if (fdt > b.max) b.max = fdt;
+        const pw = DD._pw;
+        if (pw && pw.charts){
+          const pc = pw.charts[k] || (pw.charts[k] = {ms: 0, n: 0, max: 0});
+          pc.ms += fdt; pc.n++; if (fdt > pc.max) pc.max = fdt;
+        } else if (DD.dev && fdt >= 8 && (!fn._slowAt || now - fn._slowAt > 1500)){
+          fn._slowAt = now;
+          DD.trace('PERFTRACE slow_draw ' + k + ' ' + fdt.toFixed(1) + 'ms');
+        }
       }
     });
     const js = performance.now() - t0;
     run.n++; run.maxGap = Math.max(run.maxGap, now - run.last); run.last = now; run.js += js; run.jsMax = Math.max(run.jsMax, js);
     if (active > run.maxActive) run.maxActive = active;
-    if (busy) requestAnimationFrame(loop);
+    if (busy) ask();
     else {
       running = false;
       if (DD.dev && run.n > 6 && runs++ < 120){
         const top = Object.keys(run.by).sort(function(a, b){ return run.by[b].ms - run.by[a].ms; }).slice(0, 6)
           .map(function(k){ const b = run.by[k]; return k + ':' + (b.ms / Math.max(1, b.n)).toFixed(1) + 'ms(max ' + b.max.toFixed(1) + ',n=' + b.n + ')'; });
-        DD.trace('PERF anim frames=' + run.n + ' dur=' + (now - run.start).toFixed(0) + 'ms avg=' + ((now - run.start) / Math.max(1, run.n - 1)).toFixed(1) + 'ms maxGap=' + run.maxGap.toFixed(0) + 'ms drawAvg=' + (run.js / run.n).toFixed(1) + 'ms drawMax=' + run.jsMax.toFixed(0) + 'ms active=' + run.maxActive + (top.length ? ' top=[' + top.join(', ') + ']' : ''));
+        DD.trace('PERF anim frames=' + run.n + ' dur=' + (now - run.start).toFixed(0) + 'ms avg=' + ((now - run.start) / Math.max(1, run.n - 1)).toFixed(1) + 'ms maxGap=' + run.maxGap.toFixed(0) + 'ms drawAvg=' + (run.js / run.n).toFixed(1) + 'ms drawMax=' + run.jsMax.toFixed(0) + 'ms active=' + run.maxActive + (run.put ? ' put off ' + run.put : '') + (top.length ? ' top=[' + top.join(', ') + ']' : ''));
       }
       run = null;
       if (idleCbs.length) idleCbs.splice(0).forEach(function(fn){ try { fn(); } catch (e) { DD.swallowed('frame idle', e); } });
@@ -1451,15 +1592,18 @@
   DD.canvasScale = function(cv, w, h){ return cv._ddS || [cv.width / (w || 1), cv.height / (h || 1)]; };
 
   DD.frame = {
-    kick: function(){ if (!running){ running = true; requestAnimationFrame(loop); } },
+    kick: function(){ if (!running){ running = true; ask(); } },
     add: function(fn){
       const el = DD._mountEl;
       if (el && io){
         fn._el = el;
         if (!el._ddObs){
           el._ddObs = true;
-          const r = el.getBoundingClientRect();
-          el._ddVis = (r.height > 0 && r.bottom > -16 && r.top < window.innerHeight + 16);
+          // in view as the observer counts it (VIS_PART of it, or of the window): counted from its first pixel, a row
+          // only peeking at the bottom as the window opened played its intro there, unseen, and came in already still
+          const r = el.getBoundingClientRect(), vh = window.innerHeight;
+          const part = Math.min(r.bottom, vh + 16) - Math.max(r.top, -16);
+          el._ddVis = r.height > 0 && part > 0 && (part >= r.height * VIS_PART || part >= vh * VIS_PART);
           if (el._ddVis) el._ddSeen = true;
           io.observe(el);
         }
@@ -1492,7 +1636,8 @@
       DD.frame.drawNow(fn);
     },
     drawNow: function(fn){
-      if (DD._go && !(fn._el && fn._el._ddVis === false) && !fn._held){
+      if (DD._go && DD._fsCard && unseen(fn) && fn._el._ddVis !== false) fsMissed.add(fn);
+      else if (DD._go && !unseen(fn) && !fn._held){
         const t = performance.now();
         try { fn(t); } catch (e) { DD.swallowed('draw ' + ((fn._el && fn._el.dataset && fn._el.dataset.type) || '?'), e); }
         if (DD._rz) DD.rzNote('draw', performance.now() - t, fn._el && fn._el.dataset && fn._el.dataset.type);
@@ -1515,7 +1660,11 @@
     zctl.innerHTML = '<button type="button" class="dd-zbtn dd-zout" aria-label="Zoom out">&minus;</button><button type="button" class="dd-zbtn dd-zin" aria-label="Zoom in">+</button>';
     plot.appendChild(zctl);
     const zOut = zctl.querySelector('.dd-zout'), zIn = zctl.querySelector('.dd-zin');
+    // past the whole view, zooming out goes on as the wheel does (onOutLimit) where the page allows it (canOutLimit):
+    // out of the hours of a zoom under two days, which the adaptive zoom shows unzoomed
+    function outLimit(){ return !!(api.onOutLimit && api.canOutLimit && api.canOutLimit()); }
     function stepZoom(dir){
+      if (dir < 0 && !api.get() && outLimit()){ api.onOutLimit(); return; }
       const n = api.count(); if (n < 3) return;
       const r = api.get() || [0, n];
       const span = r[1] - r[0], mid = (r[0] + r[1]) / 2;
@@ -1539,7 +1688,7 @@
     }
     function update(){
       const r = api.get(), n = api.count();
-      zOut.disabled = !r;
+      zOut.disabled = !r && !outLimit();
       zIn.disabled = !n || (r ? (r[1] - r[0] <= 2) : n <= 2);
       if (!r || !n){ bar.style.display = 'none'; return; }
       bar.style.display = 'block';

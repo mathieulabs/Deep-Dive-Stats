@@ -272,7 +272,7 @@ class RefreshMixin:
 
                 res = GlobalHistoryCache._populate_full_cache(cfg, Period.TOTAL, min_rev_id=m_id, min_card_id=mc_id, hier_context=hier_data)
 
-                if used_rev_hint:
+                if used_rev_hint and mw.col is not None:
                     resolved_current_max = mw.col.db.scalar("select max(id) from revlog") or 0
 
                 # Compute FSRS data in the same background pass so it is ready when the callback
@@ -381,10 +381,13 @@ class RefreshMixin:
                                         self.cache.pop(k, None)
                                 else:
                                     self._merge_delta(delta_map, is_undo=was_undo)
-                            # Update the ids under the same lock as the data, so a background save never
-                            # pairs merged data with old ids (which re-merged the delta at next launch).
-                            self.last_max_rev_id = resolved_current_max
-                            self.last_max_card_id = resolved_current_max_card
+                                # Update the ids under the same lock as the data, so a background save never
+                                # pairs merged data with old ids (which re-merged the delta at next launch).
+                                # When >220 decks are split into deferred_delta_map, advance ids only after
+                                # _deferred_merge_worker finishes merging the remaining decks.
+                                if not deferred_delta_map:
+                                    self.last_max_rev_id = resolved_current_max
+                                    self.last_max_card_id = resolved_current_max_card
 
                         self.hier_map = hier_map
 
@@ -459,12 +462,13 @@ class RefreshMixin:
                         snap_dirty = None
                         if not was_full and not was_undo:
                             snap_dirty = list(dirty_deck_ids) if dirty_deck_ids else list(delta_map.keys())
-                        GlobalHistoryCache._refresh_snapshot_charts(
-                            self.cache,
-                            self.hier_map,
-                            min_rev_id=m_val,
-                            dirty_dids=snap_dirty,
-                        )
+                        with self._lock:
+                            GlobalHistoryCache._refresh_snapshot_charts(
+                                self.cache,
+                                self.hier_map,
+                                min_rev_id=m_val,
+                                dirty_dids=snap_dirty,
+                            )
                         log_debug(f"Snapshot charts refresh completed in {(time.perf_counter()-_s_start)*1000:.1f}ms", tag="CACHE")
 
                     def _snap_done(fut, was_full_=was_full):
@@ -482,18 +486,21 @@ class RefreshMixin:
 
                     self._emit_context_updated_coalesced()
 
-                    if deferred_delta_map:
+                    if deferred_delta_map and not skip_merge:
                         deferred_payload = deferred_delta_map
 
                         def _deferred_merge_worker():
                             with self._lock:
                                 self._merge_delta(deferred_payload, is_undo=False)
+                                self.last_max_rev_id = resolved_current_max
+                                self.last_max_card_id = resolved_current_max_card
                             return len(deferred_payload)
 
                         def _deferred_merge_done(fut):
                             try:
                                 fut.result()
                                 self._emit_context_updated_coalesced()
+                                self._save_to_disk()
                             except Exception:
                                 log_swallowed()
 

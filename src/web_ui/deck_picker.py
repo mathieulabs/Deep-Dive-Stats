@@ -14,6 +14,21 @@ from aqt import mw
 from ..details.logic.logger import log_error
 
 DELETED = "deleted"
+DEFAULT_DECK = 1
+
+
+def hidden_default(names=None):
+    """True when Anki's deck list leaves out its Default deck (it can't be deleted): no card of its own, no subdeck,
+    and other decks there. names: the decks' full names, when already read."""
+    try:
+        if names is None:
+            names = [d.name for d in mw.col.decks.all_names_and_ids()]
+        name = mw.col.decks.name(DEFAULT_DECK) or ""
+        if len(names) < 2 or any(n.startswith(name + "::") for n in names):
+            return False
+        return not mw.col.db.scalar(f"select 1 from cards where did = {DEFAULT_DECK} or odid = {DEFAULT_DECK} limit 1")
+    except Exception:
+        return False
 
 
 def deck_tree():
@@ -29,6 +44,8 @@ def deck_tree():
         items = [(d.name, int(d.id)) for d in mw.col.decks.all_names_and_ids()]
     except Exception:
         items = [(d["name"], int(d["id"])) for d in mw.col.decks.all()]
+    if hidden_default([n for n, _ in items]):
+        items = [it for it in items if it[1] != DEFAULT_DECK]
     items.sort(key=lambda x: [p.lower() for p in x[0].split("::")])
     by_path = {name: did for name, did in items}
     out = []

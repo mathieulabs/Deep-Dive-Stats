@@ -86,7 +86,7 @@ def get_time_range_ms(range_type, week_start, custom_days=7, custom_type="relati
                 except Exception:
                     log_swallowed()
         else:
-            start_ms = days_back(custom_days)
+            start_ms = days_back(max(0, custom_days - 1))
     elif isinstance(range_type, int) and range_type > 7:
         # Anki logical day starts at rollover
         off_h = rollover_hour()

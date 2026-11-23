@@ -58,8 +58,8 @@ body.dd-glass{background:radial-gradient(circle at 15% 20%,#4b3fd1 0,transparent
 body.dd-light.dd-glass{background:radial-gradient(circle at 15% 20%,#9aa8ff 0,transparent 40%),radial-gradient(circle at 85% 30%,#ffa0c4 0,transparent 38%),radial-gradient(circle at 50% 90%,#8fe0e0 0,transparent 45%),var(--dd-bg)}
 body.dd-glass .dd-card{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.22);backdrop-filter:blur(16px) saturate(1.3);box-shadow:0 6px 24px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.18)}
 body.dd-light.dd-glass .dd-card{background:rgba(255,255,255,.4);border-color:rgba(255,255,255,.7)}
-.dd-tip{position:absolute;left:0;top:0;pointer-events:none;z-index:20;border-radius:6px;border-width:.8px;border-style:solid;padding:5px 10px;font:11px -apple-system,"Segoe UI",sans-serif;white-space:nowrap;display:none;will-change:transform}
-.dd-tip .row{display:flex;align-items:center;gap:8px;line-height:15px}
+.dd-tip{position:absolute;left:0;top:0;pointer-events:none;z-index:20;border-radius:6px;border-width:.8px;border-style:solid;padding:5px 10px;font:12px -apple-system,"Segoe UI",sans-serif;white-space:nowrap;display:none;will-change:transform}
+.dd-tip .row{display:flex;align-items:center;gap:8px;line-height:17px}
 .dd-tip .row.header{font-weight:600;justify-content:space-between}
 .dd-tip .row.total{font-weight:600;justify-content:center}
 .dd-tip .swatch{width:8px;height:8px;flex:0 0 auto}
@@ -70,6 +70,8 @@ body.dd-light.dd-glass .dd-card{background:rgba(255,255,255,.4);border-color:rgb
 .dd-card.dd-fixed .dd-body{flex:1;min-height:0}
 .dd-card.dd-fixed .dd-plot{height:100%}
 .dd-sc{position:relative;box-sizing:border-box;border-radius:14px;background:none;display:flex;flex-direction:column;justify-content:center;overflow:hidden;flex:none;padding:6px var(--sc-px)}
+/* its layout kept inside (its size is set in px): a value counting up re-lays the card alone, not the whole page at each frame */
+.dd-sc{contain:layout}
 /* the fill 0.5 px inside the border ring: drawn to the edge, its anti-aliased rim showed outside the ring */
 .dd-sc::before{content:'';position:absolute;inset:.5px;border-radius:13.5px;background:var(--sc-bg);pointer-events:none}
 .dd-sc-bd{position:absolute;inset:0;border-radius:inherit;opacity:0;pointer-events:none}
@@ -96,7 +98,10 @@ html,body{overflow:hidden}
 :root:root .dd-tb:hover,:root:root .dd-tb:active,:root:root .dd-tb:focus{height:24px;padding:0 6px;border:none;font-size:12px;transform:none;translate:none}
 
 :root:root .dd-tb:hover{background:var(--dd-hover,rgba(0,0,0,.05))}
-.dd-gridwrap{flex:1;min-height:0;overflow:hidden auto;scrollbar-width:none}
+.dd-gridwrap{flex:1;min-height:0;overflow:hidden auto;scrollbar-width:none;will-change:scroll-position}
+.dd-shell .dd-card{contain:layout style}
+.dd-shell .dd-card:not(.dd-fs){content-visibility:auto;contain-intrinsic-size:auto 330px}
+html.dd-exporting .dd-shell .dd-card{content-visibility:visible}
 /* Find chart: the gallery's charts not in Deep Dive yet that match, under the charts */
 .dd-cfind{margin:4px 27px 20px 29px;display:flex;flex-direction:column;gap:2px;max-width:560px}
 .dd-cfind-head{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--dd-text-dim);margin:0 0 6px}
@@ -105,7 +110,6 @@ html,body{overflow:hidden}
 .dd-cfind-name{font-size:13px;color:var(--dd-text)}
 .dd-cfind-group{font-size:12px;color:var(--dd-text-dim);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dd-cfind-add{height:26px;padding:0 10px;font-size:12px;display:inline-flex;align-items:center;gap:5px}
-.dd-gridwrap::-webkit-scrollbar{display:none}
 .dd-todo{display:flex;align-items:center;justify-content:center;height:100%;color:var(--dd-text-dim);font-size:12px;opacity:.6}
 .dd-drawerrow{display:flex;align-items:center;gap:7px;margin:0 16px 10px 15px;flex:none}
 .dd-drawer{display:flex;align-items:center;gap:10px;flex:1;height:27px;border-radius:13px;background:var(--dd-drawer,rgba(0,0,0,.05));font-size:12px;padding:0 12px}
@@ -178,6 +182,10 @@ html,body{overflow:hidden}
 :root:root .dd-hm-btn:active,:root:root .dd-hm-btn.on,:root:root .dd-hm-btn.on:hover{background:var(--dd-accent-f);color:var(--dd-text)}
 .dd-hm-sep{font-size:10px;line-height:20px;color:var(--dd-text-dim);margin:0 1px;background:transparent}
 .dd-hm-year{font-size:10px;font-weight:700;letter-spacing:1px;color:var(--dd-text-dim);margin:0 2px}
+.dd-hm-nav.dd-hm-tight .dd-hm-sep{display:none}
+.dd-hm-nav.dd-hm-tight .dd-hm-year{letter-spacing:0;margin:0 1px}
+:root:root .dd-hm-nav.dd-hm-tighter .dd-hm-btn{width:18px}
+:root:root .dd-hm-nav.dd-hm-tighter .dd-hm-btn.w28{width:25px}
 
 
 .dd-avg-label{position:absolute;display:none;height:20px;line-height:18px;padding:0 4px;box-sizing:border-box;border:0.8px solid;border-radius:6px;font-size:12px;white-space:nowrap;pointer-events:none;z-index:6}
@@ -673,6 +681,8 @@ html.dd-exporting .dd-shell,html.dd-exporting .dd-sc-host,html.dd-exporting .dd-
 html.dd-exporting .dd-shell .dd-gridwrap,html.dd-exporting .dd-tbl-scroll{scrollbar-width:none!important;scrollbar-gutter:auto!important}
 html.dd-exporting .dd-gridwrap::-webkit-scrollbar,html.dd-exporting .dd-tbl-scroll::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
 html.dd-exporting .dd-tbl-edge{display:none!important}
+/* the Total row in its place among the rows: kept at the view's edge (sticky), it showed in every piece of the table */
+html.dd-exporting .dd-tbl tr.total td{position:static!important}
 html.dd-exporting .dd-tbl-panel{border:0!important;border-radius:0!important;background:var(--dd-export-bg,var(--dd-bg))!important;box-shadow:none!important}
 
 /* web: the Deep Dive stat cards centered (as pinned), with a soft glow of the card's colour behind the number, so a wide card does not look empty */
@@ -877,7 +887,10 @@ html.dd-touch .dd-shell .dd-head{height:38px}
   html.dd-touch .dd-tbl-fr::-webkit-scrollbar{display:none}
 }
 .dd-loading{position:relative;width:100%;height:100%;overflow:hidden;pointer-events:none}
-.dd-loading::after{content:"";position:absolute;inset:0;width:45%;background:linear-gradient(100deg,transparent,color-mix(in srgb,var(--dd-text) 5%,transparent) 50%,transparent);transform:translateX(-110%);animation:dd-shimmer var(--dd-shimmer,1.8s) ease-in-out infinite}
+.dd-loading::after{content:"";position:absolute;inset:0;width:45%;background:linear-gradient(100deg,transparent,color-mix(in srgb,var(--dd-text) 5%,transparent) 50%,transparent);transform:translateX(-110%);animation:dd-shimmer var(--dd-shimmer,1.8s) ease-in-out var(--dd-sk-d,0s) infinite}
+/* the chart came: the light stops where it was and fades (app.js), over the card while the chart's intro starts */
+.dd-loading.dd-out{position:absolute;z-index:5}
+.dd-loading.dd-out::after{animation:none;transform:var(--dd-sk-x,none)}
 @keyframes dd-shimmer{0%{transform:translateX(-110%)}70%,100%{transform:translateX(330%)}}
 .dd-loading-still{display:flex;align-items:center;justify-content:center;gap:6px}
 .dd-loading-still::after{display:none}

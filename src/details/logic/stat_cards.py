@@ -230,7 +230,10 @@ def schedule_values(future_due, fsrs, prec, today=None):
         out["due_today"] = fmt_num(due_today)
         out["backlog"] = fmt_num(backlog)
     fsrs = fsrs if isinstance(fsrs, dict) else {}
-    retrievability = _weighted_mean(fsrs.get("retrievability") or {})
+    ret_hist = fsrs.get("retrievability") or {}
+    ret_total = sum(ret_hist.values())
+    # 1% bins 0..99 represent [k, k+1): use bin midpoint k+0.5 (100 stays 100), matching Deck Table & chart.
+    retrievability = (sum((min(100.0, k + 0.5) if k < 100 else 100.0) * v for k, v in ret_hist.items()) / ret_total) if ret_total > 0 else None
     if retrievability is not None:
         out["avg_retrievability"] = num(f"{retrievability:.{int(prec)}f}%")
     stability = _weighted_mean(fsrs.get("stability") or {})

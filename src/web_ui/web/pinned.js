@@ -240,7 +240,13 @@
       const a = old !== undefined ? hasData(old) : null, b = hasData(data);
       DD.trace('ANIMTRACE update ' + w.type + ' ' + (mode || 'deck/data') + (a === null ? '' : (a && !b ? ' TO EMPTY' : !a && b ? ' FROM EMPTY' : !a && !b ? ' empty -> empty' : '')));
     }
-    const run = function(){ DD._calm = 'pin'; try { DD.applyUpdate(el, function(){ inst.update(data || {}, mode); }); } finally { DD._calm = false; } };
+    const run = function(){
+      const t0 = performance.now();
+      DD._calm = 'pin';
+      try { DD.applyUpdate(el, function(){ inst.update(data || {}, mode); }); } finally { DD._calm = false; }
+      const dt = performance.now() - t0;
+      if (DD.perfMark && w && dt >= 8) DD.perfMark('pinned_feed ' + w.type, dt, mode || 'deck');
+    };
     // web: after a deck / period change the widgets start one after the other in reading order (a wave down the
     // block, ~0.35 s), counted from the change: a late answer waits no more
     const now = performance.now();
@@ -260,10 +266,10 @@
   // one widget refreshed at a time
   function softSig(boot, noOpts){
     const b = Object.assign({}, boot, {token: 0, built: 0, first: 0, skel: 0, pre_stats: 0, tour: 0, theme: 0, stat_fx: 0});
-    b.widgets = (boot.widgets || []).map(function(w){ const c = Object.assign({}, w); delete c.chips; delete c.span; delete c.pre; delete c.nat; delete c.title; delete c.look; delete c.search_query; if (noOpts) delete c.options; return c; });
+    b.widgets = (boot.widgets || []).map(function(w){ const c = Object.assign({}, w); delete c.chips; delete c.span; delete c.pre; delete c.nat; delete c.expanded; delete c.title; delete c.look; delete c.search_query; if (noOpts) delete c.options; return c; });
     return JSON.stringify(b);
   }
-  function wSig(w){ const c = Object.assign({}, w); delete c.pre; delete c.nat; return JSON.stringify(c); }
+  function wSig(w){ const c = Object.assign({}, w); delete c.pre; delete c.nat; delete c.expanded; return JSON.stringify(c); }
   function softReboot(boot){
     const old = S.boot;
     known[token] = true; token = boot.token; DDP.boot = boot; S.boot = boot;
@@ -305,8 +311,13 @@
           // only if it changed (the same data: nothing moves, the zoom stays). The options are given with that data,
           // in the same frame: given first, the chart would morph to the old data seen with the new options, then to
           // the new data
+          const onlyBin = function(a, b){
+            const ca = Object.assign({}, a || {}), cb = Object.assign({}, b || {});
+            delete ca.adaptive_binning; delete ca.binning; delete cb.adaptive_binning; delete cb.binning;
+            return JSON.stringify(ca) === JSON.stringify(cb);
+          };
           const setO = function(){ try { d.inst.setOptions(o); if (syncHeatmapSize(el, d, o)) DDP.relayout(); } catch (e) {} };
-          if (themed) setO();
+          if (themed || onlyBin(ow.options, w.options)) setO();
           else DDP.call('data', {id: w.id, deck: boot.deck}).then(function(data){
             if (!d.inst) return;
             const js = JSON.stringify(data || {});
@@ -368,8 +379,10 @@
     void themedNow;
     if (S.boot && softSig(boot, true) === softSig(S.boot, true) && S.boxes.every(function(b){ return b.fam === 'stat' || b.items.every(function(it){ return it.el._ddp; }); })){
       if (DD.dev) DD.trace('ANIMTRACE reboot soft');
+      if (DD.perfWatch) DD.perfWatch('pinned softReboot', 1000);
       softReboot(boot); return;
     }
+    if (DD.perfWatch) DD.perfWatch('pinned fullReboot', 1200);
     if (DD.dev && S.boot){
       const a = JSON.parse(softSig(S.boot, true)), c = JSON.parse(softSig(boot, true)), why = [];
       Object.keys(Object.assign({}, a, c)).forEach(function(k){ if (k !== 'widgets' && JSON.stringify(a[k]) !== JSON.stringify(c[k])) why.push(k); });
@@ -479,6 +492,8 @@
   }
   DDP.start = function(boot){
     T0.start = performance.now();
+    if (DD.perfWatch) DD.perfWatch('pinned start', 1400);
+    if (DD.perfScroll && !window.__ddpScrollPerf){ window.__ddpScrollPerf = true; DD.perfScroll(window, 'pinned scroll'); }
     probe('start ' + boot.token + ' widgets=' + (boot.widgets || []).length + ' pycmd=' + typeof window.pycmd);
     greet();
     try {
@@ -939,6 +954,16 @@
     // plots, no ResizeObserver runs, and a chart can stay drawn for the old ratio). Only then: done at every zoom, each
     // chart was drawn a pixel narrower then wide again, and bounced inside its card
     let sharpAfter = 0;
+    // a page Anki has just built is laid out at first without Anki's zoom (dpr 1 for a frame or two, then 1.2): a
+    // layout chosen from the pixel ratio (a donut's legend beside it or behind its icon, pie.js) takes the ratio the
+    // main screen had last (boot.dpr, sent by the page below) until the zoom is applied or 1.5 s have passed
+    let expectDpr = (S && S.boot && +S.boot.dpr) || 0, sentDpr = (S && S.boot && +S.boot.dpr) || 0;
+    DD.layoutDpr = function(d){ return expectDpr || d; };
+    function sendDpr(){
+      const d = window.devicePixelRatio || 1;
+      if (Math.abs(d - sentDpr) < 0.001) return;
+      sentDpr = d; DDP.call('dpr', {v: d}).catch(function(){});
+    }
     function nudge(){
       root.querySelectorAll('.dd-plot').forEach(function(p){ p.style.width = 'calc(100% - 1px)'; });
       requestAnimationFrame(function(){ requestAnimationFrame(function(){ root.querySelectorAll('.dd-plot').forEach(function(p){ p.style.width = ''; }); }); });
@@ -949,6 +974,7 @@
       const on = function(){
         mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on);
         DD.trace('SHARP dpr change -> ' + (window.devicePixelRatio || 1).toFixed(3));
+        expectDpr = 0; sendDpr();
         requestAnimationFrame(function(){ requestAnimationFrame(function(){ checkSharp('zoom'); }); });
         clearTimeout(sharpAfter); sharpAfter = setTimeout(function(){ checkSharp('after zoom'); }, 400);
         watchDpr();
@@ -972,7 +998,7 @@
       if (bad) nudge();
     }
     setTimeout(function(){ checkSharp('300ms'); }, 300);
-    setTimeout(function(){ checkSharp('1500ms'); }, 1500);
+    setTimeout(function(){ checkSharp('1500ms'); expectDpr = 0; sendDpr(); }, 1500);
     document.addEventListener('visibilitychange', function(){ if (!document.hidden) setTimeout(function(){ checkSharp('shown'); }, 200); });
     // the "?" of a chart: its explanation on hover (chart_help), and no "?" when there is none
     const helpCache = {};
@@ -1194,6 +1220,19 @@
     if (relay && DDP.relayout) DDP.relayout();
     S.root.querySelectorAll('.dd-sc-host').forEach(function(h){ if (h.parentNode && h.parentNode._ddpStats) h.parentNode._ddpStats(); });
   };
+  // the heatmap's right-click Color...: its live preview, on every heatmap that reads the shared colors
+  DDP.heatmapPalette = function(p){
+    if (!S || !p) return;
+    DD._noAnim = true;
+    try {
+      S.root.querySelectorAll('[data-wid]').forEach(function(el){
+        const d = el._ddp;
+        if (!d || !d.w || d.w.type !== 'heatmap' || !d.inst || !d.inst.setOptions) return;
+        d.w.options = Object.assign(d.w.options || {}, p);
+        try { d.inst.setOptions(p); } catch (e) {}
+      });
+    } finally { DD._noAnim = false; }
+  };
   // card_chips._Chip: the period ("Past Month") and the deck it reads, right after the title
   function chips(head, w){
     const t = head.querySelector('.dd-title'); if (!t) return;
@@ -1238,7 +1277,7 @@
     });
   }
 
-  // ---- zoom shared between the pinned charts (pinned/zoom_link.py): one chart zoomed, the others linked to it
+  // ---- zoom shared between the pinned charts: one chart zoomed, the others linked to it
   // zoom to the same dates; the reset arrow in the header (add_pinned_zoom_reset_button) while zoomed ----
   const ZF = DD.zoomFlow;  // (charts/zoom_camera.js: shared with the Deep Dive)
   const zoomed = {};  // widget id -> {w, z, btn}
@@ -1277,6 +1316,7 @@
     if (zbusy) return;
     const src = zoomed[srcId]; if (!src || src.unlinked || AZ[srcId] && range) return;  // inside the 10-minute view: its own
     if (dateOf(src.z.label(0)) == null) return;  // not a chart of days (seconds, intervals, hours): its zoom is its own
+    followSoon(srcId, range);
     let d0 = null, d1 = null;
     if (range){ d0 = dateOf(src.z.label(range[0])); d1 = dateOf(src.z.label(range[1] - 1)); if (d0 == null || d1 == null) return; }
     zbusy = true;
@@ -1297,6 +1337,66 @@
         showReset(e);
       });
     } finally { zbusy = false; }
+  }
+  // ---- the charts with no time axis follow a zoom of a chart of days, as in the Deep Dive (app.js followZoom):
+  // Hourly, Answer Buttons, Answer Time... reading the same deck and search as the zoomed chart show its zoomed
+  // days that fall in their own period, linked by dates as the charts of days are (pinned._h_zoom_follow); a reset
+  // gives them their own data back. Asked once a burst of zoom steps
+  // pauses, shown once the zoom's animation is over; the ones out of view take it without animation ----
+  const FOLLOW = {distribution: 1, hourly: 1, answer_time: 1, interval_ratings: 1, rating_fatigue: 1, sibling_ratings: 1, fsrs_calibration: 1, forgetting_curve: 1, fsrs_fatigue: 1, week_hours: 1, todays_retention: 1};
+  const FW = {};  // widget id (as a string) -> its id, while it shows zoomed days
+  let fwTm = 0, fwSeq = 0;
+  function followSoon(srcId, range){
+    const src = zoomed[srcId];
+    let first = null, last = null;
+    if (range){ first = isoDay(src.z.label(range[0])); last = isoDay(src.z.label(range[1] - 1)); if (!first || !last) first = last = null; }
+    const my = ++fwSeq;
+    clearTimeout(fwTm);
+    fwTm = setTimeout(function(){ follow(my, srcId, first, last); }, first == null ? 0 : 140);
+  }
+  function isoDay(label){  // "Nov 21, 2026" -> "2026-11-21" (its local day)
+    const t = dateOf(/\d{4}\s*$/.test(String(label)) ? label : null); if (t == null) return null;  // (a 10-minute label, "Nov 21, 14:30": none)
+    const d = new Date(t), p = function(n){ return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+  function followCard(id){
+    const el = S && S.root && S.root.querySelector('[data-wid="' + CSS.escape(String(id)) + '"]');
+    return el && el._ddp && el._ddp.inst ? el : null;
+  }
+  function follow(my, srcId, first, last){
+    if (!S) return;
+    const deck = S.boot.deck, wait = Math.round(300 * 1.4 * DD.speed()) + 60;
+    const show = function(pairs){
+      if (!pairs.length) return;
+      DD.onIdle(function(){
+        if (my !== fwSeq) return;
+        pairs.forEach(function(p){
+          const el = followCard(p[0]); if (!el || !p[1]) return;
+          const d = el._ddp, js = JSON.stringify(p[1]); if (js === d.dataJs) return;
+          const old = d.dataJs ? JSON.parse(d.dataJs) : undefined; d.dataJs = js;
+          quiet(p[0], function(){ feed(d.inst, p[1], undefined, d.w, old, el); });
+        });
+      }, wait);
+    };
+    const restore = function(ids){
+      ids.forEach(function(id){ delete FW[String(id)]; });
+      return Promise.all(ids.map(function(id){
+        return DDP.call('data', {id: id, deck: deck}).then(function(d){ return [id, d]; }).catch(function(){ return [id, null]; });
+      }));
+    };
+    const back = Object.keys(FW).map(function(k){ return FW[k]; });
+    if (first == null){ if (back.length) restore(back).then(show); return; }
+    const ids = (S.boot.widgets || []).filter(function(w){ return FOLLOW[w.type] && String(w.id) !== String(srcId); }).map(function(w){ return w.id; });
+    if (!ids.length) return;
+    DDP.call('zoom_follow', {src: srcId, ids: ids, d0: first, d1: last, deck: deck}).then(function(r){
+      if (my !== fwSeq) return;
+      r = r || [];
+      const got = {}; r.forEach(function(p){ got[String(p[0])] = true; });
+      // those that followed another zoom (or these days are their whole period now): their own data again
+      const stale = back.filter(function(id){ return !got[String(id)]; });
+      r.forEach(function(p){ FW[String(p[0])] = p[0]; });
+      (stale.length ? restore(stale) : Promise.resolve([])).then(function(more){ show(r.concat(more)); });
+    }).catch(function(){});
   }
   DDP.setUnlinked = function(map){ Object.keys(zoomed).forEach(function(id){ zoomed[id].unlinked = !!(map || {})[id]; }); if (S) S.boot.unlinked = map || {}; };
 
@@ -1429,6 +1529,7 @@
     const pills = head.querySelector('.dd-pills'); head.insertBefore(b, pills || null);
     e.btn = b;
     z.onChange = function(r){
+      if (DD.perfWatch) DD.perfWatch(r ? 'pinned zoom' : 'pinned zoom reset', 900);
       const prev = e.last; e.last = r ? r.slice() : null;
       showReset(e);
       if (!AZ[w.id] && adaptiveCan(e, r)) tryAdaptive(e, r, ZF.hold(e.z, prev));
@@ -1439,6 +1540,7 @@
       if (AZ[w.id]) leaveAdaptive(e, true);
       else if (!EXP[w.id] && w.span && w.span[0] !== -1) expandPinnedBeyondSpan(e);
     };
+    z.canOutLimit = function(){ return !!AZ[w.id]; };  // the zoom bar's minus, in the hours of a zoom under two days
     showReset(e);
   }
 
@@ -1533,7 +1635,7 @@
     chips(head, w); applyLook(el, w.look);
     if (d.inst) S.insts.push(d.inst);
     if (zoomed[w.id]) dotsToBars(zoomed[w.id], true);  // the block built again: the days, as after a deck change
-    delete AZ[w.id];
+    delete AZ[w.id]; delete FW[String(w.id)];  // (its own data comes below)
     const z = zoomed[w.id]; if (!z && d.inst) zoomLink(w, el, head, d.inst);
     // a heatmap of its own height: the last height its grid asked for at its real width (the build's estimate is
     // for its default width; the chart reports its height only when it changes)
@@ -1591,6 +1693,7 @@
       if (w.type === 'heatmap') opts.keep_color = true;  // its color comes with its options (its own, or the pinned one)  // years: rows of its own height
       const ctx = {data: data || {}, options: opts, animate: animate && DD.anim.on && DD.anim.appear, head: head, type: w.type};  // Appearance Animations
       ctx.fetch = function(extra){ return DDP.call('data', {id: w.id, deck: boot.deck, at: (extra && extra.at) || null}); };  // a Time Machine's day
+      if (w.type === 'heatmap'){ ctx.expanded = !!w.expanded; ctx.onExpand = function(on){ w.expanded = on; DDP.call('hm_expanded', {id: w.id, on: on}).catch(function(){}); }; }
       if (w.type === 'heatmap' && w.height == null) ctx.onNatural = function(nh){ const cur = el._ddp ? el._ddp.it : it, lk = el._ddpLook || w.look, p = lk && lk.glass ? (lk.pad || [6, 10, 6, 10]) : [0, 0, 0, 0]; const h1 = 22 + nh + p[0] + p[2] + (lk && lk.glass ? 2 : 0); if (el._ddp) el._ddp.lastH = h1; heightTo(el, cur, h1, w.id); };
       if (ctx.onNatural) el._ddpNat = ctx.onNatural;  // fullscreen's close: the height at the pinned width again
       try { inst = mod.mount(el.querySelector('.dd-body'), ctx); }

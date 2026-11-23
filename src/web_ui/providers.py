@@ -23,6 +23,13 @@ def _row_start(r):
         return None, None
 
 
+def _num(v):
+    """Compact JSON number: int when whole (42 instead of 42.0), else rounded float."""
+    f = float(v)
+    i = int(f)
+    return i if f == i else round(f, 3)
+
+
 def _daily_rows(breakdown, raw=None):
     # raw: the history rows they come from; each row then carries its start time (t, ms) and length (dt, ms), so the
     # page can lay the days, the 10-minute rows and the single reviews on one time line (their axes slide between them)
@@ -33,18 +40,24 @@ def _daily_rows(breakdown, raw=None):
             starts[lab] = _row_start(src)
     rows = []
     for r in breakdown or []:
-        row = {
-            "date": str(r.get("pretty_date", "") or ""),
-            "reviews": float(r.get("reviews", 0) or 0.0),
-            "time_ms": float(r.get("time_ms", 0) or 0.0),
-        }
+        row = {"date": str(r.get("pretty_date", "") or "")}
+        rv = r.get("reviews", 0) or 0
+        if rv:
+            row["reviews"] = _num(rv)
+        tm = r.get("time_ms", 0) or 0
+        if tm:
+            row["time_ms"] = _num(tm)
         t, dt = starts.get(row["date"], (None, None))
         if t is not None:
             row["t"] = t
             row["dt"] = dt
         for k in _TYPES:
-            row[k] = float(r.get(k, 0) or 0.0)
-            row[k + "_time_ms"] = float(r.get(k + "_time_ms", 0) or 0.0)
+            v = r.get(k, 0) or 0
+            if v:
+                row[k] = _num(v)
+            vt = r.get(k + "_time_ms", 0) or 0
+            if vt:
+                row[k + "_time_ms"] = _num(vt)
         rows.append(row)
     return rows
 
@@ -52,10 +65,9 @@ def _daily_rows(breakdown, raw=None):
 def activity(deck, span, options=None):
     from ..details.logic.data.transforms.activity_series import attach_breakdown_totals
     from ..details.widgets.pinned.widget_factory.shared.reviews import load_activity_source
-    from ..config import addon_config as _addon_config
 
     source = load_activity_source(
-        deck, span, cache=None, cfg=_addon_config(), custom_days=_custom_days(options),
+        deck, span, cache=None, cfg=_cfg(), custom_days=_custom_days(options),
         fail_if_not_cached=False, allow_context_slow_ops=True,
     )
     breakdown = source.get("breakdown_data")
@@ -168,7 +180,12 @@ def _widget_options(chart_type, own=None, conf=None):
             "chart_opacity_pct": 100 if opacity is None else opacity,
         }
     if chart_type == "added":
-        return {"sync_zoom": bool(sets.get("sync_zoom", True)), "show_trend": bool(sets.get("show_trend", False))}
+        override = sets.get("binning_override")
+        return {
+            "sync_zoom": bool(sets.get("sync_zoom", True)),
+            "show_trend": bool(sets.get("show_trend", False)),
+            "adaptive_binning": bool(conf.get(Config.ADAPTIVE_CHART_BINNING, True)) if override is None else bool(override),
+        }
     if chart_type in ("ratings", "review_speed", "forgotten", "resets", "introduced", "introduced_load", "answer_time", "interval_ratings",
                       "rating_fatigue", "sibling_ratings", "card_states", "load_trend", "stability_trend", "memorised", "fsrs_calibration", "forgetting_curve", "fsrs_fatigue", "leech_detector", "stability_increase", "custom_bar", "future_retention", "due_today"):
         override = sets.get("binning_override")
@@ -220,21 +237,16 @@ def _widget_options(chart_type, own=None, conf=None):
         else:
             style.update(sets if sets.get("use_custom_style", False) else (conf.get(Config.DEEP_DIVE_GRID_STYLE) or {}))
         try:
-            from ..utils import day_end_with_rollover
-
-            today = day_end_with_rollover().date().isoformat()
-        except Exception:
-            from datetime import date
-
-            today = date.today().isoformat()
-        try:
             from datetime import datetime, timedelta
 
             from ..utils import rollover_hour
 
             logical_today = (datetime.now() - timedelta(hours=rollover_hour())).date().isoformat()
         except Exception:
-            logical_today = today
+            from datetime import date
+
+            logical_today = date.today().isoformat()
+        today = logical_today
         src = style if own is not None else conf
         mode = sets.get("heatmap_mode", "year")
         if mode not in ("year", "365", "continuous", "years"):
@@ -269,6 +281,7 @@ def _widget_options(chart_type, own=None, conf=None):
             "invert": bool(src.get(Config.HEATMAP_INVERT_INTENSITY, False)),
             "years_no_gap": bool(src.get(Config.HEATMAP_YEARS_NO_GAP, False)),
             "month_grid": bool(src.get(Config.HEATMAP_MONTH_GRID, False)),
+            "narrow_view": conf.get(Config.HEATMAP_NARROW_VIEW, "") or "",  # global, as the button saves it
             # on a narrow card, the year in two rows or the month grid; None: on a phone only (heatmap.js narrowOn)
             "narrow_layout": sets.get("narrow_layout", True if own is not None else None),
             "years_fold": int(src.get(Config.HEATMAP_YEARS_FOLD, 3) if src.get(Config.HEATMAP_YEARS_FOLD, 3) is not None else 3),
@@ -315,7 +328,7 @@ def stats(deck, span, options=None):
     cfg = _cfg()
     conf = cfg.config
     values = _build_stat_values_map(
-        deck, int(span), 7, cfg=cfg, with_day_stats=True, with_deck_state=True,
+        deck, int(span), _custom_days(), cfg=cfg, with_day_stats=True, with_deck_state=True,
     ) or {}
     labels = conf.get(Config.DASH_STAT_LABELS) or {}
     colors = conf.get(Config.DASH_STAT_COLORS) or {}
@@ -484,8 +497,10 @@ def card_counts(deck, span, options=None):
     from ..const.config import Config
 
     conf = _cfg().config
+    raw_counts = _plain(fetch_section_data(_cfg(), "card_counts", deck_id=deck, is_deleted=deck == -1))
+    merged = raw_counts.pop("merged", None) if isinstance(raw_counts, dict) else None
     out = {
-        "counts": _plain(fetch_section_data(_cfg(), "card_counts", deck_id=deck, is_deleted=deck == -1)),
+        "counts": raw_counts,
         "separate": bool(conf.get(Config.PIE_CHART_SEPARATE_SUSPENDED, False)),
         "show_legend": bool(_setting("card_counts", "show_legend", True)),
         "legend_mode": str(_setting("card_counts", "legend_mode", "auto") or "auto"),
@@ -494,6 +509,8 @@ def card_counts(deck, span, options=None):
         # the card types hidden from a click on the legend (pie.js toggleKind)
         "hidden_kinds": [str(k) for k in (_setting("card_counts", "hidden_kinds", None) or []) if k],
     }
+    if merged:
+        out["merged"] = merged
     return _counts_at(out, deck, options)
 
 
@@ -518,6 +535,7 @@ def _counts_at(out, deck, options):
             if "total" in counts:
                 counts["total"] = sum(c)
             out["counts"] = counts
+            out.pop("merged", None)
     except Exception as e:
         from ..details.logic.logger import log_warn
 
@@ -595,13 +613,26 @@ def retention(deck, span, options=None):
 _FUTURE = {}
 
 
+def _deck_key(deck):
+    return tuple(deck) if isinstance(deck, list) else deck
+
+
+def _search_key():
+    try:
+        from ..details.logic.search_filter import active_search_query
+
+        return active_search_query() or ""
+    except Exception:
+        return ""
+
+
 def _future_cells(deck, year):
     """Cards due per day of a year (the heatmap's future days), kept a minute: a zoom asks for them on every step."""
     import time
 
     from ..details.logic.history_provider import HistoryProvider
 
-    key = (deck, year)
+    key = (_deck_key(deck), year, _search_key())
     hit = _FUTURE.get(key)
     if hit and time.monotonic() - hit[0] < 60:
         return hit[1]
@@ -678,7 +709,7 @@ def _hires_rows(deck, bounds, kind="reviews"):
     """10-minute rows (oldest first) of [start_ms, end_ms), for the Activity chart zoomed in to a few days."""
     from ..details.logic.data.section_fetchers import fetch_section_data
 
-    key = (deck, int(bounds[0]), int(bounds[1]), kind, _last_review_id())
+    key = (_deck_key(deck), int(bounds[0]), int(bounds[1]), kind, _last_review_id(), _search_key())
     hit = _HIRES.get(key)
     if hit is None:
         hit = fetch_section_data(_cfg(), kind, deck_id=(None if deck == -1 else deck), is_deleted=(deck == -1),
@@ -766,42 +797,8 @@ def adaptive(deck, span, first, last, source="activity", types=None):
     return out
 
 
-def zoom_stats(deck, span, first=None, last=None, bounds=None):
-    """What follows a zoom of Activity: the stat cards, Answer Buttons, Hourly and the Heatmap over the same days
-    (the same sums as the native _update_stats_from_history)."""
-    from ..const.config import Config
-    from ..details.logic.data.transforms.heatmap_series import build_heatmap_data, merge_heatmap_future_values
-    from ..details.logic.stat_cards import (
-        STAT_VALUE_FIELD_BINDINGS, build_dashboard_history_totals, build_dashboard_stat_values)
-
-    if bounds:  # zoomed inside the 10-minute view: the sums of those 10-minute rows
-        full = _hires_rows(deck, bounds, "reviews")
-        labels = [str(r.get("pretty_date", "")) for r in full]
-        rows = full
-        if first is not None and last is not None and str(first) in labels and str(last) in labels:
-            i0, i1 = sorted((labels.index(str(first)), labels.index(str(last))))
-            rows = full[i0:i1 + 1]
-        full = None  # always "zoomed": the window is a part of the period
-    else:
-        rows, full = _history_slice(deck, span, first, last)
-    out = {}
-    base = stats(deck, span)
-    zoomed = rows is not full
-    if zoomed and rows:
-        prec = _cfg().config.get(Config.STATS_PRECISION, 2)
-        vals = build_dashboard_stat_values(build_dashboard_history_totals(rows, streak_current=0),
-                                           use_decimal=True, hrs_unit="h", min_unit=" min", prec=prec)
-        history_fields = {"total_time", "reviews", "avg_time", "ret_all", "ret_young", "ret_mat", "active_days", "days_learned",
-                          "longest_streak", "reviews_per_day", "time_per_day", "reviews_per_active_day", "time_per_active_day",
-                          "ret_true", "rev_young", "rev_mature", "again",
-                          "best_day", "lapses"}
-        by_key = {dash: vals.get(field) for field, _dd, dash in STAT_VALUE_FIELD_BINDINGS if field in history_fields}
-        for c in base["cards"]:
-            if by_key.get(c["key"]) is not None:
-                c["value"] = str(by_key[c["key"]])
-    out["stats"] = base
-    if not zoomed:
-        return out
+def _buttons_hours(rows):
+    """Answer Buttons and Hourly summed over history rows (zoom_stats, zoom_follower)."""
     dist = {"learning": [0, 0, 0, 0], "young": [0, 0, 0, 0], "mature": [0, 0, 0, 0]}
     hourly_d = {h: {"total": 0, "correct": 0} for h in range(24)}
     for r in rows:
@@ -816,61 +813,195 @@ def zoom_stats(deck, span, first=None, last=None, bounds=None):
                 if h in hb:
                     hourly_d[h]["total"] += hb[h].get("total", 0)
                     hourly_d[h]["correct"] += hb[h].get("correct", 0)
-    out["distribution"] = {"data": _plain(dist)}
-    out["hourly"] = {"data": _plain(hourly_d)}
+    return dist, hourly_d
+
+
+# the charts with no time axis that follow a zoom of a chart of days (zoom_stats; the heatmap aside)
+ZOOM_FOLLOWERS = ("distribution", "hourly", "answer_time", "interval_ratings", "rating_fatigue", "sibling_ratings",
+                  "fsrs_calibration", "forgetting_curve", "fsrs_fatigue", "week_hours", "todays_retention")
+
+
+def _day_of(r):
+    return str(r.get("logical_date") or r.get("date") or "")[:10]
+
+
+def _hourly_for_zoom(deck, span, rows, bounds=None):
+    """Hourly breakdown over a zoomed slice: respects include_filtered and works on 10-minute bounds."""
+    f = bool(_setting("hourly", "include_filtered", True))
+    if not bounds and f:
+        _dist, hourly_d = _buttons_hours(rows)
+        return {"data": _plain(hourly_d), "include_filtered": f}
+    from ..details.logic.metrics import HourlyDataProvider
+
+    if bounds:
+        s_ms, e_ms = int(bounds[0]), int(bounds[1])
+        if rows:
+            from datetime import datetime
+
+            try:
+                t0 = int(datetime.strptime(str(rows[0].get("date") or "")[:16], "%Y-%m-%d %H:%M").timestamp() * 1000)
+                t1 = int(datetime.strptime(str(rows[-1].get("date") or "")[:16], "%Y-%m-%d %H:%M").timestamp() * 1000) + 600000
+                s_ms, e_ms = max(s_ms, t0), min(e_ms, t1)
+            except Exception:
+                pass
+    else:
+        from datetime import datetime, timedelta
+
+        from ..utils import rollover_hour
+
+        ds = sorted({d for d in (_day_of(r) for r in rows) if len(d) == 10})
+        if not ds:
+            return {"data": _plain({h: {"total": 0, "correct": 0} for h in range(24)}), "include_filtered": f}
+        roll = int(rollover_hour() or 0)
+        d0 = datetime.strptime(ds[0], "%Y-%m-%d").replace(hour=roll)
+        d1 = datetime.strptime(ds[-1], "%Y-%m-%d").replace(hour=roll) + timedelta(days=1)
+        s_ms, e_ms = int(d0.timestamp() * 1000), int(d1.timestamp() * 1000)
+    hourly_d = HourlyDataProvider.fetch_data(_cfg(), deck, deck == -1, span, override_start_ms=s_ms, override_end_ms=e_ms, filtered=f)
+    return {"data": _plain(hourly_d), "include_filtered": f}
+
+
+def zoom_follower(chart_type, deck, span, days, options=None, own=None):
+    """One chart of ZOOM_FOLLOWERS over the zoomed days (days: first and last, ISO) that fall in its own period,
+    read with a pinned widget's own settings (own, as fetch): zoom_stats for one chart, for the main screen. None
+    when those days are its whole period, or none of it (it shows its own data)."""
+    if chart_type not in ZOOM_FOLLOWERS or not days:
+        return None
+    _OWN.d = own
+    try:
+        _rows, full = _history_slice(deck, span, None, None)
+        rows = [r for r in full if days[0] <= _day_of(r) <= days[1]]
+        if not rows or len(rows) == len(full):
+            return None
+        first, last = rows[0].get("pretty_date"), rows[-1].get("pretty_date")
+        if chart_type == "distribution":
+            dist, _hourly_d = _buttons_hours(rows)
+            return {"data": _plain(dist)}
+        if chart_type == "hourly":
+            return _hourly_for_zoom(deck, span, rows)
+        from .extras_providers import daily_metric, todays_retention, week_hours
+
+        opts = dict(options or {}, _zoom=(first, last))
+        if chart_type == "week_hours":
+            return week_hours(deck, span, opts)
+        if chart_type == "todays_retention":
+            return todays_retention(deck, span, opts)
+        return daily_metric(chart_type, deck, span, opts)
+    except Exception as e:
+        from ..details.logic.logger import log_warn
+
+        log_warn(f"zoom follower {chart_type}: {e!r}", tag="WEB")
+        return None
+    finally:
+        _OWN.d = None
+
+
+def zoom_stats(deck, span, first=None, last=None, bounds=None, types=None):
+    """What follows a zoom of Activity: the stat cards, Answer Buttons, Hourly and the Heatmap over the same days
+    (the same sums as the native _update_stats_from_history). types: optional list of requested keys to compute."""
+    from ..const.config import Config
+    from ..details.logic.data.transforms.heatmap_series import build_heatmap_data, merge_heatmap_future_values
+    from ..details.logic.stat_cards import (
+        STAT_VALUE_FIELD_BINDINGS, build_dashboard_history_totals, build_dashboard_stat_values)
+
+    want = set(types) if types is not None else None
+    if bounds:  # zoomed inside the 10-minute view: the sums of those 10-minute rows
+        full = _hires_rows(deck, bounds, "reviews")
+        labels = [str(r.get("pretty_date", "")) for r in full]
+        rows = full
+        if first is not None and last is not None and str(first) in labels and str(last) in labels:
+            i0, i1 = sorted((labels.index(str(first)), labels.index(str(last))))
+            rows = full[i0:i1 + 1]
+        full = None  # always "zoomed": the window is a part of the period
+    else:
+        rows, full = _history_slice(deck, span, first, last)
+    out = {}
+    zoomed = rows is not full
+    if want is None or "stats" in want:
+        base = stats(deck, span)
+        if zoomed and rows:
+            prec = _cfg().config.get(Config.STATS_PRECISION, 2)
+            vals = build_dashboard_stat_values(build_dashboard_history_totals(rows, streak_current=0),
+                                               use_decimal=True, hrs_unit="h", min_unit=" min", prec=prec)
+            history_fields = {"total_time", "reviews", "avg_time", "ret_all", "ret_young", "ret_mat", "active_days", "days_learned",
+                              "longest_streak", "reviews_per_day", "time_per_day", "reviews_per_active_day", "time_per_active_day",
+                              "ret_true", "rev_young", "rev_mature", "again",
+                              "best_day", "lapses"}
+            by_key = {dash: vals.get(field) for field, _dd, dash in STAT_VALUE_FIELD_BINDINGS if field in history_fields}
+            for c in base["cards"]:
+                if by_key.get(c["key"]) is not None:
+                    c["value"] = str(by_key[c["key"]])
+        out["stats"] = base
+    if not zoomed:
+        return out
+    if want is None or "distribution" in want or "hourly" in want:
+        if want is None or "distribution" in want:
+            dist, _hourly_d = _buttons_hours(rows)
+            out["distribution"] = {"data": _plain(dist)}
+        if want is None or "hourly" in want:
+            out["hourly"] = _hourly_for_zoom(deck, span, rows, bounds=bounds)
     # the charts of the period with no time axis follow the zoomed days too (Answer Time, Rating by Interval)
     try:
         from .extras_providers import daily_metric
 
         for wt in ("answer_time", "interval_ratings", "rating_fatigue", "sibling_ratings", "fsrs_calibration", "forgetting_curve", "fsrs_fatigue"):
-            if not bounds:
-                out[wt] = daily_metric(wt, deck, span, {"_zoom": (first, last)})
-        from .extras_providers import todays_retention, week_hours
+            if want is None or wt in want:
+                if bounds:
+                    out[wt] = daily_metric(wt, deck, span, days=rows)
+                else:
+                    out[wt] = daily_metric(wt, deck, span, {"_zoom": (first, last)})
+        need_wh = want is None or "week_hours" in want
+        need_tr = want is None or "todays_retention" in want
+        if need_wh or need_tr:
+            from .extras_providers import todays_retention, week_hours
 
-        # Week by Hour and First Answer Retention: inside the 10-minute view, the whole days shown
-        if bounds:
-            ds = sorted({str(r.get("logical_date") or "")[:10] for r in rows if r.get("logical_date")})
-            if ds:
-                out["week_hours"] = week_hours(deck, span, {"_dates": (ds[0], ds[-1])})
-                out["todays_retention"] = todays_retention(deck, span, {"_dates": (ds[0], ds[-1])})
-        else:
-            out["week_hours"] = week_hours(deck, span, {"_zoom": (first, last)})
-            out["todays_retention"] = todays_retention(deck, span, {"_zoom": (first, last)})
+            # Week by Hour and First Answer Retention: inside the 10-minute view, the whole days shown
+            if bounds:
+                ds = sorted({str(r.get("logical_date") or "")[:10] for r in rows if r.get("logical_date")})
+                if ds:
+                    if need_wh:
+                        out["week_hours"] = week_hours(deck, span, {"_dates": (ds[0], ds[-1])})
+                    if need_tr:
+                        out["todays_retention"] = todays_retention(deck, span, {"_dates": (ds[0], ds[-1])})
+            else:
+                if need_wh:
+                    out["week_hours"] = week_hours(deck, span, {"_zoom": (first, last)})
+                if need_tr:
+                    out["todays_retention"] = todays_retention(deck, span, {"_zoom": (first, last)})
     except Exception as e:
         from ..details.logic.logger import log_warn
 
         log_warn(f"zoom followers: {e!r}", tag="WEB")
-    try:
-        data, _ = build_heatmap_data(rows)
-        from datetime import datetime
+    if want is None or "heatmap" in want:
+        try:
+            data, _ = build_heatmap_data(rows)
+            from datetime import datetime
 
+            year = datetime.now().year
+            for y in (year, year + 1):
+                cells = _future_cells(deck, y)
+                if cells:
+                    merge_heatmap_future_values(data, cells, mode="max")
+            # the heatmap goes to the zoomed days (stats_parts.runtime_updates: zoom_year_anchor, continuous offset)
+            ds = [str(r.get("logical_date") or "")[:10] for r in rows if r.get("logical_date")]
+            anchor = {"first": min(ds), "last": max(ds), "full": False} if ds else None
+            try:  # a zoom reaching the newest day counts as the whole period (anchored on the period's last day)
+                if anchor and full:
+                    newest = max(str(r.get("logical_date") or "")[:10] for r in full)
+                    if anchor["last"] >= newest:
+                        from ..details.logic.heatmap.range_anchor import range_last_day
 
-        year = datetime.now().year
-        for y in (year, year + 1):
-            cells = _future_cells(deck, y)
-            if cells:
-                merge_heatmap_future_values(data, cells, mode="max")
-        # the heatmap goes to the zoomed days (stats_parts.runtime_updates: zoom_year_anchor, continuous offset)
-        ds = [str(r.get("logical_date") or "")[:10] for r in rows if r.get("logical_date")]
-        anchor = {"first": min(ds), "last": max(ds), "full": False} if ds else None
-        try:  # a zoom reaching the newest day counts as the whole period (anchored on the period's last day)
-            if anchor and full:
-                newest = max(str(r.get("logical_date") or "")[:10] for r in full)
-                if anchor["last"] >= newest:
-                    from ..details.logic.heatmap.range_anchor import range_last_day
+                        rl = range_last_day(int(span), custom_days=_custom_days())
+                        if rl is not None:
+                            anchor = {"first": anchor["first"], "last": rl.isoformat(), "full": True}
+            except Exception:
+                from ..details.logic.logger import log_swallowed
 
-                    rl = range_last_day(int(span), custom_days=7)
-                    if rl is not None:
-                        anchor = {"first": anchor["first"], "last": rl.isoformat(), "full": True}
-        except Exception:
-            from ..details.logic.logger import log_swallowed
+                log_swallowed()
+            out["heatmap"] = {"data": _plain(data), "anchor": anchor}
+        except Exception as e:
+            from ..details.logic.logger import log_warn
 
-            log_swallowed()
-        out["heatmap"] = {"data": _plain(data), "anchor": anchor}
-    except Exception as e:
-        from ..details.logic.logger import log_warn
-
-        log_warn(f"zoom heatmap: {e!r}", tag="WEB")
+            log_warn(f"zoom heatmap: {e!r}", tag="WEB")
     return out
 
 
@@ -930,7 +1061,10 @@ def is_empty(chart_type, payload, deck=None, even_shown=False):
                 return not any((s or {}).get("n") for s in (payload.get("series") or []))
             if "counts" in payload:
                 return not any(v for v in (payload.get("counts") or {}).values())
-            return not any((r or {}).get("reviews", 0) > 0 for r in (payload.get("rows") or []))
+            return not any(
+                ((r or {}).get("reviews", 0) or (r or {}).get("_reviews", 0) or (r or {}).get("seconds", 0)) > 0
+                for r in (payload.get("rows") or [])
+            )
         if chart_type == "card_counts":
             c = payload.get("counts") or {}
             return deck == -1 or (c.get("total", 0) or sum(v for v in c.values() if isinstance(v, (int, float)))) <= 0
@@ -969,7 +1103,7 @@ def text_data(wid, deck, span):
         span = int(span)
     except (TypeError, ValueError):
         span = -1
-    payload = _build_runtime_payload(template, deck, span, 7, cfg=_cfg())
+    payload = _build_runtime_payload(template, deck, span, _custom_days(), cfg=_cfg())
     return {"html": safe_html((payload or {}).get("resolved") or ""), "blank": False}
 
 
@@ -1085,10 +1219,22 @@ def _deck_figures(did, span, need_hist, need_state):
             for key, field in (("avg_retrievability", "retrievability"), ("avg_stability", "stability")):
                 hist = fsrs.get(field) or {}
                 n = sum(hist.values())
-                out[key] = (sum(k * v for k, v in hist.items()) / n) if n > 0 else None
+                if field == "retrievability":
+                    # 1% bins 0..99 represent [i, i+1): use bin midpoint i+0.5 (100 stays 100)
+                    out[key] = (sum((min(100.0, k + 0.5) if k < 100 else 100.0) * v for k, v in hist.items()) / n) if n > 0 else None
+                else:
+                    out[key] = (sum(k * v for k, v in hist.items()) / n) if n > 0 else None
         return out
 
-    key = ("deckfig", did, rng, repr(sorted(kw.items())), need_hist, need_state)
+    col_mod = 0
+    if need_state:
+        try:
+            from aqt import mw
+
+            col_mod = int(getattr(getattr(mw, "col", None), "mod", 0) or 0)
+        except Exception:
+            col_mod = 0
+    key = ("deckfig", did, rng, repr(sorted(kw.items())), need_hist, need_state, col_mod)
     return dict(_memo(key, compute)[0])
 
 
@@ -1243,15 +1389,19 @@ def table(tab, sort=None, expanded=None, deck=None, _prepared=None, _deck_rows=N
              "rev_young": ry, "rev_mature": rm, "again": g("again"), "lapses": (ry + rm) - (py + pm)}
         if need_hist or need_state:
             did, span = _ctx_ref(d, total)
-            _tx = _time.perf_counter()
-            x.update(_deck_figures(did, span, need_hist, need_state))
-            x_time[0] += _time.perf_counter() - _tx
-            days, active = x.pop("_days", None), x.pop("_active", None)
-            if need_hist:
-                x["reviews_per_day"] = (rev / days) if days else None
-                x["time_per_day"] = (time_h / days) if days else None
-                x["reviews_per_active_day"] = (rev / active) if active else None
-                x["time_per_active_day"] = (time_h / active) if active else None
+            # Virtual folder rows have did=None without being collection total or View-by-Deck:
+            # calling _deck_figures(None, ...) would fetch the entire collection's figures.
+            is_virtual_folder = (not total) and ("_span" not in d) and (not d.get("is_deleted")) and (did is None)
+            if not is_virtual_folder:
+                _tx = _time.perf_counter()
+                x.update(_deck_figures(did, span, need_hist, need_state))
+                x_time[0] += _time.perf_counter() - _tx
+                days, active = x.pop("_days", None), x.pop("_active", None)
+                if need_hist:
+                    x["reviews_per_day"] = (rev / days) if days else None
+                    x["time_per_day"] = (time_h / days) if days else None
+                    x["reviews_per_active_day"] = (rev / active) if active else None
+                    x["time_per_active_day"] = (time_h / active) if active else None
         hold["_x"] = x
         return x
 
@@ -1468,6 +1618,10 @@ def deck_tabs(expanded_names=None, current=None):
     if conf.get(Config.INCLUDE_DELETED_CARDS, True) and "deleted" not in excluded:
         tabs.append({"title": tr("Deleted Cards"), "did": "__deleted_cards__"})
     decks = sorted(((d.name, d.id) for d in mw.col.decks.all_names_and_ids() if d.id not in excluded), key=lambda x: x[0].lower())
+    from .deck_picker import DEFAULT_DECK, hidden_default
+
+    if hidden_default([n for n, _ in decks]):  # Anki's empty Default deck, as in Anki's deck list
+        decks = [x for x in decks if x[1] != DEFAULT_DECK]
     names = [n for n, _ in decks]
     # a folder's tab says it has decks under it and whether they are shown (the page folds / unfolds it there)
     cur_name = ""
@@ -1498,8 +1652,9 @@ def _deck_stats(deck):
     tabs_cfg = get_active_tabs_config(cfg)
     is_col = deck == "collection"
     did = None if (is_col or deck == "__deleted_cards__") else int(deck)
+    tabs_sig = repr([(t.get("range"), t.get("days"), t.get("custom_type"), t.get("start_date"), t.get("end_date"), t.get("title")) for t in tabs_cfg])
     return _memo(("deck", str(deck), repr(conf.get(Config.EXCLUDED_DECKS, [])), repr(conf.get(Config.SHOW_TRENDS, False)),
-                  repr(conf.get(Config.WEEK_START, 0)), repr([t.get("range") for t in tabs_cfg])),
+                  repr(conf.get(Config.WEEK_START, 0)), bool(conf.get(Config.SPARKLINE_PRECISION, False)), tabs_sig),
                  lambda: fetch_deck_stats(
                      did, tabs_cfg, excluded_dids=conf.get(Config.EXCLUDED_DECKS, []),
                      show_trends=bool(conf.get(Config.SHOW_TRENDS, False)), week_start=conf.get(Config.WEEK_START, 0),
@@ -1514,53 +1669,64 @@ _WARM = {"busy": False, "want": None}
 
 
 def warm_deck_stats(order):
-    """View by Deck: every deck tab's rows read in the background, one after the other (the shown deck first), as
-    the normal window streams them (deck_view.stream): a tab clicked then is there at once (it took 300-1300 ms)."""
+    """View by Deck: every deck tab's rows read in the background, one deck per task (never sleeping
+    or looping across all decks inside mw.taskman's serial worker thread, which would block user clicks)."""
     import threading
+    import time
 
     from aqt import mw
+    from aqt.qt import QTimer
 
     if threading.current_thread() is not threading.main_thread():
         # the table is read in the background: Anki starts background work from the UI thread only (it asserted)
         mw.taskman.run_on_main(lambda: warm_deck_stats(order))
         return
-    _WARM["want"] = [str(d) for d in order]
+    _WARM["want"] = ["__time_tab0__"] + [str(d) for d in order]
     if _WARM["busy"]:
         return
     _WARM["busy"] = True
+    _WARM["done"] = 0
 
-    def run():
-        import time
-        done = 0
-        try:
-            while _WARM["want"]:
-                while time.monotonic() - LAST_SCOPE[0] < 1.2:
-                    time.sleep(0.2)
-                d = _WARM["want"].pop(0)
-                try:
-                    _v, hit = _deck_stats(d)
-                    done += 0 if hit else 1
-                except Exception:
-                    from ..details.logic.logger import log_swallowed
-
-                    log_swallowed()
-                time.sleep(0.005)
-        finally:
+    def _step():
+        if not _WARM["want"]:
             _WARM["busy"] = False
-        return done
+            n = _WARM.get("done", 0)
+            if n:
+                from .trace import trace
 
-    def fin(fut):
-        try:
-            n = fut.result()
-            from .trace import trace
+                trace(f"table deck warm-up: {n} decks read ahead")
+            return
+        # Wait on the UI timer (not inside the serial worker thread!) while the user is actively navigating.
+        wait_left = 1.2 - (time.monotonic() - LAST_SCOPE[0])
+        if wait_left > 0:
+            QTimer.singleShot(max(100, int(wait_left * 1000) + 50), _step)
+            return
+        d = _WARM["want"].pop(0)
 
-            trace(f"table deck warm-up: {n} decks read ahead")
-        except Exception:
-            from ..details.logic.logger import log_swallowed
+        def run_one():
+            try:
+                if d == "__time_tab0__":
+                    table(0, None)
+                    return 0
+                _v, hit = _deck_stats(d)
+                return 0 if hit else 1
+            except Exception:
+                from ..details.logic.logger import log_swallowed
 
-            log_swallowed()
+                log_swallowed()
+                return 0
 
-    mw.taskman.run_in_background(run, on_done=fin)
+        def on_one(fut):
+            try:
+                _WARM["done"] = _WARM.get("done", 0) + (fut.result() or 0)
+            except Exception:
+                pass
+            # Yield back to the event loop so any user click's table/stats/data task runs first.
+            QTimer.singleShot(25, _step)
+
+        mw.taskman.run_in_background(run_one, on_done=on_one)
+
+    QTimer.singleShot(200, _step)
 
 
 def _deck_table(deck, sort, expanded=None):
@@ -1620,7 +1786,7 @@ def _deck_table(deck, sort, expanded=None):
     out["tab"] = next((i for i, t in enumerate(out["deck_tabs"]) if str(t["did"]) == str(deck)), 0)
     out["tabs"] = [{k: t[k] for k in ("title", "did", "name", "kids", "open", "keep") if k in t} for t in out["deck_tabs"]]
     out["mode"] = "deck"
-    out["sort"] = {"col": (sort or {}).get("col", "time"), "desc": bool((sort or {}).get("desc", True))}
+    out["sort"] = {"col": "none", "desc": False}
     return out
 
 

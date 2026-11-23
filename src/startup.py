@@ -117,6 +117,16 @@ def register_hooks():
 
     gui_hooks.profile_will_close.append(i18n.reset)
     gui_hooks.profile_did_open.append(_seed_rollover)
+    # demo recordings (DD_RECORD_PRELOAD=1): Deep Dive's data read a few seconds after the profile opens
+    import os as _os
+
+    if _os.environ.get("DD_RECORD_PRELOAD"):
+        def _record_preload():
+            from .web_ui import window as _web_window
+
+            _web_window.preload_for_record()
+
+        gui_hooks.profile_did_open.append(lambda: mw.progress.single_shot(6000, _record_preload))
     gui_hooks.operation_did_execute.append(_on_operation_for_rollover)
     gui_hooks.theme_did_change.append(_on_anki_theme_change)
 
@@ -319,10 +329,16 @@ def add_toolbar_action():
         copy_path_btn.setFlat(True)
         copy_path_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         copy_path_btn.setToolTip(tr("Copy path"))
+        def _reset_copy_icon():
+            try:
+                copy_path_btn.setIcon(get_svg_icon("copy", size=14, context_ref=dlg))
+            except RuntimeError:
+                pass
+
         def do_copy_path():
             QApplication.clipboard().setText(log_file)
             copy_path_btn.setIcon(get_svg_icon("check", size=14, context_ref=dlg))
-            QTimer.singleShot(1200, lambda: copy_path_btn.setIcon(get_svg_icon("copy", size=14, context_ref=dlg)))
+            QTimer.singleShot(1200, _reset_copy_icon)
         copy_path_btn.clicked.connect(do_copy_path)
         path_row.addWidget(copy_path_btn)
         path_row.addStretch()
@@ -355,6 +371,18 @@ def add_toolbar_action():
         debug_btn.setToolTip(tr("Versions, settings and the latest errors, to paste in a bug report"))
         debug_btn.clicked.connect(lambda _=False: _copy_debug_info(dlg))
         btn_row.addWidget(debug_btn)
+
+        save_logs_btn = QPushButton(' ' + tr('Save Logs'))
+        save_logs_btn.setIcon(get_svg_icon("save", size=16, context_ref=dlg))
+        save_logs_btn.setToolTip(tr("The whole log in one file, to send with a bug report"))
+
+        def do_save_logs():
+            from .details.ui.config.debug_info import save_logs
+
+            save_logs(dlg)
+
+        save_logs_btn.clicked.connect(lambda _=False: do_save_logs())
+        btn_row.addWidget(save_logs_btn)
 
         btn_row.addStretch()
 
@@ -409,16 +437,15 @@ def add_toolbar_action():
 
         if narrow:
             grid = QGridLayout()
-            for b in (report_btn, debug_btn, clear_cache_btn, clear_logs_btn, close_btn):
+            for b in (report_btn, debug_btn, save_logs_btn, clear_cache_btn, clear_logs_btn, close_btn):
                 btn_row.removeWidget(b)
-            for i, b in enumerate((report_btn, debug_btn, clear_cache_btn, clear_logs_btn)):
+            for i, b in enumerate((report_btn, debug_btn, save_logs_btn, clear_cache_btn, clear_logs_btn, close_btn)):
                 grid.addWidget(b, i // 2, i % 2)
-            grid.addWidget(close_btn, 2, 0, 1, 2)
             layout.addLayout(grid)
         else:
             layout.addLayout(btn_row)
         # One height for the whole row: the styled Clear Cache / Clear Logs buttons set it.
-        row_btns = (report_btn, debug_btn, clear_cache_btn, clear_logs_btn, close_btn)
+        row_btns = (report_btn, debug_btn, save_logs_btn, clear_cache_btn, clear_logs_btn, close_btn)
         for b in row_btns:
             b.ensurePolished()
         row_h = max(clear_cache_btn.sizeHint().height(), clear_logs_btn.sizeHint().height())
@@ -717,14 +744,21 @@ def on_sync_did_finish():
 
 
 def _web_signature():
-    """What the parked web window was built from: the collection state, the selected deck, the theme."""
+    """What the parked web window was built from: the collection state, the selected deck, the theme, and config."""
     try:
+        import os
+
+        from .config import addon_config as _addon_config
+
+        cfg_path = getattr(_addon_config(), "_config_path", None)
+        cfg_mtime = os.path.getmtime(cfg_path) if cfg_path and os.path.exists(cfg_path) else None
         return (
             mw.col.db.scalar("select mod from col"),
             mw.col.db.scalar("select max(id) from revlog"),
             int(mw.col.decks.selected()),
             _anki_night_mode(),
             _web_files_stamp(),
+            cfg_mtime,
         )
     except Exception:
         return None
@@ -780,6 +814,8 @@ def _close_web_deep_dive_for_profile_close(*_args):
     if dlg is None:
         return
     try:
+        if hasattr(dlg, "dispose"):
+            dlg.dispose()
         dlg.close()
         dlg.deleteLater()
     except RuntimeError:
@@ -811,13 +847,15 @@ def open_web_deep_dive(fresh=False):
             return
         if dlg is not None:
             try:
+                if hasattr(dlg, "dispose"):
+                    dlg.dispose()
                 dlg.close()
                 dlg.deleteLater()
             except RuntimeError:
                 pass
         _web_deep_dive = WebDeepDiveDialog(mw)
         _web_deep_dive._reuse_signature = sig
-        _web_deep_dive.show()
+        _web_deep_dive.show_when_ready()  # (seen once its page has painted)
     except Exception as e:
         log_error(f"Error opening Deep Dive: {e}")
 

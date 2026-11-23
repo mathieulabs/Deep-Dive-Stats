@@ -178,7 +178,7 @@
       }
       // shows the last answer for this view at once, then refreshes it
       function load(){
-        const k = ckey(), hit = cache[k], gen = st.gen = (st.gen || 0) + (st._bump ? 0 : 0), vm = st.mode, vdk = st.deckKey, cg = st.colGen;
+        const k = ckey(), hit = cache[k], gen = st.gen = (st.gen || 0), vm = st.mode, vdk = st.deckKey, cg = st.colGen;
         if (hit) apply(hit);
         return DD.call('table', {tab: st.tab, sort: st.sort, deck: st.mode === 'deck' ? st.deckKey : null, expanded: (st.mode === 'deck' && st.expandedInit) ? Array.from(st.expanded) : null}).then(function(d){
           if (!d || !d.rows) return;
@@ -190,13 +190,16 @@
         }).catch(function(e){ DD.log('table: ' + (e && e.message || e)); });
       }
       function prefetch(){
-        const d = st.data; if (!d || st.prefetched === st.mode + st.deckKey) return; st.prefetched = st.mode + st.deckKey;
+        const d = st.data;
+        const pkey = st.mode === 'deck' ? 'deck' : st.mode + st.deckKey;
+        if (!d || st.prefetched === pkey) return;
+        st.prefetched = pkey;
         const mode = st.mode, dk = st.deckKey, sort = st.sort, cg = st.colGen;
         // one at a time, and only while nothing else is asked (each one takes Python 300-700 ms: several at once,
         // or one during a deck change, slowed the charts' own reading down)
         const todo = d.tabs.map(function(t, i){ return [t, i]; });
         (function nextOne(){
-          if (!todo.length || mode !== st.mode || dk !== st.deckKey || cg !== st.colGen) return;
+          if (!todo.length || mode !== st.mode || (mode !== 'deck' && dk !== st.deckKey) || cg !== st.colGen) return;
           if (performance.now() - (DD._lastScopeAt || 0) < 2500){ setTimeout(nextOne, 800); return; }
           // nor while the window is resized (Python busy here, the window can't paint its new size)
           if (performance.now() - (DD._lastResizeAt || 0) < 1500){ setTimeout(nextOne, 500); return; }
@@ -204,7 +207,7 @@
           if (performance.now() - (DD._lastScrollAt || 0) < 600){ setTimeout(nextOne, 300); return; }
           const pair = todo.shift(), t = pair[0], i = pair[1];
           (function(){
-            if (mode !== st.mode || dk !== st.deckKey) return;
+            if (mode !== st.mode || (mode !== 'deck' && dk !== st.deckKey)) return;
             // View by Deck: each tab is a deck (its own key): it was asked for with the deck shown, so another
             // deck's tab was never ready and took ~300 ms when clicked (View by Time's tabs were)
             const tdk = mode === 'deck' ? (t.did !== undefined ? String(t.did) : dk) : '';
@@ -216,7 +219,7 @@
       }
 
       thead.addEventListener('click', function(ev){
-        if (thead._dragged) return;
+        if (thead._dragged || st.mode === 'deck') return;
         const th = ev.target.closest('th'); if (!th) return;
         const c = th.getAttribute('data-col'); st.userSorted = true;
         if (st.sort.col === c){ if (st.sort.desc) st.sort = {col: c, desc: false}; else st.sort = {col: 'time', desc: true}; }
@@ -439,9 +442,8 @@
         if (DD.dev) DD.trace('TABLE tab click i=' + b.getAttribute('data-i') + ' mode=' + st.mode);
         if (st.mode === 'deck'){
           st.deckKey = b.getAttribute('data-d'); st.tab = +b.getAttribute('data-i');
-          // the charts are asked first: Python reads one thing at a time, and a table not ready yet held them back
+          load();
           if (opts && opts.onDeckTab) opts.onDeckTab(st.deckKey);
-          if (cache[ckey()]) load(); else setTimeout(load, 40);  // the charts' call goes out first (sent after 16 ms)
           return;
         }
         st.tab = +b.getAttribute('data-i'); load();
@@ -507,12 +509,27 @@
       // the page's Python link may not be ready yet: ask again until the first answer comes
       // (the table of the boot only shows at once: it may have been built before the data was ready, with no rows;
       // it is asked again until Python answers)
+      // A table shown from the boot is refreshed once the window's opening animations are over: asked at once, its
+      // answer and the tabs read after it came in the middle of the charts' intro, which stuttered
       let tries = 0;
-      (function first(){
+      function first(){
         if (st.answered || tries++ > 12) return;
         load();
         setTimeout(first, 700);
-      })();
+      }
+      // A table not shown (its drawer closed) waits the same way, or loads as soon as it shows: read at once (~0.4 s
+      // of Python), it kept waiting the charts on screen the window's first answer had left out (~1.3 s to open).
+      // (Looked at once the page's opening script is done: the drawer is closed after the table is mounted)
+      Promise.resolve().then(function(){
+        const unseen = !host.getClientRects().length;
+        if (((st.data && st.data.rows) || unseen) && DD.onGo && DD.onIdle){
+          DD.onGo(function(){ setTimeout(function(){ DD.onIdle(first, 2000); }, 60); });
+          if (unseen && window.ResizeObserver){
+            const ro = new ResizeObserver(function(){ if (host.getClientRects().length){ ro.disconnect(); if (!st.answered && !tries) first(); } });
+            ro.observe(host);
+          }
+        } else first();
+      });
       function plain(html){ const d = document.createElement('div'); d.innerHTML = html; return (d.textContent || '').replace(/\s+/g, ' ').trim(); }
       function csvData(){
         const d = st.data; if (!d) return null;
@@ -540,10 +557,10 @@
         st.colGen = (st.colGen || 0) + 1;
         return load();
       }
-      return {csvData: csvData, reload: reload, state: st, setFilter: function(text){ st.filter = String(text || '').toLowerCase(); render(); }, select: function(did){ st.selDid = did; render(); },
+      return {csvData: csvData, reload: reload, state: st, setFilter: function(text){ st.filter = String(text || '').toLowerCase(); render(); }, select: function(did){ st.multi = null; st.selDid = did; render(); },
         // the view the window opens with (View by Deck), its first data already there: no round by time first
-        startMode: function(mode, deckKey, span, data){ st.mode = mode; if (deckKey !== undefined) st.deckKey = deckKey; if (span !== undefined) st.selSpan = span; if (data && data.rows){ st.data = data; st.tab = data.tab || 0; render(); } else { st.tab = 0; tbody.innerHTML = ''; load(); } },
-        setMode: function(mode, deckKey, span){ st.gen = (st.gen || 0) + 1; st.prefetched = null; tbody.innerHTML = ''; st.mode = mode; if (deckKey !== undefined) st.deckKey = deckKey; if (span !== undefined) st.selSpan = span; st.tab = 0; st.data = null; return load(); },
+        startMode: function(mode, deckKey, span, data){ st.mode = mode; if (deckKey !== undefined) st.deckKey = deckKey; if (span !== undefined) st.selSpan = span; if (data && data.rows){ st.data = data; st.tab = data.tab || 0; render(); } else { st.tab = 0; tbody.innerHTML = ''; if (host.getClientRects().length) load(); } },  // (not shown: loaded once the opening is over, or when shown)
+        setMode: function(mode, deckKey, span){ st.gen = (st.gen || 0) + 1; st.prefetched = null; st.multi = null; tbody.innerHTML = ''; st.mode = mode; if (deckKey !== undefined) st.deckKey = deckKey; if (span !== undefined) st.selSpan = span; st.tab = 0; st.data = null; return load(); },
         setTheme: function(t){
           const ch = (t && t.chart) || (DD.theme && DD.theme.chart);
           if (!ch) return;

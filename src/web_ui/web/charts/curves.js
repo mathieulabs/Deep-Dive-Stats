@@ -72,11 +72,15 @@
     view(){
       const o = this.options, maxBins = Math.max(1, Math.min(100, Number(this.payload.max_bins) || 20));
       const outl = !this.short && !!this.payload.outliers;
+      let lo = Infinity, hi = 0;
       this.series = (this.payload.series || []).map(function(s){
         let e = (s.points || []).map(function(q){ return {delta: q[0], success: q[1], count: q[2]}; });
         e = outl ? filterOutliers(s.rating, e) : e;
-        return {rating: s.rating, stability: s.stability, n: s.n, points: binned(e, maxBins)};
+        let n = 0;
+        e.forEach(function(q){ lo = Math.min(lo, q.delta); hi = Math.max(hi, q.delta); n += q.count; });
+        return {rating: s.rating, stability: s.stability, n: n, points: binned(e, maxBins)};
       }).filter(function(s){ return s.points.length; });
+      if (lo < Infinity){ this.dmin = lo; this.dmax = hi || (this.short ? 10 : 30); }
       const xm = Number(this.payload.max_interval) || 0;
       this.xmax = xm > 0 ? Math.max(this.dmin, Math.min(this.dmax, xm)) : this.dmax;
       void o;
@@ -336,7 +340,7 @@
           labs[1].textContent = DD.tn('{n} bin', '{n} bins', Number(bs.value), {n: bs.value});
           const st = ctx.head && ctx.head.querySelector('.dd-stat');
           if (st){
-            const n = (p.series || []).reduce(function(a, s){ return a + (Number(s.n) || 0); }, 0);
+            const n = (chart.series || []).reduce(function(a, s){ return a + (Number(s.n) || 0); }, 0);
             // (all the history of the cards: the period does not change it)
             st.textContent = n ? DD.tn('{n} card', '{n} cards', n, {n: U.formatNum(n)}) + '  ·  ' + DD.t('Decay: {value}', {value: U.trimNum(Number(p.decay) || 0.5, 2)}) + '  ·  ' + DD.t('Whole history') : '';
           }

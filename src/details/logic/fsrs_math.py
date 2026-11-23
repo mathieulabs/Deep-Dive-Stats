@@ -12,7 +12,8 @@ KNOWN_VERSIONS = (4, 5, 6)
 # The charts that work out a recall themselves (the others read the memory states Anki stores).
 CURVE_CHARTS = frozenset((
     "retrievability", "sxr_heatmap", "bw_matrix", "memorised", "fsrs_calibration", "forgetting_curve",
-    "fsrs_fatigue", "leech_detector", "stability_increase",
+    "fsrs_fatigue", "leech_detector", "stability_increase", "future_retention",
+    "first_forgetting", "first_forgetting_short",
 ))
 _VERSION = []
 
@@ -157,11 +158,11 @@ def seconds_since_last_review(lrt, due, odue, odid, ivl, queue, ctype, today, no
 
 def add_memory_state(buckets, mem, due, odue, odid, ivl, queue, ctype, today, now):
     """Count one card in buckets {"stability", "difficulty", "retrievability"} as Anki does:
-    stability rounded to whole days (100 = 100 or more here), difficulty and retrievability
-    in 1% bins; the time since the last review from the stored review time, else from the
-    due day and interval (Anki's seconds_since_last_review)."""
+    stability rounded to whole days, difficulty and retrievability in 1% bins; the time since
+    the last review from the stored review time, else from the due day and interval (Anki's
+    seconds_since_last_review)."""
     s, d, decay, lrt = mem
-    s_b = min(int(s + 0.5), 100) if s > 0 else 0
+    s_b = int(s + 0.5) if s > 0 else 0
     buckets["stability"][s_b] = buckets["stability"].get(s_b, 0) + 1
     d_b = _percent_bin((d - 1.0) / 9.0 * 100.0)
     buckets["difficulty"][d_b] = buckets["difficulty"].get(d_b, 0) + 1

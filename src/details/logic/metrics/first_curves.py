@@ -147,7 +147,8 @@ def first_curve(limit, short=False):
         for r in (1, 2, 3, 4):
             c = cells[r]
             n = sum(v[1] for v in c.values())
-            s = fit_stability(c, DEFAULT_S[r], decay, lo, hi) if n else None
+            init_s = DEFAULT_S[r] * 1440.0 if short else DEFAULT_S[r]
+            s = fit_stability(c, init_s, decay, lo, hi) if n else None
             series.append({"rating": r, "stability": s, "n": n,
                            "points": [[d, v[0], v[1]] for d, v in sorted(c.items())]})
         return {"series": series, "decay": decay, "short": bool(short)}

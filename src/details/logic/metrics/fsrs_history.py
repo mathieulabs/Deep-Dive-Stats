@@ -35,7 +35,7 @@ _AGG = {}  # aggregated timelines per deck, kept until the history or the cards 
 # change; gen: bumped by clear_caches, so a save under way is dropped
 _SAVE = {"path": None, "busy": False, "again": False, "gen": 0}
 _DECKS = {}  # {"key": the decks table's fingerprint, "map": {deck id: preset id}, "sig"}
-_DISK_VERSION = 2  # 2: each entry's time (secs)
+_DISK_VERSION = 3  # 3: include Forget/reset entries (s=0); 2: each entry's time (secs)
 _LEARNING = 0  # RevlogEntry.ReviewKind.LEARNING
 REVIEW, BINS = 1, 20  # RevlogEntry.ReviewKind.REVIEW; Calibration's bins of predicted recall (5% each)
 RATIO_STEP, RATIO_BINS = 0.1, 30  # Forgetting Curve: days since the last review / stability, by tenths, 3.0+
@@ -57,6 +57,13 @@ def _read(cids, roll):
         days, ss, ds, kb, secs = array("i"), array("f"), array("f"), array("B"), array("I")
         for e in reversed(entries):  # Anki lists them newest first
             if not e.HasField("memory_state"):
+                # Forget / manual reset clears memory state (SSE MemorisedBar: type == 4 && button == 0).
+                if days and int(e.review_kind) == 4 and int(e.button_chosen) == 0:
+                    days.append((datetime.fromtimestamp(int(e.time)) - shift).date().toordinal())
+                    ss.append(0.0)
+                    ds.append(0.0)
+                    kb.append((int(e.review_kind) & 31) * 8)
+                    secs.append(max(0, int(e.time)))
                 continue
             days.append((datetime.fromtimestamp(int(e.time)) - shift).date().toordinal())
             ss.append(float(e.memory_state.stability))
@@ -148,6 +155,7 @@ def clear_caches():
     with _LOCK:
         _STATE.clear()
         _AGG.clear()
+        _RANKS.clear()
         _DECKS.clear()
         _SAVE["gen"] += 1
     try:
@@ -359,8 +367,8 @@ def deck_cards(addon_config, deck_id=None, is_deleted=False):
 def states_at(src, ordinal):
     """{"stability": {days: cards}, "difficulty": {percent: cards}} of the cards' memory states at
     the end of a day, binned as Card Stability / Card Difficulty do today (fsrs_math): stability
-    rounded to days (100 for 100 or more), difficulty in 1% bins. A card with no memory state yet
-    that day is left out."""
+    rounded to days, difficulty in 1% bins. A card with no memory state yet (or forgotten) that
+    day is left out."""
     def make():
         stab, diff = {}, {}
         for days, ss, ds, *_rest in src.cards:
@@ -368,7 +376,9 @@ def states_at(src, ordinal):
             if i < 0:
                 continue
             s = ss[i]
-            sb = min(int(s + 0.5), 100) if s > 0 else 0
+            if s <= 0:
+                continue
+            sb = int(s + 0.5)
             stab[sb] = stab.get(sb, 0) + 1
             db = max(0, min(99, int(((ds[i] - 1.0) / 9.0 * 100.0) // 1)))
             diff[db] = diff.get(db, 0) + 1
@@ -424,12 +434,13 @@ def memorised(src, measure="cards"):
         tot = [0.0] * (today - first + 1)
         weights = None
         if measure == "notes":
+            # Count ALL cards of each note (including New/unstudied siblings), matching SSE MemorisedBar.
             nid_of = dict(mw.col.db.all("SELECT id, nid FROM cards"))
             size = {}
-            for cid in src.cids:
-                n = nid_of.get(cid)
+            for n in nid_of.values():
                 size[n] = size.get(n, 0) + 1
             weights = [1.0 / size.get(nid_of.get(cid), 1) for cid in src.cids]
+        count = [0] * (today - first + 2) if measure == "average" else None
         curves = {}
         add = operator.add
         for ci, (days, ss, _ds, _kb, decay, *_r) in enumerate(src.cards):
@@ -448,6 +459,9 @@ def memorised(src, measure="cards"):
                 if s <= 0:
                     continue
                 n = e - a
+                if count is not None:
+                    count[a - first] += 1
+                    count[e - first] -= 1
                 b = round(math.log(s) / _S_STEP)
                 c = curves.get((dk, b))
                 if c is None or len(c) < n:
@@ -461,12 +475,8 @@ def memorised(src, measure="cards"):
                     tot[lo:lo + n] = map(add, tot[lo:lo + n], c[:n])
                 else:
                     tot[lo:lo + n] = [x + k * y for x, y in zip(tot[lo:lo + n], c[:n])]
-        if measure == "average":
-            # over the cards with a memory state by then
-            count = [0] * (today - first + 2)
-            for f in firsts:
-                if f <= today:
-                    count[f - first] += 1
+        if count is not None:
+            # over the cards with an active (non-forgotten) memory state that day
             n = 0
             for i in range(len(tot)):
                 n += count[i]
@@ -497,15 +507,20 @@ def stability_levels(src):
     """StabilityTimeline of the cards (a card counts from its first memory state on, with its last
     state of each day). The median is read from a count of the cards by 1% steps of stability."""
     def make():
-        delta = {}  # day -> [(old S or None, new S, old D, new D)]
+        delta = {}  # day -> [(old (S, D) or None, new S (<=0 = forgotten), new D)]
         for days, ss, ds, *_rest in src.cards:
             prev = None
             last = len(days) - 1
             for i in range(last + 1):
                 if i < last and days[i + 1] == days[i]:
                     continue
-                delta.setdefault(days[i], []).append((prev, ss[i], ds[i]))
-                prev = (ss[i], ds[i])
+                if ss[i] <= 0:
+                    if prev is not None:
+                        delta.setdefault(days[i], []).append((prev, 0.0, 0.0))
+                        prev = None
+                else:
+                    delta.setdefault(days[i], []).append((prev, ss[i], ds[i]))
+                    prev = (ss[i], ds[i])
         size = _FEN_HI - _FEN_LO + 1
         tree = [0] * (size + 1)
 
@@ -535,13 +550,18 @@ def stability_levels(src):
         n = young = 0
         for day in sorted(delta):
             for prev, s, d in delta[day]:
-                if prev is None:
-                    n += 1
-                else:
+                if prev is not None:
                     bump(bin_of(prev[0]), -1)
                     s_sum -= prev[0]
                     d_sum -= prev[1]
                     young -= prev[0] < _YOUNG_S
+                    if s <= 0:
+                        n -= 1
+                        continue
+                else:
+                    if s <= 0:
+                        continue
+                    n += 1
                 bump(bin_of(s), 1)
                 s_sum += s
                 d_sum += d
@@ -585,18 +605,32 @@ def review_points(cards, lo, hi):
 def _binned(src, lo, hi, kind):
     """{bin: [failed, passed, sum of predicted recall]} of the reviews from day lo to day hi:
     by predicted recall (Calibration) or by days since the last review / stability (Forgetting
-    Curve)."""
+    Curve). Both are made in one pass over the reviews and both kept: the two charts sit side by
+    side and each walked all the deck's reviews again (~80 ms each on 150,000 reviews)."""
+    tail = (int(lo), int(hi)) + src.key[1:]
+
     def make():
-        out = {}
+        cal, fgt = {}, {}
         for t, s, r, ok in review_points(src.cards, lo, hi):
-            b = min(BINS - 1, int(r * BINS)) if kind == "calibration" else min(RATIO_BINS, int(t / s / RATIO_STEP))
-            row = out.get(b)
-            if row is None:
-                row = out[b] = [0, 0, 0.0]
-            row[1 if ok else 0] += 1
-            row[2] += r
-        return out
-    return _kept((kind, int(lo), int(hi)) + src.key[1:], make)
+            for out, b in ((cal, min(BINS - 1, int(r * BINS))), (fgt, min(RATIO_BINS, int(t / s / RATIO_STEP)))):
+                row = out.get(b)
+                if row is None:
+                    row = out[b] = [0, 0, 0.0]
+                row[1 if ok else 0] += 1
+                row[2] += r
+        return cal, fgt
+
+    with _LOCK:
+        hit = _AGG.get((kind,) + tail)
+    if hit is not None:
+        return hit
+    cal, fgt = make()
+    with _LOCK:
+        if len(_AGG) > 24:
+            _AGG.clear()
+        _AGG[("calibration",) + tail] = cal
+        _AGG[("forgetting",) + tail] = fgt
+    return cal if kind == "calibration" else fgt
 
 
 def calibration(src, lo, hi):
@@ -643,22 +677,23 @@ def bw_matrix(src):
     return _kept(("bw",) + src.key[1:], make)
 
 
-def _day_ranks(lo, hi):
-    """(secs, ranks): the time of each review answer from day lo to day hi (array('q'), sorted)
-    and its place in its day (array('i')), as Rating Fatigue counts it (review_buckets.fatigue_counts):
-    every answer of the day, whatever its deck."""
+_RANKS = {}  # {(day cutoff, history stamp): _day_ranks()}
+
+
+def _day_ranks():
+    """(secs, ranks): the time of each review answer of the whole history (array('q'), sorted) and its
+    place in its day (array('i')), as Rating Fatigue counts it (review_buckets.fatigue_counts): every
+    answer of the day, whatever its deck. The whole history, not a deck's days: the same for every
+    deck and period, read once (a range of days per deck read it again at each deck change)."""
     from .review_buckets import MAX_POSITION
 
-    today = _today()
     cutoff = int(mw.col.sched.day_cutoff)
     base = cutoff - 86400 * 40000  # days counted from far back: the division stays on positive numbers
-    start = (cutoff - 86400 * (today - int(lo) + 1)) * 1000
-    end = (cutoff - 86400 * (today - int(hi))) * 1000
     secs, ranks = array("q"), array("i")
     for sec, n in mw.col.db.all(f"""
             SELECT id / 1000, ROW_NUMBER() OVER (PARTITION BY (id / 1000 - {base}) / 86400 ORDER BY id)
             FROM revlog
-            WHERE id >= {int(start)} AND id < {int(end)} AND type < 4 AND ease BETWEEN 1 AND 4
+            WHERE type < 4 AND ease BETWEEN 1 AND 4
             ORDER BY id"""):
         secs.append(int(sec))
         ranks.append(min(int(n), MAX_POSITION))
@@ -672,7 +707,17 @@ def fatigue_loss(src, lo, hi, kinds=None):
     (as Rating Fatigue); the deck only picks which answers are counted. kinds: only those card kinds
     (review_buckets.kinds_of: 1 young, 2 mature, by the days since the previous entry, mature from 21)."""
     def make():
-        secs, ranks = _day_ranks(lo, hi)
+        # (the places are the whole collection's, the same for every deck: read once per history and kept, not again
+        # at each deck change: ~170 ms of SQL on 150 000 answers, most of this chart's time)
+        rk = (int(mw.col.sched.day_cutoff), src.key[2])
+        with _LOCK:
+            got = _RANKS.get(rk)
+        if got is None:
+            got = _day_ranks()
+            with _LOCK:
+                _RANKS.clear()  # (kept apart from _AGG, emptied past 24 entries: a few deck changes)
+                _RANKS[rk] = got
+        secs, ranks = got
         out = {}
         if not secs:
             return out

@@ -159,6 +159,7 @@
     let waiting = false;
     function stop(){ waiting = false; b.classList.remove('wait'); b.textContent = value || '—'; document.removeEventListener('keydown', onKey, true); }
     function onKey(e){
+      if (!b.isConnected){ stop(); return; }
       e.preventDefault(); e.stopPropagation();
       if (/^(Control|Shift|Alt|Meta|AltGraph|CapsLock)$/.test(e.key)) return;
       if (e.key === 'Escape'){ stop(); return; }

@@ -12,6 +12,7 @@ page's token (a page rebuilt by Anki never gets the answers meant for the one be
 import json
 import os
 import re
+import threading
 import time
 import uuid
 
@@ -31,10 +32,14 @@ _state = {"installed": False, "css": None, "css_mtime": None}
 # What each widget showed last (its data, its stat cards, its text): a page Anki rebuilds (another deck, a refresh)
 # starts from it at once, then glides to the new data.
 _PREV = {}
+_PREV_LOCK = threading.Lock()
 # The value each stat card showed last, wherever it was: the deck list and a deck often show other sets of cards, and
 # the cards they share roll from the value seen on the screen before (pinned.js statsBox)
 _LAST_STAT = {}
 _COLLAPSED_PINNED = set()
+# heatmaps (years view) with their older years unfolded: kept for the session, so a page Anki builds again (a deck
+# opened, the deck list again) shows them as they were and glides to the new deck's years
+_HM_EXPANDED = set()
 # The block's intro (fade in, charts' opening animations) is for its first time on screen since Anki started. Anki
 # often builds the deck list again right after starting (profile loaded, sync done): that page plays the intro too
 # until the page says it played (intro_done), else its charts came from their last picture, drawn still.
@@ -49,17 +54,39 @@ _KEEP = ("t", "s", "n")  # kept on disk: texts, stat cards and natural heights (
 
 
 def _prev_path():
-    return os.path.join(_addon_dir(), "user_files", "web_pinned_prev.json")
+    raw_name = getattr(getattr(mw, "pm", None), "name", None) or "default"
+    safe = "".join(c if (c.isalnum() or c in "-_") else "_" for c in str(raw_name)).strip("_") or "default"
+    return os.path.join(_addon_dir(), "user_files", f"web_pinned_prev_{safe}.json")
+
+
+def _reset_profile_state():
+    t = _state.get("prev_timer")
+    if t is not None:
+        try:
+            t.stop()
+        except Exception:
+            pass
+    with _PREV_LOCK:
+        _PREV.clear()
+    _state["last_pinned_cfg"] = None
+    _LAST_STAT.clear()
+    _COLLAPSED_PINNED.clear()
+    _HM_EXPANDED.clear()
+    try:
+        _UNLINKED.clear()
+    except NameError:
+        pass
 
 
 def _load_prev():
     try:
         with open(_prev_path(), "r", encoding="utf-8") as f:
             raw = json.load(f)
-        for k, v in (raw or {}).items():
-            kind, _, key = k.partition("|")
-            if kind in _KEEP and (kind, key) not in _PREV:
-                _PREV[(kind, key)] = v
+        with _PREV_LOCK:
+            for k, v in (raw or {}).items():
+                kind, _, key = k.partition("|")
+                if kind in _KEEP and (kind, key) not in _PREV:
+                    _PREV[(kind, key)] = v
     except FileNotFoundError:
         pass
     except Exception as e:
@@ -79,12 +106,14 @@ def _save_prev_soon():
 
 def _save_prev():
     try:
-        out = {f"{k[0]}|{k[1]}": v for k, v in list(_PREV.items()) if k[0] in _KEEP}
-        os.makedirs(os.path.dirname(_prev_path()), exist_ok=True)
-        tmp = _prev_path() + ".tmp"
+        with _PREV_LOCK:
+            out = {f"{k[0]}|{k[1]}": v for k, v in _PREV.items() if k[0] in _KEEP}
+        path = _prev_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(out, f, ensure_ascii=False)
-        os.replace(tmp, _prev_path())
+        os.replace(tmp, path)
     except Exception as e:
         log_warn(f"web pinned prev save: {e!r}", tag="WEB")
 
@@ -106,6 +135,7 @@ def _redraw():
     try:
         if getattr(mw, "col", None) is None:
             return
+        trace(f"web pinned redraw: Anki's page loaded again ({mw.state})")
         if mw.state == "deckBrowser":
             mw.deckBrowser.refresh()
         elif mw.state == "overview":
@@ -158,7 +188,29 @@ def refresh_block():
         log_error(f"web pinned refresh: {e!r}")
 
 
+_DEEP_DIVE_ONLY_PREFIXES = ("Deep_Dive_", "Details_", "Dash_", "Retention_Visual_")
+_DEEP_DIVE_ONLY_KEYS = frozenset((
+    "Export_Include_Stats", "Show_Trends", "Show_Buttons_Dist_Visual", "Deck_Colors",
+    "Dashboard_Show_Icons", "Dashboard_Icon_Pos",
+))
+
+
+def _pinned_config_sig(saved):
+    if not isinstance(saved, dict):
+        return None
+    return {
+        k: v for k, v in saved.items()
+        if k not in _DEEP_DIVE_ONLY_KEYS and not any(str(k).startswith(p) for p in _DEEP_DIVE_ONLY_PREFIXES)
+    }
+
+
 def _on_config_saved(_saved=None):
+    if _saved is not None:
+        sig = _pinned_config_sig(_saved)
+        prev = _state.get("last_pinned_cfg")
+        _state["last_pinned_cfg"] = sig
+        if prev is not None and sig == prev:
+            return
     if not enabled() or _state.get("refresh_pending"):
         return
     if time.monotonic() < _state.get("quiet", 0):
@@ -215,6 +267,10 @@ def install():
     if hasattr(gui_hooks, "sync_will_start") and hasattr(gui_hooks, "sync_did_finish"):
         gui_hooks.sync_will_start.append(_on_sync_start)
         gui_hooks.sync_did_finish.append(_on_sync_end)
+    if hasattr(gui_hooks, "profile_will_close"):
+        gui_hooks.profile_will_close.append(_reset_profile_state)
+    if hasattr(gui_hooks, "profile_did_open"):
+        gui_hooks.profile_did_open.append(lambda: (_reset_profile_state(), _load_prev()))
     _state["installed"] = True
 
 
@@ -394,6 +450,29 @@ def _migrate_box_opacity():
         log_warn(f"web pinned box opacity: {e!r}", tag="WEB")
 
 
+_STAT_SCALE_MIGRATED = "Stat_Scale_90_Migrated"
+
+
+def _migrate_stat_scale():
+    """Once: the stat cards' default size went from 75 % to 90 %. A profile still at the old default moves to the
+    new one (a size the user picked is kept)."""
+    from ..const.config import Config
+
+    cfg = providers._cfg()
+    conf = cfg.config
+    if conf.get(_STAT_SCALE_MIGRATED):
+        return
+    vals = {_STAT_SCALE_MIGRATED: True}
+    if conf.get(Config.FACECARDS_SCALE) == 75:
+        vals[Config.FACECARDS_SCALE] = 90
+    conf.update(vals)
+    try:
+        cfg.write_config_vals(vals)
+        trace("stat card size: " + ("75 -> 90" if len(vals) > 1 else "kept"))
+    except Exception as e:
+        log_warn(f"web pinned stat card size: {e!r}", tag="WEB")
+
+
 def _web_i18n():
     try:
         from ..i18n import web_catalog
@@ -410,6 +489,10 @@ def _boot(deck_id, is_browser, token):
         _migrate_box_opacity()
     except Exception as e:
         log_warn(f"web pinned box opacity: {e!r}", tag="WEB")
+    try:
+        _migrate_stat_scale()
+    except Exception as e:
+        log_warn(f"web pinned stat card size: {e!r}", tag="WEB")
 
     try:  # every box is one line (rebuild_overlay_inner does the same before building)
         from ..details.widgets.pinned.main_menu.one_line_boxes import split_lines_into_boxes
@@ -422,6 +505,8 @@ def _boot(deck_id, is_browser, token):
     )
 
     conf = _conf()
+    if _state.get("last_pinned_cfg") is None:
+        _state["last_pinned_cfg"] = _pinned_config_sig(conf)
     defs = _defs(deck_id, is_browser)
     from ..details.logic.search_filter import normalize_query, resolve_search
     for d in defs:
@@ -446,9 +531,18 @@ def _boot(deck_id, is_browser, token):
             if d.get("own_n") is not None:
                 w["own_n"] = d.get("own_n")
             w["chips"] = [_span_label(d), _deck_label(d)] if conf.get(Config.PINNED_CARD_LABELS, True) else ["", ""]
+        if t == "heatmap" and d["id"] in _HM_EXPANDED:
+            w["expanded"] = True
         if _PREV.get(("n", d["id"])) is not None:
             w["nat"] = _PREV[("n", d["id"])]
+        # a chart: its last picture anywhere (from a deck back to the deck list, it glides from the deck's numbers to these)
         prev = _PREV.get(("t" if t == "text_label" else "d", d["id"]))
+        if t in ("card_counts", "todays_retention"):
+            _tot = lambda v: sum(int(x or 0) for k, x in ((v or {}).get("counts") or {}).items() if k != "total" and isinstance(x, (int, float))) if isinstance(v, dict) else None
+            trace(f"PIETRACE boot {t} deck={deck_id} legend_mode={(prev or {}).get('legend_mode') if isinstance(prev, dict) else None} "
+                     f"show_legend={(prev or {}).get('show_legend') if isinstance(prev, dict) else None} "
+                     f"pre_total={_tot(prev)}"
+                     f" intro={'yes' if not _INTRO['done'] else 'no'}")
         if prev is not None and t != "stat_card":
             w["pre"] = prev
         if t != "stat_card":
@@ -467,12 +561,15 @@ def _boot(deck_id, is_browser, token):
         for w in widgets:
             if w.get("type") not in ("stat_card", "text_label"):
                 w.pop("pre", None)  # its opening animation, not its last picture
+    with _PREV_LOCK:
+        pre_stats = {k[1]: v for k, v in _PREV.items() if k[0] == "s"}
     return {
         "token": token, "deck": deck_id, "browser": bool(is_browser), "first": first, "built": now, "skel": bool(first and _INTRO["skel"]),
         "i18n": _web_i18n(), "anim": providers.anim_settings("pinned"),
         "theme": build_theme("pinned"), "settings": {"bin_scale": 100},
         "widgets": widgets, "order": order,
-        "pre_stats": {k[1]: v for k, v in list(_PREV.items()) if k[0] == "s"},
+        "dpr": _state.get("dpr"),  # the page's pixel ratio with Anki's zoom, last seen (pinned.js DD.layoutDpr)
+        "pre_stats": pre_stats,
         "stat_last": dict(_LAST_STAT),
         "unlinked": dict(_UNLINKED),
         "margins": [_clamped(conf, Config.PINNED_MARGIN_TOP, DEFAULT_TOP), _clamped(conf, Config.PINNED_MARGIN_SIDE, DEFAULT_SIDE),
@@ -714,6 +811,7 @@ def _block(deck_id, is_browser):
     t0 = time.perf_counter()
     _state.pop("pv", None)
     boot = _boot(deck_id, is_browser, token)
+    t_boot = time.perf_counter()
     if not boot["widgets"]:
         return _empty_hint(is_browser)
     try:  # Anki built its page again during the tour: the tour comes back on the new page
@@ -724,16 +822,24 @@ def _block(deck_id, is_browser):
     except Exception as e:
         log_warn(f"web pinned tour: {e!r}", tag="WEB")
     scripts = f"<script>{_js()}</script>"
+    t_scripts = time.perf_counter()
     hide = f"<script>{_HIDE_STUDIED}</script>" if is_browser and _conf().get("Pinned_Position_Top", True) else ""
     m_top = 15 if is_browser else 0
-    boot_js = json.dumps(boot).replace("</", "<\\/")
+    from .bridge import _js as _boot_js
+
+    boot_js = _boot_js(boot).replace("</", "<\\/")
+    t_ser = time.perf_counter()
     html = (
         f'<style>{_css()}</style>'
         f'<div id="ddp-root" style="width:100%;box-sizing:border-box;margin-top:{m_top}px;margin-bottom:10px"></div>'
         f"{scripts}{hide}"
         f"<script>{dev_flag()}DDP.start({boot_js});</script>"
     )
-    trace(f"web pinned block: {len(boot['widgets'])} widgets, {1000 * (time.perf_counter() - t0):.0f} ms")
+    trace(
+        f"PERFTRACE pinned_block widgets={len(boot['widgets'])} total={1000 * (time.perf_counter() - t0):.0f}ms"
+        f" boot={1000 * (t_boot - t0):.0f}ms scripts={1000 * (t_scripts - t_boot):.0f}ms"
+        f" ser={1000 * (t_ser - t_scripts):.1f}ms boot_kb={len(boot_js) / 1024:.1f} html_kb={len(html) / 1024:.1f}"
+    )
     return html
 
 
@@ -814,13 +920,34 @@ def _on_overview(overview, content):
 
 def _on_congrats(webview):
     """The deck is finished: Anki shows its "Congratulations" page (a page of its own, no overview hook). The block
-    goes just before the message."""
+    goes just before the message.
+
+    Placed on the next turn of the event loop, after the other add-ons' hooks: their scripts (a theme add-on that
+    darkens this page once Anki styled it, More Overview Stats' table) then run in the page before ours, the
+    heaviest. Run first, ours kept the page light for the time it took (a white flash on each finished deck)."""
     if not enabled():
         return
     try:
         url = webview.page().url()
         if url.isEmpty() or "congrats" not in url.toDisplayString().lower() or mw.state != "overview":
             return
+        from aqt.qt import QTimer
+
+        t0 = time.perf_counter()
+        QTimer.singleShot(0, lambda: _place_congrats(webview, url, t0))
+    except Exception as e:
+        log_error(f"web pinned (congrats): {e!r}")
+
+
+def _place_congrats(webview, url, t0):
+    try:
+        if webview.page().url() != url or mw.state != "overview":
+            return  # another page meanwhile
+        trace(f"web pinned congrats hook: {url.toDisplayString()[:120]} (placed {1000 * (time.perf_counter() - t0):.0f} ms after it)")
+        if is_dev():  # the other add-ons styling this page from the same hook (a theme add-on: the white flash)
+            hooks = getattr(gui_hooks.webview_did_inject_style_into_page, "_hooks", [])
+            trace("web pinned congrats hook, all its functions: "
+                  + ", ".join(f"{getattr(h, '__module__', '?')}.{getattr(h, '__qualname__', '?')}" for h in hooks))
         did = int(mw.col.decks.selected())
         token = uuid.uuid4().hex[:12]
         _state.pop("pv", None)
@@ -836,12 +963,24 @@ def _on_congrats(webview):
   root.style.cssText = 'width:100%%;box-sizing:border-box;margin-top:0;margin-bottom:10px';
   function go(){
     if (!window.DDP){ var sc = document.createElement('script'); sc.textContent = %s; document.head.appendChild(sc); }  // global scope
+    window.__ddpScriptsMs = performance.now() - g0;
     DDP.start(%s);
   }
-  // put in once the page has loaded, before Anki's message is drawn: 15 px down, full width above the message
+  // put in once the page has loaded, before Anki's message is drawn: 15 px down, full width above the message.
+  // Under the first table, but never inside a box only as wide as its content: More Overview Stats puts its table
+  // in a <div id="table" style="display:table">, and the block in there took the width of its widest line (the stat
+  // cards), so the charts wrapped as in a narrow window
   root.style.marginTop = '15px';
-  var t = document.querySelector('table'); if (t) t.after(root); else document.body.prepend(root);
-  go();
+  var t = document.querySelector('table');
+  if (t){
+    var at = t;
+    for (var p = t.parentElement; p && p !== document.body; p = p.parentElement){
+      if (/^(TABLE|TD|TH)$/.test(p.tagName) || /^(table|inline)/.test(getComputedStyle(p).display)) at = p;
+    }
+    at.after(root);
+  } else document.body.prepend(root);
+  var had = !!window.DDP, g0 = performance.now(); go(); var g1 = performance.now();
+  try { pycmd('ddp_probe:congrats block built at ' + Math.round(g0) + ' ms after the page began loading, in ' + Math.round(g1 - g0) + ' ms (scripts ' + (had ? 'already in the page' : 'added in ' + Math.round(window.__ddpScriptsMs || 0) + ' ms') + '), placed under <' + (t ? (t.parentElement || t).tagName.toLowerCase() + '#' + ((t.parentElement || t).id || '') : 'none') + '>, ' + root.clientWidth + ' of ' + document.body.clientWidth + ' px'); } catch (e) {}
 })();
 """ % (json.dumps(_css()), json.dumps(_js()), json.dumps(boot).replace("</", "<\\/"))
         webview.eval(place)
@@ -887,8 +1026,13 @@ def _h_data(id=None, deck=None, at=None, span=None):
         if at:
             return providers.fetch(t, _deck_of(d, deck), use_span, dict(opts or {}, at=str(at)), own=d)
         out = providers.fetch(t, _deck_of(d, deck), use_span, opts, own=d)
+    if t in ("card_counts", "todays_retention") and isinstance(out, dict):
+        trace(f"PIETRACE data {t} deck={deck} at={at} span={span} legend_mode={out.get('legend_mode')} "
+                 f"show_legend={out.get('show_legend')} own_legend_mode={d.get('legend_mode')}")
     if span is None:
-        _PREV[("d", id)] = out
+        with _PREV_LOCK:
+            _PREV[("d", id)] = out
+            _PREV[("dk", id, str(deck))] = out
     return out
 
 
@@ -1052,9 +1196,14 @@ def _h_text(id=None, deck=None):
         default_end_date_str=d.get("end_date", ""),
     )
     out = safe_html((payload or {}).get("resolved") or "")
-    if not pv and _PREV.get(("t", id)) != out:
-        _PREV[("t", id)] = out
-        mw.taskman.run_on_main(_save_prev_soon)
+    if not pv:
+        changed = False
+        with _PREV_LOCK:
+            if _PREV.get(("t", id)) != out:
+                _PREV[("t", id)] = out
+                changed = True
+        if changed:
+            mw.taskman.run_on_main(_save_prev_soon)
     return out
 
 
@@ -1113,7 +1262,7 @@ def _h_set_search_filter(id=None, query=""):
         recent = ([q] + [x for x in recent if x != q])[:8]
         conf["Deep_Dive_Recent_Searches"] = recent
     if changed:
-        _PREV.pop(("d", id), None)
+        _drop_prev(id)
         conf[Config.PINNED_WIDGETS] = raw
         cfg.write_config()
     return {"ok": True, "query": q, "count": len(cids) if cids is not None else None, "recent": recent}
@@ -1253,8 +1402,23 @@ def _save(wid, key, value):
     if wid:
         _state["quiet"] = time.monotonic() + 0.6  # saved by the page itself: it shows it already
         WidgetRegistry.update_setting(wid, key, value)
-        _PREV.pop(("d", wid), None) if key in ("heatmap_mode",) else None
+        if key in ("heatmap_mode",):
+            _drop_prev(wid)
+        else:
+            # its last pictures carry the option as it was (Card Counts' legend_mode, show_legend...): the next page
+            # would draw them so for a moment (the legend back beside the donut), then take the new data's
+            with _PREV_LOCK:
+                for k, v in list(_PREV.items()):
+                    if k[0] in ("d", "dk") and k[1] == wid and isinstance(v, dict) and key in v:
+                        _PREV[k] = dict(v, **{key: value})
     return True
+
+
+def _drop_prev(wid):
+    """A widget's last pictures, on every deck (a change they cannot show)."""
+    with _PREV_LOCK:
+        for k in [k for k in _PREV if k[0] in ("d", "dk") and k[1] == wid]:
+            _PREV.pop(k, None)
 
 
 def _h_set_setting(section=None, key=None, value=None, _wid=None):
@@ -1373,6 +1537,33 @@ def _h_adaptive(id=None, first=None, last=None, deck=None, _wid=None):
     return {"data": r.get(t), "bounds": r.get("bounds"), "times": r.get("times")}
 
 
+def _h_zoom_follow(src=None, ids=None, d0=None, d1=None, deck=None, _wid=None):
+    """The pinned charts that follow a zoom of a chart of days (Hourly, Answer Buttons... as in the Deep Dive): of
+    ids, those reading the same deck and search as the zoomed chart src, over its zoomed days d0..d1 (ISO) that fall
+    in their own period (the charts of days are linked by dates the same way). [[id, payload], ...]"""
+    from ..details.logic.search_filter import search_scope
+
+    s = _def_of(src)
+    if s is None or not d0 or not d1:
+        return []
+
+    def scope(d):
+        return (repr(_deck_of(d, deck)), str(d.get("search_query") or "").strip())
+
+    want = scope(s)
+    out = []
+    for wid in ids or []:
+        d = _def_of(wid)
+        if d is None or d.get("type") not in providers.ZOOM_FOLLOWERS or scope(d) != want:
+            continue
+        with search_scope(want[1]):
+            r = providers.zoom_follower(d.get("type"), _deck_of(d, deck), int(d.get("time_span", -1)), (str(d0), str(d1)),
+                                        providers.widget_options(d.get("type"), own=d), own=d)
+        if r is not None:
+            out.append([wid, r])
+    return out
+
+
 def _h_review_events(id=None, t0=0, t1=0, deck=None, _wid=None):
     """One dot per review (review_dots): the reviews of the widget's deck between t0 and t1 (ms)."""
     d = _def_of(id)
@@ -1398,9 +1589,26 @@ def _h_open_card(cid=None, _wid=None):
     return _window_static("_open_card")(cid)
 
 
+def _h_dpr(v=None):
+    """The page's pixel ratio once Anki's zoom is applied: the next page lays out with it from its first frame."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return False
+    if 0.25 <= v <= 8:
+        _state["dpr"] = v
+    return True
+
+
 def _h_collapse(id=None, on=False):
     """A card folded / unfolded on the page: remembered for the session."""
     (_COLLAPSED_PINNED.add if on else _COLLAPSED_PINNED.discard)(id)
+    return True
+
+
+def _h_hm_expanded(id=None, on=False, _wid=None):
+    """A heatmap's older years unfolded / folded on the page: remembered for the session."""
+    (_HM_EXPANDED.add if on else _HM_EXPANDED.discard)(id)
     return True
 
 
@@ -1507,9 +1715,10 @@ def _h_stat_lock(key=None, locked=True, _wid=None):
     cfg.set_value("UNLOCKED_EFFECTS", lst)
     # the stat cards' last pictures (shown at once on the next page) carry the locks too, otherwise the other page (a deck's
     # overview) comes up with the border as it was before the click, then takes it away
-    for k, v in list(_PREV.items()):
-        if k[0] == "s" and isinstance(v, dict):
-            _PREV[k] = dict(v, unlocked=list(lst))
+    with _PREV_LOCK:
+        for k, v in list(_PREV.items()):
+            if k[0] == "s" and isinstance(v, dict):
+                _PREV[k] = dict(v, unlocked=list(lst))
     return True
 
 
@@ -1530,9 +1739,9 @@ _HANDLERS = {"hello": (_h_hello, False), "intro_done": (_h_intro_done, False), "
              "review_events": (_h_review_events, True), "data": (_h_data, True), "stats": (_h_stats, False), "text": (_h_text, True), "menu": (_h_menu, False), "pin_past": (_h_pin_past, False),
              "set_setting": (_h_set_setting, False), "pie_separate": (_h_pie_separate, False), "set_heatmap": (_h_set_heatmap, False),
              "open_day": (_h_open_day, False), "browse": (_h_browse, False), "open_card": (_h_open_card, False),
-             "natural": (_h_natural, False), "chip": (_h_chip, False), "drop": (_h_drop, False),
+             "natural": (_h_natural, False), "hm_expanded": (_h_hm_expanded, False), "chip": (_h_chip, False), "drop": (_h_drop, False),
              "resize": (_h_resize, False), "gap": (_h_gap, False), "add_here": (_h_add_here, False),
-             "adaptive": (_h_adaptive, True), "chart_help": (_h_chart_help, False), "collapse": (_h_collapse, False), "onigiri_fit": (_h_onigiri_fit, False), "onigiri_relayout": (_h_onigiri_relayout, False),
+             "adaptive": (_h_adaptive, True), "zoom_follow": (_h_zoom_follow, True), "chart_help": (_h_chart_help, False), "collapse": (_h_collapse, False), "dpr": (_h_dpr, False), "onigiri_fit": (_h_onigiri_fit, False), "onigiri_relayout": (_h_onigiri_relayout, False),
              "set_search_filter": (_h_set_search_filter, False)}
 
 
@@ -1564,11 +1773,22 @@ def _on_message(handled, message, context):
         web = mw.web
     rid, cmd = req.get("id"), req.get("cmd")
     token = args.pop("_token", "")
-    def answer(ok, payload):
+    def _eval_js(ok, js_val):
+        t_e0 = time.perf_counter()
         try:
-            web.eval("window.DDP && DDP.__resolve(%s, %s, %s, %s)" % (json.dumps(token), json.dumps(rid), "true" if ok else "false", json.dumps(payload)))
+            web.eval("window.DDP && DDP.__resolve(%s, %s, %s, %s)" % (json.dumps(token), json.dumps(rid), "true" if ok else "false", js_val))
         except Exception as e:
             log_warn(f"web pinned answer {cmd!r}: {e!r}", tag="WEB")
+        return 1000 * (time.perf_counter() - t_e0)
+
+    def answer(ok, payload):
+        t_a0 = time.perf_counter()
+        from .bridge import _js  # a large answer read by JSON.parse (~2x faster for the page)
+
+        js_val = _js(payload)
+        ser_ms = 1000 * (time.perf_counter() - t_a0)
+        eval_ms = _eval_js(ok, js_val)
+        return (ser_ms, eval_ms, len(js_val))
 
     entry = _HANDLERS.get(cmd)
     if entry is None:
@@ -1576,30 +1796,69 @@ def _on_message(handled, message, context):
         return (True, None)
     fn, background = entry
     from . import startup_probe as _probe
+    from .trace import traces_on as _traces_on
 
+    _t0 = time.perf_counter()
     if background:
-        _t0 = time.perf_counter()
+        from .bridge import _js as _bg_js
+
+        span = {}
+
+        def _run():
+            span["start"] = time.perf_counter()
+            try:
+                res = ui_first(fn, **args)
+                t_s0 = time.perf_counter()
+                js_val = _bg_js(res)
+                span["ser_ms"] = 1000 * (time.perf_counter() - t_s0)
+                span["bytes"] = len(js_val)
+                return js_val
+            finally:
+                span["end"] = time.perf_counter()
 
         def done(fut):
+            t_done = time.perf_counter()
             if _probe._s["on"]:
-                _probe._log(f"t={_probe._ms():.0f}ms pinned {cmd} (background) answered after {(time.perf_counter() - _t0) * 1000:.0f}ms")
+                _probe._log(f"t={_probe._ms():.0f}ms pinned {cmd} (background) answered after {(t_done - _t0) * 1000:.0f}ms")
             try:
-                answer(True, fut.result())
+                js_val = fut.result()
+                ser_ms = span.get("ser_ms", 0.0)
+                nbytes = span.get("bytes", len(js_val))
+                eval_ms = _eval_js(True, js_val)
             except Exception as e:
                 log_error(f"web pinned {cmd!r}: {e!r}")
                 if is_stale_import(e):
                     ask_restart(e)
-                answer(False, repr(e))
+                ser_ms, eval_ms, nbytes = answer(False, repr(e))
+            ms = 1000 * (time.perf_counter() - _t0)
+            if _traces_on() and (ms >= 15 or cmd in ("data", "stats", "adaptive", "zoom_follow")):
+                st, en = span.get("start", _t0), span.get("end", _t0)
+                run_only = max(0.0, 1000 * (en - st) - ser_ms)
+                wid_s = f" id={args.get('id')}" if "id" in args else ""
+                trace(
+                    f"PERFTRACE pinned_bridge {cmd}{wid_s} bg total={ms:.0f}ms wait={1000 * (st - _t0):.0f}ms"
+                    f" run={run_only:.0f}ms ser_bg={ser_ms:.1f}ms ui={1000 * (t_done - en):.0f}ms"
+                    f" eval={eval_ms:.1f}ms kb={nbytes / 1024:.1f}"
+                )
 
         from .ui_share import ui_first
 
-        mw.taskman.run_in_background(lambda: ui_first(fn, **args), on_done=done)
+        mw.taskman.run_in_background(_run, on_done=done)
     else:
         try:
-            answer(True, _probe.timed(f"pinned {cmd}", fn, **args))
+            res = _probe.timed(f"pinned {cmd}", fn, **args)
+            run_ms = 1000 * (time.perf_counter() - _t0)
+            ser_ms, eval_ms, nbytes = answer(True, res)
         except Exception as e:
             log_error(f"web pinned {cmd!r}: {e!r}")
             if is_stale_import(e):
                 ask_restart(e)
-            answer(False, repr(e))
+            run_ms = 1000 * (time.perf_counter() - _t0)
+            ser_ms, eval_ms, nbytes = answer(False, repr(e))
+        ms = 1000 * (time.perf_counter() - _t0)
+        if _traces_on() and ms >= 10:
+            trace(
+                f"PERFTRACE pinned_bridge {cmd} ui total={ms:.0f}ms run={run_ms:.1f}ms"
+                f" ser={ser_ms:.1f}ms eval={eval_ms:.1f}ms kb={nbytes / 1024:.1f}"
+            )
     return (True, None)

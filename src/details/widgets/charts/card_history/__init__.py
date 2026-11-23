@@ -39,7 +39,11 @@ def card_distribution(cfg, deck_id, widget_type, suspended=True):
         return interval_history(cfg, deck_id)
     field = FIELDS[widget_type]
     try:
-        key = (widget_type, repr(deck_id), mw.col.mod, mw.col.sched.today, bool(suspended))
+        from ....const.config import Config
+        from ....logic.search_filter import active_search_query
+
+        excl = tuple(sorted(int(x) for x in ((getattr(cfg, "config", None) or {}).get(Config.EXCLUDED_DECKS) or [])))
+        key = (widget_type, repr(deck_id), mw.col.mod, mw.col.sched.today, bool(suspended), active_search_query(), excl)
     except Exception:
         key = None
     if key is not None and key in _cache:
@@ -70,7 +74,11 @@ def leech_count(cfg, deck_id, suspended=True):
     if deck_id == -1 or getattr(mw, "col", None) is None:
         return 0, None
     try:
-        key = ("leeches", repr(deck_id), mw.col.mod, bool(suspended))  # (kept as card_distribution)
+        from ....const.config import Config
+        from ....logic.search_filter import active_search_query
+
+        excl = tuple(sorted(int(x) for x in ((getattr(cfg, "config", None) or {}).get(Config.EXCLUDED_DECKS) or [])))
+        key = ("leeches", repr(deck_id), mw.col.mod, bool(suspended), active_search_query(), excl)  # (kept as card_distribution)
     except Exception:
         key = None
     if key is not None and key in _cache:

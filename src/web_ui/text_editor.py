@@ -14,6 +14,7 @@ from ..i18n import N_, tr, tr_name
 # the variables' descriptions in the completion list
 VARIABLE_DESCRIPTIONS = {
     "total_time": N_("Formatted total study time"),
+    "avg_time": N_("Average time per review"),
     "reviews": N_("Number of reviews"),
     "ret_all": N_("Overall retention"),
     "ret_young": N_("Young-card retention"),
@@ -95,7 +96,7 @@ def help_html(cfg=None):
                   examples=dot.join(code(t) for t in ("{total_time|min}", "{avg_time|s}", "{time_per_day:month|min}"))))
         + part(tr("Add {tilde} before the closing brace so the text does not fade when that value "
                   "changes: {examples}. Right click a variable to switch it.",
-                  tilde=code("~"), examples=dot.join(code(t) for t in ("{reviews~}", "{reviews:week|min~}"))))
+                  tilde=code("~"), examples=dot.join(code(t) for t in ("{reviews~}", "{total_time:week|min~}"))))
         + part(tr("<b>Markdown</b> turns into formatting as you type it (Ctrl+Z gives the characters back): {examples}",
                   examples=dot.join(code(t) for t in
                                     ("# ", "## ", "- ", "1. ", "**bold**", "*italic*", "~~strike~~", "---"))))

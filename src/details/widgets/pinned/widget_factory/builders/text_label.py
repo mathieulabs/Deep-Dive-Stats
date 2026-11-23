@@ -41,7 +41,8 @@ def _normalize_template_markup(template):
     if not text:
         return ""
 
-    normalized = html.unescape(text).strip()
+    # Only unescape legacy double-escaped HTML templates (no real '<' tags yet), so literal '&lt;'/'&gt;' in user text stays escaped.
+    normalized = (html.unescape(text) if ("<" not in text and "&lt;" in text and "&gt;" in text) else text).strip()
     if not normalized.startswith("<") and "</p>" in normalized:
         first_close = normalized.find("</p>")
         prefix = normalized[:first_close]

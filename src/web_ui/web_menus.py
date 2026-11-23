@@ -327,18 +327,33 @@ def _heatmap(mn, m, d, cfg):
     pal = palette_of(cfg.get)
 
     def pick_color():
-        from aqt.qt import QColor, QColorDialog
+        from ..details.ui.config.shared.color_picker import pick_color_live
+        from ..details.widgets.charts.heatmap.palettes import colors_of
+        from .pinned import eval_block
 
-        color = QColorDialog.getColor(QColor(get_color(cfg, Config.HEATMAP_COLOR, "pinned")), mw, tr("Pick Color"))
-        if not color.isValid():
+        cur = get_color(cfg, Config.HEATMAP_COLOR, "pinned")
+        pal_colors, mine_ = colors_of(cfg.get), customs_of(cfg.get)
+
+        def show(h, p=""):  # the main screen's heatmaps redrawn as the color changes
+            try:
+                eval_block("window.DDP&&DDP.heatmapPalette&&DDP.heatmapPalette(%s)" % json.dumps(
+                    {"color": h, "palette": p, "palette_colors": pal_colors if p else None, "custom_palettes": mine_}))
+            except Exception:
+                log_swallowed()
+
+        chosen = pick_color_live(mw, cur, tr("Pick Color"), show)
+        if not chosen:
+            if pal:  # cancelled: the palette shown again (the picker put the color back)
+                show(cur, pal)
             return
-        if cfg.get(Config.PINNED_THEME_SEPARATE, False):
+        # the pinned theme's own colors are read only when both are on (color_resolver)
+        if cfg.get(Config.PINNED_USE_ACTIVE_THEME, False) and cfg.get(Config.PINNED_USE_SEPARATE_THEME, False):
             custom = dict(cfg.get(Config.PINNED_THEME_CUSTOM_COLORS, {}) or {})
-            custom[Config.HEATMAP_COLOR] = color.name()
+            custom[Config.HEATMAP_COLOR] = chosen
             _write(m, Config.PINNED_THEME_CUSTOM_COLORS, custom)
             _write(m, Config.PINNED_THEME_IS_CUSTOM, True)
         else:
-            _write(m, Config.HEATMAP_COLOR, color.name())
+            _write(m, Config.HEATMAP_COLOR, chosen)
         if pal:
             _write(m, Config.HEATMAP_PALETTE, "")
         m.refresh(clear_cache=False)
@@ -429,7 +444,12 @@ def _chart(mn, m, d):
             mn.check(tr("Show FSRS Target"), d.get("show_target", True) is not False, setting("show_target"))
 
     averages, cumulative = (*_AVERAGE, *AVERAGE_TYPES), (*_CUMULATIVE, *CUMULATIVE_TYPES)
-    if wtype not in averages and wtype not in cumulative:
+    breakdown = resolve_breakdown(d.get("breakdown"), d.get("show_breakdown", False)) if wtype == "future_due" else None
+    no_split = wtype == "card_states" and not d.get("alt_view", True)
+    has_pct = ((wtype in PERCENT_TYPES and not no_split) or breakdown == "result"
+               or (wtype == "activity" and d.get("show_breakdown", True)))
+    has_trend = wtype in _TREND
+    if wtype not in averages and wtype not in cumulative and breakdown != "type" and not has_pct and not has_trend:
         return
     mn.sep()
     if wtype in averages:
@@ -459,42 +479,102 @@ def _chart(mn, m, d):
     if wtype in cumulative:
         toggle(tr("Show Total (Cumulative)"), "show_cumulative", True)
     # Series: the parts of the bars shown (Future Due by type); Show as %: each bar as the shares of its parts
-    breakdown = resolve_breakdown(d.get("breakdown"), d.get("show_breakdown", False)) if wtype == "future_due" else None
     if breakdown == "type":
         _hidden_parts(mn, m, d, [("mature", "Mature"), ("young", "Young"), ("learn", "Learning")], "hidden_series",
                       tr("Series"), mn.items)
-    no_split = wtype == "card_states" and not d.get("alt_view", True)
-    if ((wtype in PERCENT_TYPES and not no_split) or breakdown == "result"
-            or (wtype == "activity" and d.get("show_breakdown", True))):
+    if has_pct:
         toggle(tr("Show as %"), "show_percent", False)
     # Show Trend: a line through the bars, its slope in the header (web: extras.js TREND_UNIT)
-    if wtype in _TREND:
+    if has_trend:
         toggle(tr("Show Trend"), "show_trend", wtype not in ("activity", "added"))
 
 
 def _save_as(d):
     """The widget saved by name (saved_widgets), its title or its chart's name offered."""
-    from aqt.utils import tooltip
-
-    from ..details.logic import saved_widgets
     from ..details.logic.widget_registry import WidgetRegistry
-    from ..details.ui.shared.number_dialog import ask_text
 
     wid = d.get("id")
     now = next((w for w in WidgetRegistry.get_all() if w.get("id") == wid), None) or d
+    _ask_and_save(now, mw)
+
+
+def _ask_and_save(defn, parent):
+    """defn saved under the name asked (its title or its chart's name offered), told in a tooltip."""
+    from aqt.utils import tooltip
+
+    from ..details.logic import saved_widgets
+    from ..details.ui.shared.number_dialog import ask_text
     from . import pinned as P
 
     try:
-        offered = P._title(now) or tr("Text Widget")
+        offered = P._title(defn) or tr("Text Widget")
     except Exception:
-        offered = tr("Text Widget") if now.get("type") == "text_label" else str(now.get("type") or "")
+        offered = tr("Text Widget") if defn.get("type") == "text_label" else str(defn.get("type") or "")
     name = ask_text(tr("Save Widget"), tr("Its name in Add Widget:"), offered, ok_text=tr("Save"),
-                    parent=mw)
+                    parent=parent)
     if not name:
-        return
-    _sid, replaced = saved_widgets.save(now, name)
+        return False
+    _sid, replaced = saved_widgets.save(defn, name)
     tooltip(tr("Saved widget replaced: {name}", name=name) if replaced
-            else tr("Saved in Add Widget: {name}", name=name), parent=mw)
+            else tr("Saved in Add Widget: {name}", name=name), parent=parent)
+    return True
+
+
+# Deep Dive's chart settings that are about its own grid or window, not the chart (left out of a saved widget)
+_DD_PLACE = {"col_span", "height", "height_scale", "time_span_idx", "label", "narrow_layout", "use_custom_style"}
+# Deep Dive's names of a setting the pinned widgets keep under another one (pinned._KEYS)
+_DD_TO_PINNED = {"breakdown_enabled": "show_breakdown", "visibility": "visible_series"}
+
+
+def deep_dive_def(kind, wtype=None, key=None, label=None, wid=None, span=-1):
+    """The definition a Deep Dive chart, stat card or text would have as a pinned widget, with its settings as the
+    Deep Dive shows them (the pinned charts read the same names); None when it has none (a chart that cannot be
+    pinned, a text gone)."""
+    import copy
+
+    from ..const.config import Config
+    from ..config import addon_config as _addon_config
+
+    if kind == "text":
+        from . import providers
+
+        t = providers.text_widgets().get(str(wid or ""))
+        return None if t is None else {"type": "text_label", "label": "", "template": t.get("template") or ""}
+    if kind == "stat":
+        from ..details.logic.stat_cards import stat_card_label_to_save
+
+        return {"type": "stat_card", "label": stat_card_label_to_save(str(key), str(label or key)),
+                "stat_key": str(key), "time_span": int(span)}
+    from ..details.logic.pinning import pin_info
+
+    info = pin_info(str(wtype or ""))
+    if info is None:
+        return None
+    root = _addon_config().config.get(Config.DEEP_DIVE_WIDGET_SETTINGS) or {}
+    sets = root.get(f"{wtype}_g")
+    if not isinstance(sets, dict):
+        sets = root.get(wtype) if isinstance(root.get(wtype), dict) else {}
+    out = {"type": info[0], "label": info[1], "time_span": int(span)}
+    mgr = root.get("manager_g") or root.get("manager") or {}
+    for k in ("show_average", "avg_on_active_days", "show_cumulative"):  # the header gear menu's shared choices
+        if k in mgr:
+            out[k] = copy.deepcopy(mgr[k])
+    for k, v in sets.items():
+        if k in _DD_PLACE or str(k).startswith("_"):
+            continue
+        out[_DD_TO_PINNED.get(k, k)] = copy.deepcopy(v)
+    return out
+
+
+def save_from_deep_dive(parent=None, **what):
+    """Deep Dive's Save Widget As...: its chart, stat card or text saved by name, as the main screen's are."""
+    defn = deep_dive_def(**what)
+    if defn is None:
+        from aqt.utils import tooltip
+
+        tooltip(tr("This widget cannot be saved"), parent=parent or mw)
+        return False
+    return _ask_and_save(defn, parent or mw)
 
 
 def context_menu(d):
@@ -690,9 +770,13 @@ def _again(key, on):
     except Exception as e:
         log_error(f"web pinned menu again: {e!r}")
         return
-    radio = any(it[0] == key and it[4] == "radio" for it in _flat(_m["items"]))  # (the page moved the tick itself)
+    old_flat = list(_flat(_m["items"]))
+    new_flat = list(_flat(mn.items))
+    radio = any(it[0] == key and it[4] == "radio" for it in old_flat)  # (the page moved the tick itself)
+    same_shape = ([it[0] for it in old_flat] == [it[0] for it in new_flat]
+                  and [bool(it[3]) for it in old_flat] == [bool(it[3]) for it in new_flat])
     _m.update(acts=mn.acts, parent=mn.parent, items=mn.items)
-    if radio or _ticks(mn.items) == shown:
+    if same_shape and (radio or _ticks(mn.items) == shown):
         return
     _push({"items": _clean(mn.own if _m["own"] else mn.items), "open": mn.parent.get(key)})
 

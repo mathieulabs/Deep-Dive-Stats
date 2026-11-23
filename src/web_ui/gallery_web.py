@@ -147,7 +147,8 @@ class WebGallery(QDialog):
         pw, ph = self.model.inner(t)
         return {"id": t.id, "name": t.name, "family": t.family, "show_name": t.show_name, "w": t.pic[0], "h": t.pic[1],
                 "pw": pw, "ph": ph, "pinned": t.pinned, "count": t.count, "marks": t.marks, "search": t.search,
-                "text": t.text, "tip": self.model.tip(t), "type": t.choice.widget_type, "saved": bool(t.saved_id)}
+                "text": t.text, "tip": self.model.tip(t), "type": t.choice.widget_type, "saved": bool(t.saved_id),
+                "preset": t.preset}
 
     def _span_options(self):
         """[[value, name]]: the default period, then the tabs' periods (as the period menu)."""
@@ -373,6 +374,10 @@ class WebGallery(QDialog):
     def done(self, result):
         try:
             self.bridge.close()
+        except Exception:
+            pass
+        try:
+            self.webview.cleanup()
         except Exception:
             pass
         super().done(result)

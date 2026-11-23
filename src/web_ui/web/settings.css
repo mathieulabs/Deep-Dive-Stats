@@ -95,6 +95,9 @@ body .dds-helptip{max-width:360px;line-height:1.45;box-shadow:0 6px 18px rgba(0,
 @media (max-width:640px){
   #dds-root .dds-field{flex-wrap:wrap;gap:8px 16px}
   #dds-root .dds-ctl{max-width:100%;justify-content:flex-start}
+  /* a row of choices (Logo / Text / None) or of buttons (Copy / Import) too wide to sit beside its name goes under it, rather than squeezing the
+     name to a few letters under the buttons */
+  #dds-root .dds-field:has(> .dds-ctl .dds-seg) > .dds-field-text,#dds-root .dds-field:has(> .dds-ctl .dds-btn) > .dds-field-text{flex:1 1 120px}
 }
 
 /* ---- controls ---- */
@@ -408,6 +411,7 @@ body .dg-tip .dg-tip-act{margin-top:6px;font-style:italic;opacity:.85}
 @media (max-width:720px){
   html.dd-touch #dds-root .dds-field{flex-wrap:wrap;gap:6px 10px;padding:8px 0}
   html.dd-touch #dds-root .dds-ctl,html.dd-touch #dds-root .dds-span-edit .dds-ctl{max-width:100%}
+  html.dd-touch #dds-root .dds-field:has(> .dds-ctl .dds-seg) > .dds-field-text,html.dd-touch #dds-root .dds-field:has(> .dds-ctl .dds-btn) > .dds-field-text{flex:1 1 120px}
   html.dd-touch #dds-root .dds-page{padding:12px 12px 24px}
   html.dd-touch #dds-root .ddk-box{width:calc(100vw - 16px);max-height:calc(100vh - 20px)}
   /* Widget Gallery (Add / Remove) mobile layout: strict viewport width, horizontal category chips, full-width grid */

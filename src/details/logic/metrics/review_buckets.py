@@ -65,9 +65,9 @@ def _memo(key, compute):
     return value
 
 
-def _join(limit):
-    # The cards only when a deck is chosen (the whole collection: the reviews alone, faster).
-    return "LEFT JOIN cards ON revlog.cid = cards.id" if (limit or "").strip() else ""
+def _join(limit, excl=""):
+    # The cards only when a deck is chosen or a deck-specific excluded-day rule references cards.*
+    return "LEFT JOIN cards ON revlog.cid = cards.id" if ((limit or "").strip() or "cards." in (excl or "")) else ""
 # Learning (and relearning) / young / mature, by the review's type and its interval before it.
 _KIND = ("CASE WHEN revlog.type IN (0, 2) OR revlog.lastIvl <= 0 THEN 0 "
          "WHEN revlog.lastIvl >= 21 THEN 2 ELSE 1 END")
@@ -84,36 +84,46 @@ def _kinds_sql(kinds, kind=_KIND):
     return f" AND {kind} IN ({', '.join(str(int(k)) for k in kinds)})" if kinds else ""
 
 
+def _excl():
+    from ....utils import excluded_days_clause
+
+    return excluded_days_clause()
+
+
 def answer_time_counts(limit, start_ms, end_ms):
     """{(seconds, rating 1-4, kind 0 learning / 1 young / 2 mature): reviews}."""
+    excl = _excl()
+
     def compute():
         rows = mw.col.db.all(f"""
             SELECT MIN(revlog.time / 1000, {MAX_SECONDS}) AS s, revlog.ease, {_KIND} AS k, COUNT(*)
-            FROM revlog {_join(limit)}
+            FROM revlog {_join(limit, excl)}
             WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
-              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 {limit}
+              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 {excl} {limit}
             GROUP BY s, revlog.ease, k
         """)
         return {(int(s or 0), int(e), int(k)): int(n) for s, e, k, n in rows}
 
-    return _memo(("time", limit, start_ms, end_ms), compute)
+    return _memo(("time", limit, start_ms, end_ms, excl), compute)
 
 
 def interval_rating_counts(limit, start_ms, end_ms, kinds=None):
     """{(interval in days before the answer, rating 1-4): reviews} of review cards (the
     answers in learning steps, without an interval in days, are left out); kinds: only those
     card kinds (kinds_of)."""
+    excl = _excl()
+
     def compute():
         rows = mw.col.db.all(f"""
             SELECT MIN(revlog.lastIvl, {MAX_INTERVAL}) AS i, revlog.ease, COUNT(*)
-            FROM revlog {_join(limit)}
+            FROM revlog {_join(limit, excl)}
             WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
-              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 AND revlog.lastIvl >= 1{_kinds_sql(kinds)} {limit}
+              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 AND revlog.lastIvl >= 1{_kinds_sql(kinds)} {excl} {limit}
             GROUP BY i, revlog.ease
         """)
         return {(int(i), int(e)): int(n) for i, e, n in rows}
 
-    return _memo(("ivl", limit, start_ms, end_ms, tuple(kinds or ())), compute)
+    return _memo(("ivl", limit, start_ms, end_ms, tuple(kinds or ()), excl), compute)
 
 
 def fatigue_counts(limit, start_ms, end_ms, kinds=None):
@@ -123,22 +133,25 @@ def fatigue_counts(limit, start_ms, end_ms, kinds=None):
     reviews are counted."""
     cutoff = int(mw.col.sched.day_cutoff)
     base = cutoff - 86400 * 40000  # days counted from far back: the division stays on positive numbers
+    excl = _excl()
 
     def compute():
+        inner_join = "LEFT JOIN cards ON revlog.cid = cards.id" if "cards." in (excl or "") else ""
         cards = "LEFT JOIN cards ON r.cid = cards.id" if (limit or "").strip() else ""
         rows = mw.col.db.all(f"""
             SELECT MIN(r.n, {MAX_POSITION}) AS p, r.ease, COUNT(*)
-            FROM (SELECT cid, ease, {_KIND} AS k,
-                         ROW_NUMBER() OVER (PARTITION BY (id / 1000 - {base}) / 86400 ORDER BY id) AS n
-                  FROM revlog
-                  WHERE id >= {int(start_ms)} AND id < {int(end_ms)} AND type < 4 AND ease BETWEEN 1 AND 4) AS r
+            FROM (SELECT revlog.cid AS cid, revlog.ease AS ease, {_KIND} AS k,
+                         ROW_NUMBER() OVER (PARTITION BY (revlog.id / 1000 - {base}) / 86400 ORDER BY revlog.id) AS n
+                  FROM revlog {inner_join}
+                  WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
+                    AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 {excl}) AS r
             {cards}
             WHERE 1 = 1{_kinds_sql(kinds, "r.k")} {limit}
             GROUP BY p, r.ease
         """)
         return {(int(p), int(e)): int(n) for p, e, n in rows}
 
-    return _memo(("fatigue", limit, int(start_ms), int(end_ms), cutoff, tuple(kinds or ())), compute)
+    return _memo(("fatigue", limit, int(start_ms), int(end_ms), cutoff, tuple(kinds or ()), excl), compute)
 
 
 def reset_events(limit, start_ms, end_ms):
@@ -146,36 +159,40 @@ def reset_events(limit, start_ms, end_ms):
     interval or ease factor, as card_states._manual_state) of the period, [(id in ms, kind 0
     learning / 1 young / 2 mature)]: the card before it, by the interval of its entry before (none
     or not in days: learning)."""
+    excl = _excl()
+
     def compute():
         rows = mw.col.db.all(f"""
             SELECT revlog.id, (SELECT p.ivl FROM revlog AS p WHERE p.cid = revlog.cid AND p.id < revlog.id
                                ORDER BY p.id DESC LIMIT 1)
-            FROM revlog {_join(limit)}
+            FROM revlog {_join(limit, excl)}
             WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
-              AND revlog.type = 4 AND revlog.factor = 0 AND revlog.ivl = 0 {limit}
+              AND revlog.type = 4 AND revlog.factor = 0 AND revlog.ivl = 0 {excl} {limit}
         """)
         return [(int(rid), 2 if (ivl or 0) >= 21 else (1 if (ivl or 0) > 0 else 0)) for rid, ivl in rows]
 
-    return _memo(("reset", limit, int(start_ms), int(end_ms)), compute)
+    return _memo(("reset", limit, int(start_ms), int(end_ms), excl), compute)
 
 
 def week_hour_counts(limit, start_ms, end_ms):
     """{(weekday 0 Monday .. 6 Sunday, hour 0-23): reviews} by the clock of this computer
     (the answers of the period; manual entries such as a due date set left out)."""
+    excl = _excl()
+
     def compute():
         rows = mw.col.db.all(f"""
             SELECT CAST(strftime('%w', revlog.id / 1000, 'unixepoch', 'localtime') AS INTEGER) AS wd,
                    CAST(strftime('%H', revlog.id / 1000, 'unixepoch', 'localtime') AS INTEGER) AS h,
                    COUNT(*)
-            FROM revlog {_join(limit)}
+            FROM revlog {_join(limit, excl)}
             WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
-              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 {limit}
+              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 {excl} {limit}
             GROUP BY wd, h
         """)
         # strftime('%w'): 0 is Sunday; date.weekday(): 0 is Monday.
         return {((int(wd) + 6) % 7, int(h)): int(n) for wd, h, n in rows}
 
-    return _memo(("week", limit, start_ms, end_ms), compute)
+    return _memo(("week", limit, start_ms, end_ms, excl), compute)
 
 
 def day_hour_counts(limit, start_ms, end_ms):
@@ -184,20 +201,21 @@ def day_hour_counts(limit, start_ms, end_ms):
     from .. import rollover_hour
 
     roll = int(rollover_hour() or 0) * 3600
+    excl = _excl()
 
     def compute():
         rows = mw.col.db.all(f"""
             SELECT strftime('%Y-%m-%d', revlog.id / 1000 - {roll}, 'unixepoch', 'localtime') AS d,
                    CAST(strftime('%H', revlog.id / 1000, 'unixepoch', 'localtime') AS INTEGER) AS h,
                    COUNT(*)
-            FROM revlog {_join(limit)}
+            FROM revlog {_join(limit, excl)}
             WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
-              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 {limit}
+              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 {excl} {limit}
             GROUP BY d, h
         """)
         return {(str(d), int(h)): int(n) for d, h, n in rows}
 
-    return _memo(("dayhour", limit, start_ms, end_ms, roll), compute)
+    return _memo(("dayhour", limit, start_ms, end_ms, roll, excl), compute)
 
 
 def rating_times(limit, start_ms, end_ms, minutes=False, kinds=None):
@@ -208,6 +226,7 @@ def rating_times(limit, start_ms, end_ms, minutes=False, kinds=None):
     from .. import rollover_hour
 
     roll = int(rollover_hour() or 0) * 3600
+    excl = _excl()
     if minutes:
         key = "revlog.id / 60000"
     else:
@@ -216,14 +235,14 @@ def rating_times(limit, start_ms, end_ms, minutes=False, kinds=None):
     def compute():
         rows = mw.col.db.all(f"""
             SELECT {key} AS d, revlog.ease, SUM(revlog.time)
-            FROM revlog {_join(limit)}
+            FROM revlog {_join(limit, excl)}
             WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
-              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4{_kinds_sql(kinds)} {limit}
+              AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4{_kinds_sql(kinds)} {excl} {limit}
             GROUP BY d, revlog.ease
         """)
         return {(int(d) if minutes else str(d), int(e)): int(ms or 0) for d, e, ms in rows}
 
-    return _memo(("ratingtime", limit, start_ms, end_ms, roll, bool(minutes), tuple(kinds or ())), compute)
+    return _memo(("ratingtime", limit, start_ms, end_ms, roll, bool(minutes), tuple(kinds or ()), excl), compute)
 
 
 def first_answers(limit, start_ms, end_ms):
@@ -232,20 +251,23 @@ def first_answers(limit, start_ms, end_ms):
     {(kind 0 learning / 1 young / 2 mature, passed 0/1): answers}."""
     cutoff = int(mw.col.sched.day_cutoff)
     base = cutoff - 86400 * 40000  # days counted from far back: the division stays on positive numbers
+    excl = _excl()
 
     def compute():
+        # SQLite guarantees bare columns in a GROUP BY with a single MIN() come from the minimizing row:
+        # avoids scanning the whole collection in a subquery and eliminates the self-join back to revlog.
         rows = mw.col.db.all(f"""
-            SELECT {_KIND} AS k, revlog.ease > 1 AS ok, COUNT(*)
-            FROM revlog {_join(limit)}
-            JOIN (SELECT MIN(id) AS mid FROM revlog
-                  WHERE id >= {int(start_ms)} AND id < {int(end_ms)} AND type < 4 AND ease BETWEEN 1 AND 4
-                  GROUP BY cid, (id / 1000 - {base}) / 86400) AS f
-              ON revlog.id = f.mid
-            WHERE 1 = 1 {limit}
+            SELECT k, ok, COUNT(*) FROM (
+                SELECT MIN(revlog.id), {_KIND} AS k, revlog.ease > 1 AS ok
+                FROM revlog {_join(limit, excl)}
+                WHERE revlog.id >= {int(start_ms)} AND revlog.id < {int(end_ms)}
+                  AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4 {excl} {limit}
+                GROUP BY revlog.cid, (revlog.id / 1000 - {base}) / 86400
+            )
             GROUP BY k, ok
         """)
         return {(int(k), int(ok)): int(n) for k, ok, n in rows}
 
-    return _memo(("first", limit, int(start_ms), int(end_ms), cutoff), compute)
+    return _memo(("first", limit, int(start_ms), int(end_ms), cutoff, excl), compute)
 
 

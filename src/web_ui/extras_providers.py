@@ -147,6 +147,47 @@ def series_colors(types):
             from ..details.logic.logger import log_swallowed
 
             log_swallowed()
+    if "due_today" in types:
+        try:
+            from ..details.widgets.charts.due_today import METRIC
+
+            out["due_today"] = {"series": {s["key"]: str(s["color"]) for s in METRIC.series(cfg)}}
+        except Exception:
+            from ..details.logic.logger import log_swallowed
+
+            log_swallowed()
+    return out
+
+
+def paint_colors(types):
+    """The colours the other charts take from their data (Week by Hour, SxR, B-W Matrix, First Answer Retention),
+    by field, sent with a new theme (dd-core.js DD.registerChart): they repaint with the rest at once."""
+    from ..const.config import Config
+    from ..details.ui import get_chart_color, get_color
+    from . import providers
+
+    def chart(key, default):
+        try:
+            return str(get_chart_color(key, None))
+        except Exception:
+            return default
+
+    out = {}
+    try:
+        if "week_hours" in types:
+            out["week_hours"] = {"color": chart(Config.HEATMAP_COLOR, "#3b82f6")}
+        if "sxr_heatmap" in types:
+            out["sxr_heatmap"] = {"color": chart(Config.HEATMAP_COLOR, "#3b82f6")}
+        if "bw_matrix" in types:
+            out["bw_matrix"] = {"more": chart(Config.COLOR_EASY, "#3b82f6"), "less": chart(Config.COLOR_AGAIN, "#ef4444")}
+        if "todays_retention" in types:
+            conf = providers._cfg().config
+            out["todays_retention"] = {"colors": {"pass": str(get_color(conf, Config.COLOR_GOOD, "details")),
+                                                  "fail": str(get_color(conf, Config.COLOR_AGAIN, "details"))}}
+    except Exception:
+        from ..details.logic.logger import log_swallowed
+
+        log_swallowed()
     return out
 
 
@@ -175,6 +216,9 @@ def pie_settings(wtype):
     return out
 
 
+_NON_DAY_DISTS = frozenset(("time_distribution", "lapse_distribution", "review_distribution", "learning_steps"))
+
+
 def _interval_like(wtype, data, deck, span):
     """The payload of the Review Intervals chart (what discrete.js reads) over another distribution."""
     from ..details.widgets.common.fsrs_filters import (
@@ -186,6 +230,15 @@ def _interval_like(wtype, data, deck, span):
     from . import providers
 
     modes, short, _long = resolve_fsrs_filters(providers._setting(wtype, "filter_modes", None))
+    if wtype in _NON_DAY_DISTS:
+        # Non-day axes (seconds, lapses, reviews, steps): drop day-based cutoffs like "1 month" (31).
+        keep = [i for i, m in enumerate(modes) if m in ("50_percent", "95_percent", "all") or (len(m) > 1 and m[0] == "p" and m[1:].isdigit())]
+        if len(keep) >= 2:
+            modes = tuple(modes[i] for i in keep)
+            short = tuple(short[i] for i in keep)
+            _long = tuple(_long[i] for i in keep)
+        else:
+            modes, short, _long = resolve_fsrs_filters(("50_percent", "95_percent", "all"))
     idx, mode = resolve_fsrs_filter_choice(providers._setting(wtype, "time_span_idx"), modes=modes)
     dist = data.get("distribution", {}) or {}
     found = compute_fsrs_distribution_percentiles(dist, percentiles=(0.50, 0.95), positive_only=True, default_value=30)
@@ -224,10 +277,11 @@ def machine_days(span, options=None):
     from ..const.base import Period
     from ..details.logic import rollover_hour
     from ..details.logic.metrics.card_states import span_ordinal
+    from . import providers
 
     options = options or {}
     today = span_ordinal(Period.TOTAL)
-    start = span_ordinal(span, options.get("custom_days", 7))
+    start = span_ordinal(span, providers._custom_days(options))
     first = min(start, today)
     try:
         rid = mw.col.db.scalar("SELECT min(id) FROM revlog")

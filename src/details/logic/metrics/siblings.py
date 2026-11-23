@@ -45,16 +45,16 @@ def _feed(st, rows):
         if seen is None:
             seen = last[nid] = {}
         elif rtype == 1 and (last_ivl or 0) >= MATURE:
-            prev = prev_mature = None
-            for other, (d, mature) in seen.items():
-                if other != cid and (prev is None or d > prev):
-                    prev, prev_mature = d, mature
+            prev = prev_rid = prev_mature = None
+            for other, (d, r, mature) in seen.items():
+                if other != cid and (prev is None or (d, r) > (prev, prev_rid)):
+                    prev, prev_rid, prev_mature = d, r, mature
             if prev is not None and prev_mature:
                 ids.append(int(rid))
                 cids.append(int(cid))
                 gaps.append(min(MAX_GAP, max(0, day - prev)))
                 eases.append(int(ease))
-        seen[cid] = (day, (ivl or 0) >= MATURE)
+        seen[cid] = (day, int(rid), (ivl or 0) >= MATURE)
 
 
 def _state():
@@ -67,7 +67,7 @@ def _state():
         st = _STATE
         same = st.get("col") == id(mw.col) and st.get("phase") == phase
         if same and st.get("max_id") == max_id and st.get("count") == count:
-            return st
+            return dict(st)
         if same and st.get("max_id") and count >= st.get("count", 0):
             new_rows = mw.col.db.scalar("SELECT count() FROM revlog WHERE id > ?", st["max_id"])
             if int(new_rows or 0) == count - st["count"]:
@@ -75,13 +75,13 @@ def _state():
                 # stays inside the ids it found).
                 _feed(st, mw.col.db.all(_QUERY.format(where=f"AND r.id > {int(st['max_id'])}")))
                 st["max_id"], st["count"] = max_id, count
-                return st
+                return dict(st)
         fresh = {"col": id(mw.col), "phase": phase, "base": cutoff - 86400 * 40000, "max_id": max_id, "count": count,
                  "ids": array("q"), "cids": array("q"), "gaps": array("b"), "eases": array("b"), "last": {}}
         _feed(fresh, mw.col.db.all(_QUERY.format(where="")))
         _STATE.clear()
         _STATE.update(fresh)
-        return _STATE
+        return dict(_STATE)
 
 
 def sibling_counts(limit, start_ms, end_ms):

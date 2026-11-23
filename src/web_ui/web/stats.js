@@ -10,7 +10,9 @@
   const PT = 96 / 72; // point sizes at 96 dpi
 
   function parse(hex){
-    const h = String(hex || '#888888').replace('#', '');
+    let h = String(hex || '#888888').replace('#', '').trim();
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    else if (h.length === 8) h = h.slice(2);  // Qt #AARRGGBB
     return [0, 2, 4].map(function(o){ return parseInt(h.substr(o, 2), 16) || 0; });
   }
   function mix(a, z, t){ return [0, 1, 2].map(function(i){ return Math.round(a[i] + (z[i] - a[i]) * t); }); }
@@ -562,7 +564,12 @@
           const t = Math.min(1, (now - t0) / rollMs), e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
           const cv = plan.from + (plan.to - plan.from) * e;
           if (t >= 1){ v.textContent = text; delete rolls[key]; return; }
-          v.textContent = plan.prefix + fmtRoll(plan.dec > 0 ? cv : Math.round(cv), plan.dec, plan.kind) + (plan.kind === 'percent' ? '%' : plan.suffix);
+          // written only when the text changes (the count's last frames often show the same number), in its text node
+          // (no node made and put in at each frame)
+          const s = plan.prefix + fmtRoll(plan.dec > 0 ? cv : Math.round(cv), plan.dec, plan.kind) + (plan.kind === 'percent' ? '%' : plan.suffix);
+          const tn = v.firstChild;
+          if (tn && tn.nodeType === 3 && !tn.nextSibling){ if (tn.data !== s) tn.data = s; }
+          else v.textContent = s;
           r.raf = requestAnimationFrame(step);
         })(t0);
       }
@@ -596,13 +603,14 @@
       }
       function fxKick(){ if (!fxRaf){ fxLast = 0; fxRaf = requestAnimationFrame(fxTick); } }
       function fxBind(d, key){
-        const f = fxOf(key), on = th.stat.hover_effect !== false && cur.hover_effect !== false;
+        const f = fxOf(key);
+        const hoverOn = function(){ return th.stat.hover_effect !== false && cur.hover_effect !== false; };
         if (f.bound === d) return; f.bound = d;
         f.target = f.locked ? 1 : 0; fxApply(key); fxKick();
-        d.addEventListener('mouseenter', function(){ if (!on) return; f.hover = true; if (!f.locked) f.target = 1; fxApply(key); fxKick(); });
+        d.addEventListener('mouseenter', function(){ if (!hoverOn()) return; f.hover = true; if (!f.locked) f.target = 1; fxApply(key); fxKick(); });
         d.addEventListener('mouseleave', function(){ f.hover = false; if (!f.locked) f.target = 0; fxApply(key); fxKick(); });
         d.addEventListener('click', function(){
-          if (root._justDragged || !on) return;
+          if (root._justDragged || !hoverOn()) return;
           f.locked = !f.locked; f.target = f.locked ? 1 : 0;
           cur.unlocked = (cur.unlocked || []).filter(function(x){ return x !== key; }); if (!f.locked) cur.unlocked.push(key);
           fxKick(); DD.call('stat_lock', {key: key, locked: f.locked}).catch(function(){});
@@ -703,7 +711,7 @@
           ln.style.rowGap = GAP + 'px';
           chunks.forEach(function(ch){
             const m = ch.length, gaps = GAP * (m - 1), cg = gaps;
-            const total = ch.reduce(function(a, j){ return a + Math.trunc(idealOf(group[j].value, group[j].label)); }, 0) + cg;
+            const total = ch.reduce(function(a, j){ return a + Math.trunc(idealOf(group[j].value, group[j].label, group[j])); }, 0) + cg;
             const hTot = ch.reduce(function(a, j){ return a + hid[j]; }, 0) + cg;
             const ty = Object.assign({}, typography(avail * wk, total, st.scale, hTot));  // the text as big as in the window
             // web: a little taller with few charts per row (big charts under them), lower with many
@@ -795,9 +803,8 @@
         if (!drag) return; const d = drag; drag = null;
         if (d.ghost) d.ghost.remove(); if (d.mark) d.mark.remove(); d.el.classList.remove('dd-sc-drag');
       }
-      window.addEventListener('pointercancel', function(e){ if (e.pointerType !== 'touch') abortSc(); });
-      window.addEventListener('blur', abortSc);
-      window.addEventListener('pointermove', function(e){
+      const onCancel = function(e){ if (e.pointerType !== 'touch') abortSc(); };
+      const onMove = function(e){
         if (!drag || e.pointerType === 'touch') return;
         if (!(e.buttons & 1)){ abortSc(); return; }
         if (!drag.on){
@@ -818,8 +825,8 @@
           const rr = root.getBoundingClientRect();
           m.style.cssText = 'display:block;height:3px;width:' + rr.width + 'px;left:' + rr.left + 'px;top:' + (tg.y - 1) + 'px';
         }
-      });
-      window.addEventListener('pointerup', function(e){
+      };
+      const onUp = function(e){
         if (!drag || e.pointerType === 'touch') return;
         const d = drag; drag = null;
         if (!d.on) return;
@@ -834,7 +841,11 @@
           ls[tg.line].splice(tg.idx, 0, d.key);
         }
         commit(ls);
-      });
+      };
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('blur', abortSc);
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
       // touch: hold a card to lift it, move to drag it (the pointer drag above, fed by the lift), or let go for its menu;
       // in the pinned block the block itself does all this (no hooks here)
       if (DD.touchLift && (hooks.onLayout || hooks.onMenu)){
@@ -910,7 +921,16 @@
         },
         setTheme: function(t){ th = t; layout(); },
         relayout: function(){ layout(); },
-        destroy: function(){ ro.disconnect(); root.remove(); },
+        destroy: function(){
+          abortSc();
+          if (fxRaf){ cancelAnimationFrame(fxRaf); fxRaf = 0; }
+          Object.keys(rolls).forEach(function(k){ if (rolls[k] && rolls[k].raf) cancelAnimationFrame(rolls[k].raf); delete rolls[k]; });
+          window.removeEventListener('pointercancel', onCancel);
+          window.removeEventListener('blur', abortSc);
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          ro.disconnect(); root.remove();
+        },
       };
     },
   };

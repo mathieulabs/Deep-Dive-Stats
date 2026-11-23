@@ -2,7 +2,8 @@
 # Copyright (C) 2026 Deep Dive Stats contributors
 """Introduced cards: the first time each card was answered (its first rated review), and the
 first answer after each reset ("Forget": a manual entry without ease factor), as Search Stats
-Extended counts them.
+Extended counts them. Cramming answers (a filtered deck that does not reschedule: type Filtered,
+no ease factor) are left out: the card stays new after them.
 
 introduction_events(cfg, deck, deleted): [(review id in ms, rating 1-4, re-introduced)].
 
@@ -28,7 +29,7 @@ def _full_read():
     for rid, ease, cid in mw.col.db.all("""
         SELECT r.id, r.ease, r.cid
         FROM revlog AS r
-        JOIN (SELECT cid, MIN(id) AS mid FROM revlog WHERE type < 4 AND ease > 0 GROUP BY cid) AS m
+        JOIN (SELECT cid, MIN(id) AS mid FROM revlog WHERE type < 4 AND ease > 0 AND NOT (type = 3 AND factor = 0) GROUP BY cid) AS m
           ON r.id = m.mid
     """):
         by_card.setdefault(int(cid), []).append((int(rid), int(ease), False))
@@ -37,7 +38,8 @@ def _full_read():
     for rid, ease, cid in mw.col.db.all("""
         SELECT DISTINCT n.id, n.ease, n.cid
         FROM (SELECT (SELECT MIN(r.id) FROM revlog AS r
-                      WHERE r.cid = f.cid AND r.id > f.id AND r.type < 4 AND r.ease > 0) AS nid
+                      WHERE r.cid = f.cid AND r.id > f.id AND r.type < 4 AND r.ease > 0
+                        AND NOT (r.type = 3 AND r.factor = 0)) AS nid
               FROM revlog AS f
               WHERE f.type = 4 AND f.factor = 0) AS x
         JOIN revlog AS n ON n.id = x.nid
@@ -58,7 +60,7 @@ def _card_events(rows):
     for rid, ease, rtype, factor in rows:
         if rtype == 4 and not factor:
             introduced = False
-        elif rtype < 4 and ease and ease > 0 and not introduced:
+        elif rtype < 4 and ease and ease > 0 and not introduced and not (rtype == 3 and not factor):
             out.append((int(rid), int(ease), seen))
             introduced = seen = True
     return out

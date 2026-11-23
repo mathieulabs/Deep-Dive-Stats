@@ -730,11 +730,12 @@ FUTURE_RETENTION_DAYS = 365  # the days ahead shown, at most
 
 
 def _future_retention_source(cfg, deck_id, is_deleted):
+    from ....logic.fsrs_math import curve_known
     from ....logic.metrics.future_due import _expected_retention
     from ....logic.metrics.review_buckets import did_limit
 
-    if deck_id == -1 or is_deleted:
-        return None  # deleted cards: no card info (no memory state)
+    if deck_id == -1 or is_deleted or not curve_known():
+        return None  # deleted cards or unknown FSRS curve: no expected retention
     return _expected_retention(did_limit(cfg, deck_id, is_deleted), False)
 
 

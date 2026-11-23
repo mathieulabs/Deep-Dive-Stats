@@ -331,22 +331,27 @@
       Object.keys(dist).forEach(function(k){
         const day = parseInt(k, 10);
         if (day > maxDays) return;
-        const idx = bs <= 1 ? day - 1 : Math.floor(day / bs);
+        const idx = bs <= 1 ? Math.max(0, day - 1) : Math.floor(day / bs);
         if (idx >= 0 && idx < nFull){ values[idx] += Number(dist[k] || 0); }
       });
       values.forEach(function(v){ total += v; });  // (the header's total: all the cards, zoomed or not)
-      // its bins' days: one a day from day 1, else bins of bs days on the grid of day 0 (the first from day 1, the last
-      // up to maxDays); zoomed, the bins of the days shown, of the size for their span (Review Intervals' zoom)
+      // its bins' days: one a day from day 1 (with day 0 / s < 0.5 folded into bin 0), else bins of bs days on the grid
+      // of day 0; zoomed, the bins of the days shown, of the size for their span (Review Intervals' zoom)
       const z = zoomOf(opts._zoom, 1, maxDays), zk = z ? (adaptive ? binSize(z[1] - z[0], scale) : 1) : bs;
       let ranges;
-      if (z){ ranges = gridBins(z[0], z[1], zk); values = binSums(dist, ranges); }
-      else ranges = values.map(function(v, i){ return bs <= 1 ? [i + 1, i + 2] : [Math.max(1, i * bs), Math.min(maxDays + 1, (i + 1) * bs)]; });
+      if (z){
+        ranges = gridBins(z[0], z[1], zk);
+        if (z[0] <= 1 && ranges.length) ranges[0] = [0, ranges[0][1]];
+        values = binSums(dist, ranges);
+      }
+      else ranges = values.map(function(v, i){ return bs <= 1 ? [i === 0 ? 0 : i + 1, i + 2] : [i === 0 ? 0 : i * bs, Math.min(maxDays + 1, (i + 1) * bs)]; });
       const n = ranges.length;
       const interval = Math.max(1, Math.floor(n / 5));
       const med = payload.median || 0;
+      const camDist = dist[0] ? Object.assign({}, dist, {1: Number(dist[1] || 0) + Number(dist[0] || 0)}) : dist;
       return {count: n, values: values, flags: values.map(function(){ return false; }), parts: null, labels: [], zeroIdx: null,
         emptyDeck: !Object.keys(dist).length, binStep: bs, ranges: ranges,
-        fullMin: 1, fullN: maxDays, win: z ? [z[0], z[1] + 1] : null, binK: zk, backK: null, cam: futureDueRuns(dist, null, [], 1, maxDays),
+        fullMin: 1, fullN: maxDays, win: z ? [z[0], z[1] + 1] : null, binK: zk, backK: null, cam: futureDueRuns(camDist, null, [], 1, maxDays),
         labelsFn: function(g){
           const out = [];
           for (let i = 0; i < n; i += interval){
@@ -385,7 +390,8 @@
             for (let i = 0; i <= 100; i++){ run += dense[i]; if (run >= total / 2){ med = i; break; } }
             stat = DD.t('Median difficulty: {value}%', {value: med});
           } else {
-            let sum = 0; for (let i = 0; i <= 100; i++) sum += i * dense[i];
+            // 1% bins 0..99 represent [i, i+1): use bin midpoint i+0.5 (100 stays 100)
+            let sum = 0; for (let i = 0; i <= 100; i++) sum += (i < 100 ? i + 0.5 : 100) * dense[i];
             const avg = sum / total;
             const fa = Math.abs(avg - Math.round(avg)) < 1e-6 ? U.formatNum(Math.round(avg)) : U.trimNum(avg, 1);
             const know = Math.trunc(avg / 100 * total);
@@ -499,11 +505,15 @@
       ctx.globalAlpha = 1;
     }
     // the running total's numbers on the right
+    _fmtRight(v, top){
+      return (top != null ? top : v) < 10 ? U.trimNum(v, 1) : U.formatNum(Math.trunc(v));
+    }
     _rightAxis(ctx, ticks, w, mt, plotH){
-      const dark = !!this.colors.is_dark;
+      const dark = !!this.colors.is_dark, self = this;
+      const top = ticks.reduce(function(a, k){ return Math.max(a, k.v || 0); }, 0);
       ctx.font = FONT; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
       ctx.fillStyle = css(parseColor(this.colors.text_secondary), ((dark ? 175 : 215) * 0.8 / 255).toFixed(4));
-      ticks.forEach(function(k){ ctx.globalAlpha = k.a; ctx.fillText(U.formatNum(Math.trunc(k.v)), w - 4, Math.trunc(mt + plotH * (1 - k.f))); });
+      ticks.forEach(function(k){ ctx.globalAlpha = k.a; ctx.fillText(self._fmtRight(k.v, top), w - 4, Math.trunc(mt + plotH * (1 - k.f))); });
       ctx.globalAlpha = 1;
     }
     // the running total over the bars, as Anki's charts draw it (.cumulative-overlay): a flat pale area in the text's
@@ -695,10 +705,12 @@
       // the axis goes straight from the old maximum to the new one
       // and each bar from its old share of the old axis to its new share of the new one. (An axis eased in log space
       // with values eased straight draws bars far over the top halfway, from a small deck to a big one.)
-      out.axisMax = Math.max(1, DD.scaleLerp(ax0, ax1, e));
+      // (not floored at 1: Interval Load's tops are loads a day, 0.67 for a small deck; the glide went to 1 and the
+      // chart at rest then jumped to its own top)
+      out.axisMax = Math.max(1e-9, DD.scaleLerp(ax0, ax1, e));
       // the start and end tops of both axes and the progress: the sliding axis numbers go with the bars (DD.slideTicks)
       const sumOf = function(x){ const r = (x.values || []).reduce(function(p, q){ return p + q; }, 0); return r === 0 ? 1 : r; };
-      out.ax = [Math.max(1, ax0), Math.max(1, ax1), e, sumOf(a), sumOf(m)];
+      out.ax = [Math.max(1e-9, ax0), Math.max(1e-9, ax1), e, sumOf(a), sumOf(m)];
       out.emptyDeck = false;
       out.values = []; for (let i = 0; i < n; i++){
         const o = io(i), w = inn(i);
@@ -895,7 +907,7 @@
         if (self.options.show_cumulative !== false && !mm.noCum){
           const sm = vv.reduce(function(a, b){ return a + b; }, 0);
           let rw = 0;
-          for (let g = 0; g <= 4; g++) rw = Math.max(rw, ctx.measureText(U.formatNum(Math.trunc(sm * g / 4))).width);
+          for (let g = 0; g <= 4; g++) rw = Math.max(rw, ctx.measureText(self._fmtRight(sm * g / 4, sm)).width);
           r = Math.max(20, Math.trunc(rw) + 10);
         }
         return [l, r];
@@ -954,7 +966,7 @@
       this.hoverDots = [];
       const fadeFill = function(hex, x, y, bw, bh, alphaF){ return barFill(ctx, hex, y, bw, bh, alphaF, dark, gradK); };
       const rect = function(x, y, bw, bh, fill, rounded){ roundedBar(ctx, x, y, bw, bh, fill, rounded); };
-      const maxR = Math.max(1, axisMax);
+      const maxR = Math.max(1e-9, axisMax);  // (a top under 1: Interval Load, a load a day; floored at 1 its bars stopped short of it)
       // a bar's colour: the backlog one, the chart's own, or between the two during a transition (m.flagW)
       const barHex = function(i, x, bw){
         const own = m.colorFn ? m.colorFn(i) : gradientColor(baseHex, (x + bw / 2 - ml) / Math.max(1, plotW), dark);
@@ -1100,13 +1112,15 @@
       if (showCum){
         ctx.font = FONT; ctx.fillStyle = axisCol2; ctx.textAlign = 'right';
         if (DD.axisSlide && DD.axisSlide()){
-          (m.ax ? DD.slideTicks(m.ax[3], m.ax[4], totalCards, m.ax[2], 4, plotH) : DD.slideTicks(totalCards, totalCards, totalCards, 1, 4, plotH)).forEach((k) => {
-            ctx.globalAlpha = k.a; ctx.fillText(U.formatNum(Math.trunc(k.v)), w - 4, Math.trunc(mt + plotH * (1 - k.f)));
+          const rticks = m.ax ? DD.slideTicks(m.ax[3], m.ax[4], totalCards, m.ax[2], 4, plotH) : DD.slideTicks(totalCards, totalCards, totalCards, 1, 4, plotH);
+          const rtop = Math.max(totalCards, rticks.reduce(function(a, k){ return Math.max(a, k.v || 0); }, 0));
+          rticks.forEach((k) => {
+            ctx.globalAlpha = k.a; ctx.fillText(this._fmtRight(k.v, rtop), w - 4, Math.trunc(mt + plotH * (1 - k.f)));
           });
           ctx.globalAlpha = 1;
         } else for (let i = 0; i <= 4; i++){
           const y = mt + plotH * (1 - i / 4);
-          ctx.fillText(U.formatNum(Math.trunc(totalCards * i / 4)), w - 4, Math.trunc(y));
+          ctx.fillText(this._fmtRight(totalCards * i / 4, totalCards), w - 4, Math.trunc(y));
         }
       }
 
@@ -1840,7 +1854,11 @@
           // the pie shown in place of the bars too (it kept the old theme's texts: white on a light theme): its colors,
           // and its slices' colors taken again from the new theme, drawn at once (the theme change fades the pictures)
           setTheme: function(){
-            chart.colors = DD.theme.chart; state.last = true; DD.frame.kick();
+            chart.colors = DD.theme.chart;
+            // Difficulty / Retrievability: their bars' gradient is made with the model (from the theme): made again
+            // now, not once the data is read again
+            if (chart.m && chart.m.colorFn){ const nm = chart._model(); if (nm.colorFn) chart.m.colorFn = nm.colorFn; }
+            state.last = true; DD.frame.kick();
             if (pieInst){ if (pieInst.setTheme) pieInst.setTheme(); const was = DD._noAnim; DD._noAnim = true; try { pieShow(); } finally { DD._noAnim = was; } }
           },
           destroy: function(){ if (zm) zm.off(); if (pieInst) pieInst.destroy(); if (ctx.head) delete ctx.head._ddPie; if (tm) tm.destroy(); el.classList.remove('dd-tmb'); DD.frame.remove(frame); resizer.disconnect(); el.innerHTML = ''; if (ctx.head){ const p = ctx.head.querySelector('.dd-pills'); if (p) p.innerHTML = ''; } },

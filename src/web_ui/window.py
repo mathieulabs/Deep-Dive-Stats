@@ -3,6 +3,7 @@
 """The Deep Dive window: a page drawn by web/app.js, its data and settings served by Python (bridge.py)."""
 
 import json
+import os
 import sys
 import time
 from urllib.parse import quote
@@ -14,6 +15,10 @@ from ..details.logic.logger import log_error, log_warn
 from . import providers
 from .bridge import Bridge
 from .text_editor import editor_data as text_editor_data
+
+# Demo recordings only (dev_tools/demo_collection/record): DD_RECORD_PRELOAD=1 reads every chart's data a few seconds
+# after Anki starts and keeps it, and the window opens with all of it (no chart loading on the video)
+RECORD_PRELOAD = bool(os.environ.get("DD_RECORD_PRELOAD"))
 from .theme import build_theme
 from .trace import dev_flag, is_dev, trace
 
@@ -36,11 +41,15 @@ def _web_i18n():
 
 
 def _script_json(value):
-    return json.dumps(value).replace("</", "<\\/")
+    from .bridge import _js
+
+    return _js(value).replace("</", "<\\/")
 
 
 class WebDeepDiveDialog(QDialog):
     def __init__(self, parent=None):
+        self._t_open = time.perf_counter()
+        self._open_perf = {}
         super().__init__(None)  # no Qt parent: a taskbar button of its own
         # one config object for this window: the settings dialog edits it live (theme preview)
         from ..config import addon_config as _addon_config
@@ -132,13 +141,15 @@ class WebDeepDiveDialog(QDialog):
         bridge.register("set_setting", self._set_setting)
         bridge.register("pie_separate", self._pie_separate)
         bridge.register("pin_chart", self._pin_chart)
+        # Save Widget As...: a chart, stat card or text kept by name for Add Widget (My Widgets), as on the main screen
+        bridge.register("save_widget", lambda **what: self._later(lambda: self._save_widget(what)))
         bridge.register("set_heatmap", self._set_heatmap)
         bridge.register("pick_heatmap_color", lambda: self._later(self._pick_heatmap_color))
         bridge.register("edit_gradient", lambda new=False, color=None: self._later(lambda: self._edit_gradient(new, color)))
         bridge.register("set_show_stats", self._set_show_stats)
         bridge.register("span_from_zoom", lambda first, last, name=None: self._span_from_zoom(first, last, name))
         bridge.register("span_name", self._span_name)
-        bridge.register("zoom_stats", lambda deck=None, span=-1, first=None, last=None, bounds=None, query="": self._with_search(query, lambda: providers.zoom_stats(deck or None, span, first, last, bounds)), background=True)
+        bridge.register("zoom_stats", lambda deck=None, span=-1, first=None, last=None, bounds=None, query="", types=None: self._with_search(query, lambda: providers.zoom_stats(deck or None, span, first, last, bounds, types=types)), background=True)
         bridge.register("review_events", lambda deck=None, t0=0, t1=0, query="": self._with_search(query, lambda: providers.review_events(deck or None, t0, t1)), background=True)
         bridge.register("open_card", self._open_card)
         bridge.register("stat_settings", lambda key=None, label=None: self._later(lambda: self._stat_settings(key, label)))
@@ -199,10 +210,38 @@ class WebDeepDiveDialog(QDialog):
                 pass
 
         self.destroyed.connect(unhook)
+        self._unhook_theme = unhook
+
+    def dispose(self):
+        """Release bridge, webview, theme hooks, and any active offscreen export when discarding this window."""
+        if getattr(self, "_exporting", False):
+            try:
+                self._export_end(finish=False)
+            except Exception:
+                pass
+        unhook = getattr(self, "_unhook_theme", None)
+        if unhook:
+            self._unhook_theme = None
+            try:
+                unhook()
+            except Exception:
+                pass
         try:
-            self.finished.connect(unhook)
+            self.bridge.close()
         except Exception:
             pass
+        try:
+            self.webview.cleanup()
+        except Exception:
+            pass
+
+    def closeEvent(self, event):
+        if getattr(self, "_exporting", False):
+            try:
+                self._export_end(finish=False)
+            except Exception:
+                pass
+        super().closeEvent(event)
 
     # ---- the parent the add-on's settings dialog talks to: a theme or color picked
     # there, even before Save (live preview), restyles this window at once ----
@@ -242,14 +281,69 @@ class WebDeepDiveDialog(QDialog):
             from aqt.qt import QTimer
 
             self._went = True
+            t_open = getattr(self, "_t_open", None)
+            if t_open is not None:
+                op = getattr(self, "_open_perf", {}) or {}
+                since_open = 1000 * (time.perf_counter() - t_open)
+                trace(
+                    f"PERFTRACE dd_open ready={since_open:.0f}ms boot={op.get('boot_ms', 0):.0f}ms"
+                    f" ser={op.get('ser_ms', 0):.1f}ms html={op.get('html_ms', 0):.1f}ms"
+                    f" boot_kb={op.get('boot_kb', 0):.1f}"
+                )
             # a few frames for the first paint of the window, then every chart starts together
             QTimer.singleShot(120, lambda: self.webview.eval("window.DD && DD.go && DD.go()"))
 
     def _on_page_loaded(self, ok=True):
         self._page_ok = True
         self._went = False
+        if getattr(self, "_veiled", False):
+            from aqt.qt import QTimer
+
+            QTimer.singleShot(60, self._unveil)  # (a few frames for the page's first paint)
         self._go_check()
         self._rate_flush()
+        # Safety net: if a script failed to load (e.g. transient HTTP/cache error), reload once with a fresh cache-buster
+        if self.webview is not None and getattr(self, "_load_retries", 0) < 2:
+            def _check_boot(ready):
+                if ready or self.webview is None or getattr(self, "_disposed", False):
+                    return
+                retries = getattr(self, "_load_retries", 0) + 1
+                self._load_retries = retries
+                log_warn(f"web window: DD.start missing after load, retrying ({retries}/2)")
+                self._load_page(bust=str(int(time.time() * 1000)))
+
+            try:
+                self.webview.evalWithCallback("Boolean(window.DD && typeof DD.start === 'function')", _check_boot)
+            except Exception:
+                pass
+
+    # ---- opened, the window stays see-through until its page has painted (shown at once, it was an empty window
+    # for half a second while the page loaded); never longer than 1.5 s ----
+    def show_when_ready(self):
+        from aqt.qt import QTimer
+
+        if self.webview is None or getattr(self, "_page_ok", False):
+            self.show()
+            return
+        self._veiled = True
+        try:
+            self.setWindowOpacity(0.0)
+        except Exception:
+            self._veiled = False
+        self.show()
+        if self._veiled:
+            QTimer.singleShot(1500, self._unveil)
+
+    def _unveil(self):
+        if not getattr(self, "_veiled", False):
+            return
+        self._veiled = False
+        try:
+            self.setWindowOpacity(1.0)
+            self.raise_()
+            self.activateWindow()
+        except RuntimeError:
+            pass
 
     def resizeEvent(self, event):
         self._rz_trace()
@@ -417,7 +511,9 @@ class WebDeepDiveDialog(QDialog):
             # a moment later; sent here, every chart repaints in the same frame
             from . import extras_providers
 
-            theme["series"] = extras_providers.series_colors([w["type"] for w in providers.default_widgets()])
+            types = [w["type"] for w in providers.default_widgets()]
+            theme["series"] = extras_providers.series_colors(types)
+            theme["paint"] = extras_providers.paint_colors(types)  # the other colours of their data
             self._base_color(theme)
             self.webview.eval("DD.setTheme(%s)" % json.dumps(theme))
         except Exception as e:
@@ -467,17 +563,29 @@ class WebDeepDiveDialog(QDialog):
             except Exception:
                 bust = ""
         q = ("?v=" + bust) if bust else ""
+        tb0 = time.perf_counter()
+        boot_data = self._boot()
+        tb1 = time.perf_counter()
+        boot_js = _script_json(boot_data)
+        tb2 = time.perf_counter()
         self.webview.stdHtml(
-            '<div id="dd-root"></div><script>%sDD.start(%s);</script>' % (dev_flag(), _script_json(self._boot())),
+            '<div id="dd-root"></div><script>%sDD.start(%s);</script>' % (dev_flag(), boot_js),
             css=[_url(self._addon, name) + q for name in _CSS],
             js=[_url(self._addon, name) + q for name in _JS],
             context=self,
         )
+        tb3 = time.perf_counter()
+        self._open_perf = {
+            "boot_ms": 1000 * (tb1 - tb0),
+            "ser_ms": 1000 * (tb2 - tb1),
+            "html_ms": 1000 * (tb3 - tb2),
+            "boot_kb": len(boot_js) / 1024.0,
+        }
 
     def _web_files(self):
         import os
 
-        base = os.path.join(os.path.dirname(__file__), _WEB_DIR)
+        base = os.path.join(os.path.dirname(__file__), "web")
         return [os.path.join(base, n) for n in _CSS + _JS]
 
     def _dev_watch(self):
@@ -546,7 +654,7 @@ class WebDeepDiveDialog(QDialog):
         from ..const.config import Config
         from ..config import addon_config as _addon_config
 
-        _addon_config().set_value(Config.DETAILS_VIEW_MODE, "deck" if mode == "deck" else "time")
+        _addon_config().set_value(Config.DETAILS_VIEW_MODE, "deck" if mode == "deck" else "time", notify=False)
         return True
 
     @staticmethod
@@ -626,8 +734,10 @@ class WebDeepDiveDialog(QDialog):
         key = {"multi_hue": Config.HEATMAP_MULTI_HUE_INTENSITY, "metric": Config.HEATMAP_METRIC,
                "palette": Config.HEATMAP_PALETTE,
                "invert": Config.HEATMAP_INVERT_INTENSITY, "years_no_gap": Config.HEATMAP_YEARS_NO_GAP,
-               "month_grid": Config.HEATMAP_MONTH_GRID}.get(name)
+               "month_grid": Config.HEATMAP_MONTH_GRID, "narrow_view": Config.HEATMAP_NARROW_VIEW}.get(name)
         if key is None:
+            return False
+        if name == "narrow_view" and value not in ("scroll", "split", "grid", "fit"):
             return False
         _addon_config().set_value(key, value)
         return True
@@ -846,6 +956,11 @@ class WebDeepDiveDialog(QDialog):
             from ..details.logic.tabs import save_tabs_config
             save_tabs_config(self.addon_config, tabs_data)
 
+    def _save_widget(self, what):
+        from .web_menus import save_from_deep_dive
+
+        save_from_deep_dive(parent=self, **what)
+
     def _later(self, fn):
         QTimer.singleShot(0, fn)
         return True
@@ -890,6 +1005,7 @@ class WebDeepDiveDialog(QDialog):
                 key = str(excl_val)
             except (TypeError, ValueError):
                 return
+        self._sync_config()
         conf = self.addon_config.config
         if action == "color":
             from aqt.qt import QColor, QColorDialog, Qt
@@ -1051,7 +1167,8 @@ class WebDeepDiveDialog(QDialog):
         bridge = Bridge(view, self)
         self._register_handlers(bridge)
         self._exp.update({"hidden": (view, bridge), "z": z})
-        boot = self._boot(full=True)
+        override = (st.get("deck"), st.get("span")) if ("deck" in st or "span" in st) else None
+        boot = self._boot(full=True, override_scope=override, query=str(st.get("search") or ""))
         boot["export"] = True
         boot["export_state"] = st
         tries = {"n": 0, "started": False}
@@ -1200,6 +1317,7 @@ class WebDeepDiveDialog(QDialog):
                 try:
                     bridge.close()
                     view.hide()
+                    view.cleanup()
                     view.deleteLater()
                 except Exception:
                     pass
@@ -1277,8 +1395,7 @@ class WebDeepDiveDialog(QDialog):
         if "pdf" in sel_filter.lower() or low.endswith(".pdf"):
             if not low.endswith(".pdf"):
                 path += ".pdf"
-            V._save_as_pdf(path, pix, total_w, total_h)
-            ok = True
+            ok = bool(V._save_as_pdf(path, pix, total_w, total_h))
         else:
             jpeg = "jpeg" in sel_filter.lower() or "jpg" in sel_filter.lower()
             if not low.endswith((".png", ".jpg", ".jpeg")):
@@ -1341,9 +1458,10 @@ class WebDeepDiveDialog(QDialog):
         from ..config import addon_config as _addon_config
 
         cfg = _addon_config()
-        cfg.config[Config.DETAILS_EXPANDED_DECKS] = list(names or [])
-        cfg.config[Config.DETAILS_EXPANDED_DECKS_SET] = True  # an empty list now means "all closed" (visibility.persist_expanded_decks)
-        cfg.write_config()
+        cfg.write_config_vals({
+            Config.DETAILS_EXPANDED_DECKS: list(names or []),
+            Config.DETAILS_EXPANDED_DECKS_SET: True,  # an empty list now means "all closed" (visibility.persist_expanded_decks)
+        }, notify=False)
         return True
 
     @staticmethod
@@ -1354,22 +1472,36 @@ class WebDeepDiveDialog(QDialog):
         HeatmapInteractions.open_browser_for_date(str(date)[:10], (deck if isinstance(deck, list) else int(deck)) if deck else None)
         return True
 
-    def _boot(self, full=False):
+    def _boot(self, full=False, override_scope=None, query=""):
         """full: every chart's data (an export's hidden page); else the first ones only, ~300 ms of them (the
         window opens at once; the page asks the rest in the background, app.js lateData)."""
         deck, span = self._initial_scope()
+        if override_scope is not None:
+            o_deck, o_span = override_scope
+            if o_deck is not None:
+                deck = o_deck
+            if o_span is not None:
+                try:
+                    span = int(o_span)
+                except (TypeError, ValueError):
+                    pass
         widgets = providers.default_widgets()
+        from .deck_picker import DEFAULT_DECK, hidden_default
+
         decks = [[int(d.id), d.name] for d in mw.col.decks.all_names_and_ids(include_filtered=False)]
+        if hidden_default():  # Anki's empty Default deck: left out, as in Anki's deck list
+            decks = [d for d in decks if d[0] != DEFAULT_DECK]
         t0 = time.perf_counter()
-        data = self._data(widgets, deck, span, budget_ms=None if full else 180)
+        data = self._data(widgets, deck, span, budget_ms=None if (full or RECORD_PRELOAD) else 180, query=query)
         trace(f"first data {1000 * (time.perf_counter() - t0):.0f} ms")
         drawer = self._drawer()
         view_mode = self._view_mode()
         table0 = self._table0(view_mode, deck) if (full or drawer.get("open")) else None
+        stats_data = self._with_search(query, lambda: providers.stats(deck, span)) if query else providers.stats(deck, span)
         return {
             "theme": build_theme("details"), "widgets": widgets, "deck": deck, "span": span,
             "decks": decks, "data": data, "settings": {"bin_scale": 100},
-            "stats": providers.stats(deck, span), "deck_title": self._deck_title(deck),
+            "stats": stats_data, "deck_title": self._deck_title(deck),
             "trends": self._trends(), "spans": self._spans(),
             "view_mode": view_mode, "show_stats": self._show_stats(), "show_bottom_stats": self._show_bottom_stats(), "drawer": drawer, "table": table0, "grid_cols": self._grid_cols(),
             "sizes": self._sizes(), "globals": self._globals(), "layout": self._layout_opts(), "i18n": _web_i18n(),
@@ -1734,7 +1866,7 @@ class WebDeepDiveDialog(QDialog):
         if span is not None:
             vals[Config.DETAILS_DEEP_DIVE_PERIOD_RANGE] = int(span)
         if vals:
-            _addon_config().write_config_vals(vals)
+            _addon_config().write_config_vals(vals, notify=False)
         return True
 
     def _widget_opts(self):
@@ -1795,6 +1927,7 @@ class WebDeepDiveDialog(QDialog):
         from ..details.widgets.pinned.main_menu.manager import MainMenuWidgetManager
         from .gallery_web import open_manage_gallery
 
+        self._sync_config()
         cfg = self.addon_config
         mgr = SimpleNamespace(addon_config=cfg)
         conf = cfg.config
@@ -1809,6 +1942,7 @@ class WebDeepDiveDialog(QDialog):
             "order": copy.deepcopy(conf.get(Config.DEEP_DIVE_CHART_ORDER)),
             "sizes": copy.deepcopy(conf.get(Config.DEEP_DIVE_WIDGET_SETTINGS)),
             "stat_order": copy.deepcopy(conf.get(Config.DASH_STAT_ORDER)),
+            "stat_rows": copy.deepcopy(conf.get(Config.DASH_STAT_ROW_NUMS)),
             "texts": copy.deepcopy(conf.get(Config.DEEP_DIVE_TEXT_WIDGETS)),
         }
 
@@ -1902,7 +2036,8 @@ class WebDeepDiveDialog(QDialog):
             ec._save_hidden(mgr, snap["hidden"])
             ec._save(mgr, snap["extra"])
             for key, value in ((Config.DEEP_DIVE_CHART_ORDER, snap["order"]), (Config.DEEP_DIVE_WIDGET_SETTINGS, snap["sizes"]),
-                               (Config.DASH_STAT_ORDER, snap["stat_order"]), (Config.DEEP_DIVE_TEXT_WIDGETS, snap["texts"])):
+                               (Config.DASH_STAT_ORDER, snap["stat_order"]), (Config.DASH_STAT_ROW_NUMS, snap["stat_rows"]),
+                               (Config.DEEP_DIVE_TEXT_WIDGETS, snap["texts"])):
                 if value is None:
                     conf.pop(key, None)
                 else:
@@ -1948,7 +2083,8 @@ class WebDeepDiveDialog(QDialog):
             if not _addon_config().config.get(Config.DETAILS_TABLE_SHOW, True):
                 return None
             if view_mode == "deck":
-                return providers._plain(providers.table(0, deck=("collection" if not deck else str(deck))))
+                deck_key = "collection" if (not deck or isinstance(deck, list)) else ("__deleted_cards__" if deck == -1 else str(deck))
+                return providers._plain(providers.table(0, deck=deck_key))
             return providers._plain(providers.table(0, None))
         except Exception as e:
             log_error(f"web table boot: {e!r}")
@@ -1972,7 +2108,7 @@ class WebDeepDiveDialog(QDialog):
             cur[1] = int(size)
             vals[Config.DETAILS_TABLE_DRAWER_SIZES] = cur
         if vals:
-            cfg.write_config_vals(vals)
+            cfg.write_config_vals(vals, notify=False)
         return True
 
     @staticmethod
@@ -2012,6 +2148,11 @@ class WebDeepDiveDialog(QDialog):
                 deck = int(ident)
                 if mw.col.decks.get(deck, default=False) is None:
                     deck = None
+                elif deck == 1:  # Anki's Default deck left empty: all decks, rather than empty charts
+                    from .deck_picker import hidden_default
+
+                    if hidden_default():
+                        deck = None
             except Exception:
                 deck = None
         if deck is None:
@@ -2055,6 +2196,8 @@ class WebDeepDiveDialog(QDialog):
     @staticmethod
     def _deck_title(deck):
         # the same titles as the page gives when the deck is changed there (app.js), not Anki's "[no deck]"
+        if isinstance(deck, list):
+            return f"{len(deck)} decks" if len(deck) != 1 else WebDeepDiveDialog._deck_title(deck[0])
         if deck == 0:
             return "Total"
         if deck == -1:
@@ -2209,7 +2352,7 @@ class WebDeepDiveDialog(QDialog):
             recent = [q] + [x for x in recent if x != q]
             recent = recent[:8]
             try:
-                self.addon_config.set_value("Deep_Dive_Recent_Searches", recent)
+                self.addon_config.set_value("Deep_Dive_Recent_Searches", recent, notify=False)
             except Exception:
                 pass
         return {"ok": True, "query": q, "count": len(cids or ()), "recent": recent}
@@ -2226,27 +2369,53 @@ class WebDeepDiveDialog(QDialog):
         q = normalize_query(query)
         out = {}
         cache = {}
+        times = []
+        from ..details.logic.logger import log_warn as _lw
+        from ..config import addon_config as _addon_config
+        try:
+            fp = repr(sorted(_addon_config().config.items(), key=lambda kv: str(kv[0])))
+        except Exception:
+            fp = str(_tb.monotonic())  # unknown config state: never reuse
         with search_scope(q):
             for w in widgets:
                 if budget_ms and out and 1000 * (_tb.perf_counter() - _start) > float(budget_ms):
                     break
                 key = (w["type"], json.dumps(w.get("options") or {}, sort_keys=True))
                 if key not in cache:  # same chart type and options: computed once
-                    import time as _t
-
-                    from ..details.logic.logger import log_warn as _lw
-                    from ..config import addon_config as _addon_config
-
-                    _t0 = _t.perf_counter()
-                    try:
-                        fp = repr(sorted(_addon_config().config.items(), key=lambda kv: str(kv[0])))
-                    except Exception:
-                        fp = str(_t.monotonic())  # unknown config state: never reuse
+                    _t0 = _tb.perf_counter()
                     val, hit = providers._memo(("w", w["type"], deck, span, key[1], fp, q),
-                                               lambda w=w: providers.fetch(w["type"], deck, span, w.get("options")), ttl=120.0)
-                    ms = 1000 * (_t.perf_counter() - _t0)
+                                               lambda w=w: providers.fetch(w["type"], deck, span, w.get("options")), ttl=1e9 if RECORD_PRELOAD else 120.0)
+                    ms = 1000 * (_tb.perf_counter() - _t0)
                     if ms > 15:
                         _lw(f"data {w['type']} {ms:.0f}ms ({'memo' if hit else 'computed'})", tag="WEB")
+                    times.append((ms, w["type"], hit))
                     cache[key] = val
                 out[w["id"]] = cache[key]
+        # dev trace: a slow call, the time its charts took (each under 15 ms is not written above) against its whole
+        total = 1000 * (_tb.perf_counter() - _start)
+        if total >= 20:
+            times.sort(reverse=True)
+            top = ", ".join(f"{t} {m:.0f}ms" + ("(memo)" if h else "") for m, t, h in times[:8])
+            trace(f"PERFTRACE data_call total={total:.0f}ms charts={len(out)}/{len(widgets)}"
+                  f" sum={sum(m for m, _, _ in times):.0f}ms computed={sum(1 for _, _, h in times if not h)}"
+                  f" | slowest: {top}")
         return out
+
+
+def preload_for_record():
+    """DD_RECORD_PRELOAD: every chart's data read and kept in the background, for the window's next opening."""
+    from .ui_share import ui_first
+
+    def run():
+        t0 = time.perf_counter()
+        deck, span = WebDeepDiveDialog._initial_scope()
+        WebDeepDiveDialog._data(providers.default_widgets(), deck, span)
+        return 1000 * (time.perf_counter() - t0)
+
+    def done(fut):
+        try:
+            log_warn(f"record preload: every chart's data read in {fut.result():.0f} ms", tag="WEB")
+        except Exception as e:
+            log_warn(f"record preload: {e!r}", tag="WEB")
+
+    mw.taskman.run_in_background(lambda: ui_first(run), on_done=done)

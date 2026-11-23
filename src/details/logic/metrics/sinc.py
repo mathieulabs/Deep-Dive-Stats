@@ -33,7 +33,7 @@ DEFAULT_W = {
         0.3246, 1.587, 0.2272, 2.8755),
 }
 # The preset fields, newest first, with the first FSRS version that reads each.
-_FIELDS = (("fsrsParams6", 6), ("fsrsParams5", 5), ("fsrsWeights", 4))
+_FIELDS = (("fsrsParams6", 6), ("fsrsParams5", 5), ("fsrsParams4", 4), ("fsrsWeights", 4))
 
 _CACHE = {}
 _LOCK = threading.Lock()

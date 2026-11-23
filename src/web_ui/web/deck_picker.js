@@ -19,7 +19,9 @@
     return load.then(function(decks){
       return new Promise(function(resolve){
         const all = opts.ids == null;
+        const allNoDel = Array.isArray(opts.ids) && opts.ids.length === 0;
         const on = new Set(all ? [DELETED].concat(decks.map(function(d){ return String(d.id); }))
+                               : allNoDel ? decks.map(function(d){ return String(d.id); })
                                : opts.ids.map(String));
         const veil = el('div', 'ddk-veil');
         const box = el('div', 'ddk-box');

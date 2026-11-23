@@ -334,7 +334,7 @@
   }
   // a tile picked; the text widget's sentence first written in the text editor (text_editor.js; cancelled: nothing)
   function pick(t, view){
-    if (t.family !== 'text' || t.saved){ call('gal_pick', view ? {id: t.id, view: view} : {id: t.id}); return; }
+    if (t.family !== 'text' || t.saved || t.preset){ call('gal_pick', view ? {id: t.id, view: view} : {id: t.id}); return; }
     const save = ST.save_text ? {} : null;  // the editor's "Also keep in Add Widget as:" (its name, once added)
     DD.editText({title: ST.toggle ? 'Add Text' : 'Add Text Widget', ok: 'Add', save: save}).then(function(tpl){
       if (tpl == null) return;
@@ -464,7 +464,7 @@
       left.appendChild(chevronBtn(f.add.deck, function(){
         hideTip();
         if (!DD.pickDecks) return;
-        DD.pickDecks({ids: f.add.deck_ids && f.add.deck_ids.length ? f.add.deck_ids : null}).then(function(r){
+        DD.pickDecks({ids: f.add.deck_ids != null ? f.add.deck_ids : null}).then(function(r){
           if (r) call('gal_decks', {ids: r.ids});
         }).catch(fail);
       }, f.add.deck_tip));

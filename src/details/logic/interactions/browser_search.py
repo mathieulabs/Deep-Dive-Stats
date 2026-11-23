@@ -47,7 +47,7 @@ def deck_clause(deck):
     names = _deck_names(deck)
     if not names:
         return ""
-    parts = ['deck:"%s"' % n.replace('"', '\\"') for n in names]
+    parts = ['deck:"%s"' % n.replace('\\', '\\\\').replace('"', '\\"') for n in names]
     return parts[0] if len(parts) == 1 else "(" + " or ".join(parts) + ")"
 
 
@@ -105,7 +105,11 @@ def open_query(query, deck):
         _tip(tr("Deleted cards cannot be shown in the browser"))
         return
     clause = deck_clause(deck)
-    open_search(" ".join(p for p in (query, clause) if p))
+    q = (query or "").strip()
+    if q and clause:
+        open_search(f"({q}) {clause}")
+    else:
+        open_search(q or clause)
 
 
 def _fetch_cids(kind, start_ms, end_ms, deck):
@@ -281,13 +285,14 @@ def reviews_sql(spec, start_ms, end_ms, limit):
                      WHERE id >= {int(start_ms)} AND id < {int(end_ms)} AND type < 4 AND ease BETWEEN 1 AND 4
                      GROUP BY cid, (id / 1000 - {base}) / 86400)""")
     if spec.get("introduced"):
-        # no rated answer before it, unless a reset ("Forget": a manual entry without ease factor) came between
-        # (metrics.introduced)
+        # no rated answer before it, unless a reset ("Forget": a manual entry without ease factor) came between;
+        # cramming answers (Filtered, no ease factor) neither introduce nor count before (metrics.introduced)
+        w.append("NOT (revlog.type = 3 AND revlog.factor = 0)")
         w.append("""NOT EXISTS (SELECT 1 FROM revlog AS p WHERE p.cid = revlog.cid AND p.id < revlog.id
-                     AND p.type < 4 AND p.ease > 0
+                     AND p.type < 4 AND p.ease > 0 AND NOT (p.type = 3 AND p.factor = 0)
                      AND NOT EXISTS (SELECT 1 FROM revlog AS z WHERE z.cid = revlog.cid AND z.type = 4
                                      AND z.factor = 0 AND z.id > p.id AND z.id < revlog.id))""")
-    return f"SELECT DISTINCT revlog.cid FROM revlog {_join(limit) or 'LEFT JOIN cards ON revlog.cid = cards.id'} WHERE {' AND '.join(w)} {limit or ''}"
+    return f"SELECT DISTINCT revlog.cid FROM revlog {_join(limit) or 'LEFT JOIN cards ON revlog.cid = cards.id'} WHERE {' AND '.join(w)} {excluded_days_clause()} {limit or ''}"
 
 
 def _span_range(span):

@@ -307,7 +307,7 @@
     function local(e){ const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
     function xToTime(x){ const pw = Math.max(1, W - ML - MR), f = Math.min(1, Math.max(0, (x - ML) / pw)); return st.v0 + f * (st.v1 - st.v0); }
     cv.addEventListener('mousedown', function(e){ if (e.button !== 0) return; st.press = local(e); st.dragX = null; });
-    window.addEventListener('mouseup', function(e){
+    const onUp = function(e){
       const p = st.press; st.press = null; const dx = st.dragX; st.dragX = null;
       if (!p || !st.visible) return;
       const q = local(e);
@@ -320,7 +320,8 @@
         const ev = nearest(q[0], q[1]); if (ev && ev.length > 4) DD.call('open_card', {cid: ev[4]}).catch(function(){});
       }
       draw();
-    });
+    };
+    window.addEventListener('mouseup', onUp);
     cv.addEventListener('mousemove', function(e){
       const q = local(e);
       if (st.press && (e.buttons & 1) && Math.abs(q[0] - st.press[0]) > 5){ st.dragX = q[0]; tip.style.display = 'none'; draw(); return; }
@@ -355,7 +356,8 @@
       if (e.shiftKey){ e.preventDefault(); e.stopPropagation(); stopView(); applyView(st.v0 - span * 0.1 * (dl < 0 ? 1 : -1), span); }
     }, {passive: false});
     // (in device pixels: a zoom of Anki redraws it for the new ratio)
-    DD.frame.observe(new ResizeObserver(function(){ draw(); }), plot);
+    const ro = new ResizeObserver(function(){ draw(); });
+    DD.frame.observe(ro, plot);
 
     return {
       canvas: cv,
@@ -386,6 +388,7 @@
       show: function(intro){ st.visible = true; cv.style.display = 'block'; plot.classList.add('dd-dots-on'); if (intro) startIntro(); else { st.intro = 1; } draw(); },
       hide: function(){ st.visible = false; cv.style.display = 'none'; plot.classList.remove('dd-dots-on'); tip.style.display = 'none'; stopView(); },
       redraw: draw,
+      destroy: function(){ window.removeEventListener('mouseup', onUp); ro.disconnect(); stopView(); },
     };
   };
 })();

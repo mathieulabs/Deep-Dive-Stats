@@ -112,6 +112,8 @@ def start(force=False):
     from . import pinned
 
     if force:
+        if _state["running"]:
+            stop()
         _state["running"] = False  # from the menu: a tour left half way (its page gone) starts over
     if _state["running"] or (not force and gt._is_done()):
         return False

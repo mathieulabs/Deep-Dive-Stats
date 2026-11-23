@@ -228,8 +228,10 @@ def _save_as_pdf(path, pix, logical_w, logical_h):
     writer.setResolution(dpi)
     writer.setPageSize(QPageSize(QSizeF(w_mm, h_mm), QPageSize.Unit.Millimeter))
     writer.setPageMargins(QMarginsF(0, 0, 0, 0))
-    pdf_p = QPainter(writer)
+    pdf_p = QPainter()
+    if not pdf_p.begin(writer):
+        return False
     pdf_p.drawPixmap(0, 0, writer.width(), writer.height(), pix)
-    pdf_p.end()
+    return bool(pdf_p.end())
 
 

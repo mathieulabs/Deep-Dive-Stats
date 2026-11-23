@@ -39,7 +39,7 @@ def build_future_due_payload(distribution, time_span=Period.TOTAL, addon_config=
         backlog_count = sum(v for k, v in filtered.items() if k < 0)
 
     total_due = sum(v for k, v in filtered.items() if k >= 0)
-    days_in_span = max(1, max_days)
+    days_in_span = max(1, max_days + 1)
     avg_due = total_due / days_in_span
     due_tomorrow = filtered.get(1, 0)
 

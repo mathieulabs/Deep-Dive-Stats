@@ -231,6 +231,7 @@ class Config:
     HEATMAP_YEARS_FOLD = 'Heatmap_Years_Fold'  # years shown before the older ones fold (0: never)
     HEATMAP_YEARS_NO_GAP = 'Heatmap_Years_No_Gap'  # all years view: no space between the years
     HEATMAP_MONTH_GRID = 'Heatmap_Month_Grid'  # year / 365 on a narrow card: the months as a grid, not two rows
+    HEATMAP_NARROW_VIEW = 'Heatmap_Narrow_View'  # year / 365 on a narrow card: scroll, split, grid or fit ('': scroll, grid if Month_Grid)
     HEATMAP_TOOLTIP_HIDDEN = 'Heatmap_Tooltip_Hidden'
     PINNED_POSITION_TOP = 'Pinned_Position_Top'
     PINNED_CHARTS_COLLAPSIBLE = 'Pinned_Charts_Collapsible'
@@ -390,7 +391,7 @@ class Config:
         FACECARDS_GLASS_BLUR: -1,  # Auto: blurred only over a background image (web)
         FACECARDS_GLASS_BORDER: 100,
         FACECARDS_SHOW_GLASS: True,
-        FACECARDS_SCALE: 75,
+        FACECARDS_SCALE: 90,
         FACECARDS_TITLE_SIZE: 98,
         FACECARDS_TITLE_COLOR: "",
         FACECARDS_TITLE_SHADOW_INTENSITY: 0,
@@ -474,6 +475,7 @@ class Config:
         HEATMAP_YEARS_FOLD: 3,
         HEATMAP_YEARS_NO_GAP: False,
         HEATMAP_MONTH_GRID: False,
+        HEATMAP_NARROW_VIEW: '',
         HEATMAP_TOOLTIP_HIDDEN: [],
         PINNED_BLOCK_ORDER: ["stats:0", "charts:1", "texts:0", "charts:0"],
         PINNED_POSITION_TOP: True,
@@ -507,7 +509,7 @@ class Config:
         DEEP_DIVE_TEXT_WIDGETS: {},
         DEEP_DIVE_WIDGET_SETTINGS: {
             "heatmap_g": {"heatmap_mode": "365", "col_span": 1},
-            "future_due_g": {"time_span_idx": 2, "show_backlog": True},
+            "future_due_g": {"time_span_idx": 2, "show_backlog": False},
             "activity_g": {"show_time_axis": True, "col_span": 1, "binning_override": True,
                            "breakdown_enabled": True, "use_custom_style": False, "label": "Activity",
                            "chart_opacity": 100, "show_average": True, "show_cumulative": True},

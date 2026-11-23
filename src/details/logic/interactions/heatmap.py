@@ -5,7 +5,6 @@ from datetime import datetime
 from aqt import mw
 from .. import ConfigManager, rollover_hour
 from ..logger import log_error
-from ..logger import log_swallowed
 from ....i18n import tr
 
 class HeatmapInteractions:
@@ -38,21 +37,18 @@ class HeatmapInteractions:
 
             is_future = dt.date() > logical_today
 
-            deck_name = None
-            if did is not None:
-                if isinstance(did, str) and not did.isdigit():
-                    deck_name = did
-                else:
-                    try:
-                        deck_name = mw.col.decks.name(did)
-                    except Exception:
-                        log_swallowed()
+            from .browser_search import deck_clause, is_deleted_selection
+
+            if is_deleted_selection(did):
+                return ("__deleted__", None, date_str, None)
+
+            deck_filter = deck_clause(did)
 
             if is_future:
                 days_ahead = (dt.date() - logical_today).days
                 query = f"prop:due={days_ahead}"
                 log_debug(f"HeatmapInteractions: Future date detected. Query='{query}'", tag="INTERACTION")
-                return (None, deck_name, date_str, query)
+                return (None, deck_filter, date_str, query)
             else:
                 # Local date arithmetic: the day of a clock change lasts 23 or 25 hours.
                 start_ms = int(dt.replace(hour=rollover).timestamp() * 1000)
@@ -75,9 +71,9 @@ class HeatmapInteractions:
                 # Falling back to pending cards if Today and no reviews found
                 if not cids and dt.date() == logical_today:
                     log_debug("HeatmapInteractions: No reviews today. Falling back to 'is:due'", tag="INTERACTION")
-                    return (None, deck_name, date_str, "is:due")
+                    return (None, deck_filter, date_str, "is:due")
 
-                return (cids, deck_name, date_str, None)
+                return (cids, deck_filter, date_str, None)
 
         except Exception as e:
             import traceback
@@ -94,13 +90,18 @@ class HeatmapInteractions:
                 res = future_or_result
 
             if len(res) == 4:
-                card_ids, deck_name, date_str, direct_query = res
+                card_ids, deck_filter, date_str, direct_query = res
             else:
-                card_ids, deck_name, date_str = res
+                card_ids, deck_filter, date_str = res
                 direct_query = None
 
         except Exception as e:
             log_error(f"Error retrieving heatmap cids: {e}")
+            return
+
+        if card_ids == "__deleted__":
+            from aqt.utils import tooltip
+            tooltip(tr("Deleted cards cannot be shown in the browser"))
             return
 
         search_parts = []
@@ -114,8 +115,8 @@ class HeatmapInteractions:
             tooltip(tr("No cards found for {date}", date=date_str))
             return
 
-        if deck_name:
-            search_parts.append(f'deck:"{deck_name}"')
+        if deck_filter:
+            search_parts.append(deck_filter)
 
         from aqt import dialogs
         browser = dialogs.open("Browser", mw)

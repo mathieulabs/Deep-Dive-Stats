@@ -4,6 +4,7 @@ import zlib
 
 import os
 import pickle
+import threading
 import time
 from aqt import mw
 from ....const.addon_dir import addon_removed
@@ -12,6 +13,7 @@ from .exclusion import exclusion_signature
 
 # Start of a compressed cache file (a plain pickle starts with 0x80).
 _ZLIB_MAGIC = b"DDZ1"
+_DISK_SAVE_LOCK = threading.Lock()
 
 
 def _drop_zero_hours(cache):
@@ -64,7 +66,7 @@ class StorageMixin:
                     "last_max_rev_id": self.last_max_rev_id,
                     "last_max_card_id": self.last_max_card_id,
                     "last_logical_date": getattr(self, "last_logical_date", None),
-                    "version": 17,  # 17: each day keeps only its hours with reviews, the all-decks entry once; 16: young/mature retention counted like Anki (interval >= 1 day or review type); 15: rollover after local time
+                    "version": 18,  # 18: uncapped FSRS stability buckets (>100d); 17: each day keeps only its hours with reviews, the all-decks entry once; 16: young/mature retention counted like Anki (interval >= 1 day or review type); 15: rollover after local time
                     "excluded": exclusion_signature(),
                 }
                 payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
@@ -73,16 +75,17 @@ class StorageMixin:
             payload = _ZLIB_MAGIC + zlib.compress(payload, 6)
             if addon_removed():
                 return False
-            tmp_path = cache_file + ".tmp"
+            tmp_path = f"{cache_file}.{os.getpid()}.{threading.get_ident()}.tmp"
             try:
-                with open(tmp_path, "wb") as f:
-                    f.write(payload)
-                    f.flush()
-                    try:
-                        os.fsync(f.fileno())
-                    except Exception:
-                        log_swallowed()
-                os.replace(tmp_path, cache_file)
+                with _DISK_SAVE_LOCK:
+                    with open(tmp_path, "wb") as f:
+                        f.write(payload)
+                        f.flush()
+                        try:
+                            os.fsync(f.fileno())
+                        except Exception:
+                            log_swallowed()
+                    os.replace(tmp_path, cache_file)
             except OSError:
                 # A full disk: no half-written file left behind (the old cache stays).
                 try:
@@ -155,7 +158,7 @@ class StorageMixin:
             data = pickle.loads(raw)  # an older file: plain pickle
             del raw
 
-            if not isinstance(data, dict) or data.get("version", 0) < 16:
+            if not isinstance(data, dict) or data.get("version", 0) < 18:
                 self._log("Cache file validation failed or old version. Forcing rebuild.")
                 return False
 

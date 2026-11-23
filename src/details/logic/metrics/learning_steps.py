@@ -23,16 +23,19 @@ _STATE = {}
 # A reset (Forget: a manual entry without interval or ease factor, review_buckets.reset_events).
 _RESET = "type = 4 AND factor = 0 AND ivl = 0"
 # Learning answers (type 0, rated) after the card's last reset (rid, 0: none) and before its first
-# review answer (type 1) since. A card not graduated since its reset has no row.
+# review answer (type 1) since. Cards that graduated to Review (cards.type IN (2, 3)) since their
+# last reset are also included even before their first Review-state answer.
 _QUERY = f"""
     SELECT g.cid,
            (SELECT COUNT(*) FROM revlog AS r
-            WHERE r.cid = g.cid AND r.type = 0 AND r.ease > 0 AND r.id > g.rid AND r.id < g.gid)
+            WHERE r.cid = g.cid AND r.type = 0 AND r.ease > 0 AND r.id > g.rid
+              AND (g.gid IS NULL OR r.id < g.gid))
     FROM (SELECT v.cid, v.rid,
                  (SELECT MIN(x.id) FROM revlog AS x WHERE x.cid = v.cid AND x.type = 1 AND x.id > v.rid) AS gid
           FROM (SELECT cid, MAX(CASE WHEN {_RESET} THEN id ELSE 0 END) AS rid
                 FROM revlog /*CIDS*/ GROUP BY cid) AS v) AS g
     WHERE g.gid IS NOT NULL
+       OR EXISTS (SELECT 1 FROM cards AS c WHERE c.id = g.cid AND c.type IN (2, 3))
 """
 
 

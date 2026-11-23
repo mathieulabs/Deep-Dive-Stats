@@ -48,6 +48,7 @@ class Tile:
         self.marks = False
         self.saved_id = None  # a saved widget's (My Widgets)
         self.saved_def = None
+        self.preset = False  # a text ready made (the default one of new profiles): added as it is
 
     def set_count(self, n):
         self.count = max(0, int(n))
@@ -128,7 +129,8 @@ class GalleryModel:
         from ..i18n import N_, tr, tr_name
 
         saving = not self.toggle and self._on_add is not None and self._only is None and self.context == "pinned"
-        saved = self._saved_items() if saving else []
+        # (the Deep Dive's manager shows the saved texts too, in Text: a click adds one more of its texts)
+        saved = self._saved_items() if saving or (self.toggle and self._texts is not None) else []
         if saving:
             self._saved_section([e for e in saved if e["def"].get("type") != "text_label"])
         pins = self._registry()
@@ -170,10 +172,24 @@ class GalleryModel:
                        "text", f"{tr('Text Widget')} {tr('New Text Widget')} {tr('Text')}", TEXT_PIC,
                        show_name=not self.toggle, count=count)
         t.text = tr("Write your own sentence, with live stats in it.")
+        # the text of new profiles, to put it back once removed: saved in English, shown in the interface language
+        # while unchanged (text_label.shown_template)
+        from ..const.config import TEXT_WIDGET_DEFAULT_TEMPLATE
+        from ..details.widgets.pinned.widget_factory.builders.text_label import shown_template
+
+        name = tr("Today's Study")
+        p = self._tile(tiles, Choice("text_label", N_("Text Widget"), template=TEXT_WIDGET_DEFAULT_TEMPLATE), name, "text",
+                       f"{name} {tr('Text Widget')} {tr('Text')} Today's Study", TEXT_PIC,
+                       count=0 if self.toggle else self._preset_count(TEXT_WIDGET_DEFAULT_TEMPLATE))
+        p.preset = True
+        p.text = _plain(shown_template(TEXT_WIDGET_DEFAULT_TEMPLATE))
         # the saved texts after it, where a text is looked for (My Widgets, at the top, was out of view)
         for e in saved:
             if e["def"].get("type") == "text_label":
                 self._saved_tile(tiles, e)
+
+    def _preset_count(self, template):
+        return sum(1 for d in self._registry() if d.get("type") == "text_label" and d.get("template") == template)
 
     @staticmethod
     def _saved_items():
@@ -193,8 +209,8 @@ class GalleryModel:
 
         tiles = self._section("saved", "saved", tr("My Widgets"))
         # (shown empty too: where they go, and how)
-        self.sections[-1]["hint"] = tr("Right click a chart or a stat card on the main screen, then Save Widget As..., to keep "
-                                       "it here with its settings.")
+        self.sections[-1]["hint"] = tr("Right click a chart or a stat card, on the main screen or in Deep Dive, then "
+                                       "Save Widget As..., to keep it here with its settings.")
         for e in items:
             self._saved_tile(tiles, e)
 
@@ -304,9 +320,11 @@ class GalleryModel:
 
         from ..i18n import N_, tr, tr_n, tr_name
 
-        ids = list(self.deck_ids or [])
-        if not ids:
+        if self.deck_ids is None:
             return tr("Current Deck")
+        ids = list(self.deck_ids)
+        if not ids:
+            return tr("All decks")
         if ids == ["deleted"]:
             return tr_name(N_("Deleted Cards"))
         if len(ids) == 1:
@@ -329,7 +347,7 @@ class GalleryModel:
         return True
 
     def set_decks(self, ids):
-        ids = list(ids) if ids else None
+        ids = list(ids) if ids is not None else None
         if ids == self.deck_ids:
             return False
         self.deck_ids = ids
@@ -342,7 +360,7 @@ class GalleryModel:
         span, days = self.span if self.span is not None else (None, None)
         if span is not None and not has_time_span({"type": choice.widget_type, "stat_key": choice.stat_key}):
             span, days = None, None
-        return span, days, (list(self.deck_ids) if self.deck_ids else None)
+        return span, days, (list(self.deck_ids) if self.deck_ids is not None else None)
 
     def preview_def(self, t):
         """The widget's definition as it will be added (its default period, or the one chosen)."""
@@ -362,7 +380,7 @@ class GalleryModel:
             d["time_span"] = span
             if days is not None:
                 d["custom_days"] = days
-        if deck_ids:
+        if deck_ids is not None:
             d["deck_ids"] = list(deck_ids)
         try:
             from ..details.widgets.pinned.main_menu.ui.widget_defs import normalized_widget_def
@@ -407,6 +425,8 @@ class GalleryModel:
             return None
         if self.toggle and t.family == "text":
             add = self._on_add_text
+            if template is None and (t.preset or t.saved_id):
+                template = t.choice.template
             new_id = None if add is None or template is None else add(template)
             if new_id:
                 self._added.setdefault(t.id, []).append(new_id)
@@ -466,6 +486,10 @@ class GalleryModel:
             wid = ids.pop()
         elif t.saved_id:
             return  # (only the ones added from it here)
+        elif t.preset:
+            mine = [d.get("id") for d in self._registry()
+                    if d.get("type") == "text_label" and d.get("template") == t.choice.template]
+            wid = mine[-1] if mine else None
         else:
             mine = [d.get("id") for d in self._registry()
                     if d.get("type") == t.choice.widget_type
@@ -494,7 +518,7 @@ class GalleryModel:
             self._added = {}
             for t in self.tiles.values():
                 c = t.choice
-                t.set_count(0 if t.saved_id else
+                t.set_count(0 if t.saved_id else self._preset_count(c.template) if t.preset else
                             counts[("stat_card", c.stat_key) if c.widget_type == "stat_card" else (c.widget_type, None)])
             return
         charts, stats = self._on_reset()

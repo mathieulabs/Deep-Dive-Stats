@@ -114,6 +114,9 @@ def fetch_added_history(
             date_str = day.strftime("%Y-%m-%d")
             pretty_date = f"{months_en[day.month-1]} {day.day:02d}, {day.year}"
 
+        if use_asc:
+            current_cum += count
+
         history.append(
             {
                 "date": date_str,
@@ -123,9 +126,7 @@ def fetch_added_history(
             }
         )
 
-        if use_asc:
-            current_cum += count
-        else:
+        if not use_asc:
             current_cum -= count
 
     return history
@@ -180,17 +181,28 @@ def fetch_card_counts(provider_cls, addon_config, deck_id=None, is_deleted=False
                 WHEN type = 2 AND ivl >= 21 THEN 'mature'
                 ELSE 'other'
             END as status,
+            CASE
+                WHEN type = 0 THEN 'new'
+                WHEN type = 1 THEN 'learn'
+                WHEN type = 3 THEN 'relearn'
+                WHEN type = 2 AND ivl < 21 THEN 'young'
+                WHEN type = 2 AND ivl >= 21 THEN 'mature'
+                ELSE 'other'
+            END as sched_status,
             COUNT(*)
         FROM cards
         WHERE 1=1 {did_limit}
-        GROUP BY status
+        GROUP BY status, sched_status
     """
 
     rows = mw.col.db.all(query)
     counts = {"new": 0, "learn": 0, "relearn": 0, "young": 0, "mature": 0, "suspended": 0, "buried": 0}
-    for status, count in rows:
+    merged = {"new": 0, "learn": 0, "relearn": 0, "young": 0, "mature": 0}
+    for status, sched_status, count in rows:
         if status in counts:
-            counts[status] = count
+            counts[status] += count
+        if sched_status in merged:
+            merged[sched_status] += count
 
     if not hasattr(provider_cls, "_session_deleted_count"):
         provider_cls._session_deleted_count = (
@@ -206,7 +218,8 @@ def fetch_card_counts(provider_cls, addon_config, deck_id=None, is_deleted=False
         )
 
     counts["deleted"] = provider_cls._session_deleted_count
-    counts["total"] = sum(counts.values())
+    counts["total"] = sum(counts[k] for k in ("new", "learn", "relearn", "young", "mature", "suspended", "buried", "deleted"))
+    counts["merged"] = merged
     return counts
 
 
@@ -231,14 +244,15 @@ def fetch_future_reviews(provider_cls, deck_id, target_year, cfg, did_limit=None
         end_due = today_sched + days_until_year_end
 
         if start_due <= end_due:
+            eff_due = "CASE WHEN odid != 0 THEN odue ELSE due END"
             query = f"""
-                SELECT due, count()
+                SELECT {eff_due} AS edue, count()
                 FROM cards
                 WHERE queue IN (1, 2, 3)
-                AND (due >= {start_due} OR due > 1000000000)
-                AND (due <= {end_due} OR due > 1000000000)
+                AND (({eff_due}) >= {start_due} OR ({eff_due}) > 1000000000)
+                AND (({eff_due}) <= {end_due} OR ({eff_due}) > 1000000000)
                 {did_limit}
-                GROUP BY due
+                GROUP BY edue
             """
             try:
                 rows = mw.col.db.all(query)
@@ -254,9 +268,13 @@ def fetch_future_reviews(provider_cls, deck_id, target_year, cfg, did_limit=None
                 log_debug(f"Error fetching future reviews SQL: {e}", tag="PROVIDER")
                 rows = []
 
+            roll = rollover_hour()
             for due, count in rows:
                 if due > 1000000000:
-                    target_date = now_date
+                    dt = datetime.fromtimestamp(due) - timedelta(hours=roll)
+                    target_date = max(now_date, dt.date())
+                    if target_date < year_start_date or target_date > year_end_date:
+                        continue
                 else:
                     days_ahead = due - today_sched
                     target_date = now_date + timedelta(days=days_ahead)

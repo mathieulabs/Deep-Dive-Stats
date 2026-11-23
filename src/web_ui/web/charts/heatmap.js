@@ -5,6 +5,16 @@
   const U = DD.cu;
   const FONT_FAMILY = '"Segoe UI",-apple-system,BlinkMacSystemFont,sans-serif';
   const MS_DAY = 86400000;
+  const NARROW_VIEWS = ['scroll', 'split', 'grid', 'fit'];
+  const NARROW_LABEL = {scroll: 'Scroll', split: 'Two rows', grid: 'Months as a grid', fit: 'Whole year'};
+  const NARROW_ICON = function(v){
+    const P = {
+      scroll: '<rect width="18" height="10" x="3" y="4" rx="1"/><path d="M6 19h6"/><path d="m16 17 2 2-2 2"/><path d="m8 17-2 2 2 2"/>',
+      split: '<rect width="18" height="7" x="3" y="3" rx="1"/><rect width="18" height="7" x="3" y="14" rx="1"/>',
+      grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+      fit: '<rect width="18" height="6" x="3" y="9" rx="1"/><path d="M3 5h18"/><path d="M3 19h18"/>'};
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + P[v] + '</svg>';
+  };
   const BOX_COLS = 48, MAX_GROW = 6.0, HALF = 27;  // HALF: the weeks of a split year's older half
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -284,18 +294,30 @@
     // year / 365 on a narrow card, where 53 weeks side by side would make the days smaller than 9 px.
     // By default the year in two halves, one over the other, the recent half on top (as the years view puts the latest
     // year first), close together; the widget's scale cancels out of the cell's size on screen
-    narrowGrid(width){
+    // the card is that narrow, whatever its layout (its Deep Dive row then takes the height the heatmap asks for)
+    narrowWidth(width){
       if (this.o.mode !== 'year' && this.o.mode !== '365') return false;
-      if (!this.narrowOn()) return false;
       const w = (width == null ? this.w : width) - 4, label = !this.o.hide_labels ? 30 : 2;
       return w > 50 && w * 14 < 9 * (label + 53 * 17.5 - 3.5);
     }
+    // a narrow card that adapts its year (its header shows the layout button)
+    narrowCard(width){ return this.narrowOn() && this.narrowWidth(width); }
+    // a narrow card's layout: 'scroll' (the weeks at their size, a finger moves them), 'split' (two rows), 'grid' (the
+    // months as a grid), 'fit' (the 53 weeks made as small as the width needs)
+    narrowView(){
+      const v = this.o.narrow_view;
+      if (NARROW_VIEWS.indexOf(v) >= 0) return v;
+      if (this.o.month_grid) return 'grid';
+      return window.DD && DD.isTouch && DD.isTouch() ? 'scroll' : 'split';
+    }
+    narrowGrid(width){ return this.narrowCard(width) && this.narrowView() !== 'fit'; }
+    gridScroll(width){ return this.narrowGrid(width) && this.narrowView() === 'scroll'; }
     // the right-click option narrow_layout; unset (the Deep Dive's default): on a phone only
     narrowOn(){
       const v = this.o.narrow_layout;
       return v == null ? !!(DD.isTouch && DD.isTouch()) : !!v;
     }
-    gridSplit(width){ return !this.o.month_grid && this.narrowGrid(width); }
+    gridSplit(width){ return this.narrowGrid(width) && this.narrowView() === 'split'; }
     // the years view on a narrow card (a phone): its cells already as small as the width makes them, the Deep Dive
     // card takes the height of all its years (at its row's height, only the latest showed, the others scrolled)
     yearsNarrow(width){
@@ -331,7 +353,7 @@
     }
     mgrid(width, nat){
       const o = this.o;
-      if (!o.month_grid || !this.narrowGrid(width)) return null;
+      if (!this.narrowGrid(width) || this.narrowView() !== 'grid') return null;
       const W = (width == null ? this.w : width) - 4, lab0 = !o.hide_labels ? 30 : 2;
       // the days' size on screen for P months a row (the widget's scale cancels out)
       const unitW = function(P){ return lab0 + P * (6 * 17.5 - 3.5) + (P - 1) * 0.6 * 17.5; };
@@ -360,7 +382,7 @@
         bottom: startY + (rows - 1) * (D.rowH + D.vgap) + D.rowH - mt, rowTops: blocks.filter(function(b, i){ return i % P === 0; }).map(function(b){ return b.y; })};
     }
     gridGeometry(){
-      const o = this.o, split = this.gridSplit(), cols = split ? HALF : 53;
+      const o = this.o, split = this.gridSplit(), infoWks = this.gridInfo().weeks, cols = split ? HALF : infoWks, scroll = this.gridScroll();
       const target = 14 * o.scale;
       let label = !o.hide_labels ? 30 * o.scale : 2 * o.scale;
       let mt = !o.hide_labels ? 22 * o.scale : 2 * o.scale;
@@ -369,7 +391,8 @@
       let total = label + gridW;
       const avail = this.w - 4;
       let cell;
-      if (total > avail && avail > 50){
+      if (scroll) cell = target;  // the weeks at their own size, wider than the card: they scroll
+      else if (total > avail && avail > 50){
         const r = avail / total; cell = target * r; spacing *= r; label *= r; mt *= r; total = avail;
       } else {
         cell = target;
@@ -378,20 +401,43 @@
           if (g > 1){ cell *= g; spacing *= g; label *= g; mt *= g; total *= g; }
         }
       }
-      // a split year on a card too short for its two halves (a narrow Deep Dive card): smaller days, rather than the
-      // lower half running under the legend and out of the card
+      // a card too short for its grid (a split year on a narrow Deep Dive card, the 53 weeks on a card kept short):
+      // smaller days, rather than the grid running under the legend and out of the card
       const below = 10 * o.scale + this.legendH();
       const needH = mt + this.gridHalfY(split, cell, spacing, mt) + 7 * (cell + spacing) - spacing;
-      if (split && this.lh() > below && needH + below > this.lh()){
+      if (this.lh() > below && needH + below > this.lh() + 0.5){
         const r = (this.lh() - below) / needH;
         cell *= r; spacing *= r; label *= r; mt *= r; total = label + cols * (cell + spacing) - spacing;
       }
-      let off = 0; if (total < this.w) off = (this.w - total) / 2;
+      let off = 0; if (total < this.w && !scroll) off = (this.w - total) / 2;
       let startY = mt;
       const y2 = this.gridHalfY(split, cell, spacing, mt);
       const contentH = mt + y2 + 7 * (cell + spacing) - spacing + below;
       if (contentH < this.lh()) startY += (this.lh() - contentH) / 2;
-      return {cell: cell, spacing: spacing, startX: off + label, startY: startY, label: label, cols: cols, split: split, y2: y2};
+      const G = {cell: cell, spacing: spacing, startX: off + label, startY: startY, label: label, cols: cols, split: split, y2: y2};
+      G.right = G.startX + cols * (cell + spacing) - spacing;
+      if (scroll){
+        // the part of the weeks shown: from the day names to the card's right edge; the weeks moved by _hx (0: the
+        // first week at the left; by default the end of the 365 days, or the year up to the week after this one)
+        const viewL = off + label, viewR = this.w - 2, gridW = G.right - G.startX, room = viewR - viewL;
+        const minX = Math.min(0, room - gridW);
+        const hk = o.mode + '|' + this._yearOff + '|' + this._endOff + '|' + (this._endShift | 0);
+        if (this._hxKey !== hk){ this._hxKey = hk; this._hxSet = false; }
+        // until a finger (or the wheel) moves them, the weeks keep their default place at every width (laid out first
+        // at a wider width, the card held them at the year's start)
+        if (!this._hxSet || this._hx == null){
+          let wk = cols - 1;
+          if (o.mode === 'year'){
+            const info = this.gridInfo(), t = this.logicalToday(), i = Math.floor((t - info.start) / MS_DAY / 7);
+            if (i >= 0 && i < cols) wk = Math.min(cols - 1, i + 1);
+          }
+          this._hx = room - (wk + 1) * (cell + spacing) + spacing;
+        }
+        this._hx = Math.max(minX, Math.min(0, this._hx));
+        G.startX = viewL + this._hx; G.right = G.startX + gridW;
+        G.scroll = {viewL: viewL, viewR: viewR, min: minX, gridW: gridW, room: room};
+      }
+      return G;
     }
     // [left, right] of the drawn grid assembly (in canvas px) so the nav bar aligns with it
     contentXExtent(){
@@ -402,8 +448,14 @@
         return [L.boxLeft - L.label, right];
       }
       const M = this.mgrid(); if (M) return [M.startX - M.label, M.right];
-      const G = this.gridGeometry(), step = G.cell + G.spacing;
-      return [G.startX - G.label, G.startX + G.cols * step - G.spacing];
+      const G = this.gridGeometry();
+      if (G.scroll) return [G.scroll.viewL - G.label, G.scroll.viewR];
+      return [G.startX - G.label, G.right];
+    }
+    yearWeeks(yr){
+      const st = utc(yr, 0, 1), wd = (st.getUTCDay() + 6) % 7, dow = this.o.monday_first ? wd : (wd + 1) % 7;
+      const days = ((yr % 4 === 0 && yr % 100 !== 0) || yr % 400 === 0) ? 366 : 365;
+      return Math.ceil((dow + days) / 7);
     }
     gridInfo(){
       const today = this.today();
@@ -411,11 +463,11 @@
         const yr = today.getUTCFullYear() + this._yearOff;
         const start = utc(yr, 0, 1);
         const wd = (start.getUTCDay() + 6) % 7, dow = this.o.monday_first ? wd : (wd + 1) % 7;
-        return {start: addDays(start, -dow), inRange: function(d){ return d.getUTCFullYear() === yr; }};
+        return {start: addDays(start, -dow), weeks: this.yearWeeks(yr), inRange: function(d){ return d.getUTCFullYear() === yr; }};
       }
       const end = addDays(today, 365 * this._endOff + (this._endShift | 0)), rs = addDays(end, -364);
       const wd = (rs.getUTCDay() + 6) % 7, dow = this.o.monday_first ? wd : (wd + 1) % 7;
-      return {start: addDays(rs, -dow), inRange: function(d){ return d >= rs && d <= end; }};
+      return {start: addDays(rs, -dow), weeks: Math.ceil((dow + 365) / 7), inRange: function(d){ return d >= rs && d <= end; }};
     }
     // ---- years view
     yearsList(){
@@ -439,10 +491,10 @@
       return this._hidden === 0 ? all : all.slice(0, fold);
     }
     // 14 px cells (scaled) however many years show, made smaller only when too wide
-    yearsFixedFit(width){
-      const o = this.o, s = o.scale;
+    yearsFixedFit(width, maxWks){
+      const o = this.o, s = o.scale, wks = maxWks || 53;
       let cell = 14 * s, sp = cell * 0.25, label = 50 * s, mt = !o.hide_labels ? 22 * s : 6 * s;
-      let tw = label + 53 * (cell + sp) - sp;
+      let tw = label + wks * (cell + sp) - sp;
       const avail = width - 4;
       if (tw > avail && avail > 50){ const r = avail / tw; cell *= r; sp *= r; label *= r; mt *= r; tw = avail; }
       return {cell: cell, sp: sp, tw: tw, label: label, mt: mt};
@@ -450,11 +502,15 @@
     // the height the widget asks for at this width
     naturalHeight(width){
       const o = this.o, s = o.scale;
-      const key = [o.mode, this._expanded, this.data, width, o.hide_labels, o.show_legend, o.years_fold, o.years_no_gap, o.month_grid, o.narrow_layout, s].join('|');
-      if (this._natKey === key) return this._nat;
+      // (the data compared as an object: in the joined key it was only "[object Object]", so another deck's data
+      // kept the height of the one before: back from a deck with fewer years, the card cut the grid)
+      const key = [o.mode, this._expanded, width, o.hide_labels, o.show_legend, o.years_fold, o.years_no_gap, o.month_grid, o.narrow_view, o.narrow_layout, s].join('|');
+      if (this._natKey === key && this._natData === this.data) return this._nat;
       let h;
       if (o.mode === 'years'){
-        const n = Math.max(1, this.yearsShown().length), f = this.yearsFixedFit(width);
+        const ys = this.yearsShown(), n = Math.max(1, ys.length);
+        const maxWks = ys.reduce((m, yr) => Math.max(m, this.yearWeeks(yr)), 53);
+        const f = this.yearsFixedFit(width, maxWks);
         const gapF = o.years_no_gap ? 0.25 : 1.25, legendH = this.legendH();
         const toggleH = this._canFold && !(legendH > 0) ? 22 * Math.max(0.8, s) : 0;
         h = f.mt + n * (7 * (f.cell * 1.25) - f.cell * 0.25) + Math.max(0, n - 1) * gapF * f.cell + toggleH + 10 * s + legendH;
@@ -464,28 +520,31 @@
         // continuous on a narrow card: its fewer months side by side (contLayout); the 9 months as wide as a year
         // a narrow year / 365: its two halves (gridGeometry)
         const R = o.mode === 'continuous' ? this.contR(width) : 0, split = this.gridSplit(width);
-        const total = R && R < 4 ? label + this.boxCols(R) * (target + sp) + 2 * R * 0.35 * (target + sp) : label + (split ? HALF : 53) * (target + sp) - sp, avail = width - 4;
-        if (total > avail && avail > 50){ const r = avail / total; cell *= r; sp *= r; mt *= r; }
+        const wks = this.gridInfo().weeks || 53;
+        const total = R && R < 4 ? label + this.boxCols(R) * (target + sp) + 2 * R * 0.35 * (target + sp) : label + (split ? HALF : wks) * (target + sp) - sp, avail = width - 4;
+        if (this.gridScroll(width)){ /* the weeks at their own size, scrolled */ }
+        else if (total > avail && avail > 50){ const r = avail / total; cell *= r; sp *= r; mt *= r; }
         else if (avail > 50){ const g = Math.max(1, Math.min(avail / total, 6)); cell *= g; sp *= g; mt *= g; }
         h = mt + this.gridHalfY(split, cell, sp, mt) + 7 * (cell + sp) + 10 * s + this.legendH();
         const M = this.mgrid(width, true); if (M) h = M.h + 10 * s + this.legendH();  // a narrow year / 365: its months' grid
       }
-      this._natKey = key; this._nat = Math.trunc(h);
+      this._natKey = key; this._natData = this.data; this._nat = Math.trunc(h);
       return this._nat;
     }
     yearsLayout(){
       const self0 = this;
       const o = this.o, s = o.scale, years = this.yearsShown(), n = Math.max(1, years.length);
+      const maxWks = years.reduce((m, yr) => Math.max(m, this.yearWeeks(yr)), 53);
       const H = this.lh(), legendH = this.legendH();
       const inLegend = this._canFold && legendH > 0;
       const toggleH = this._canFold && !inLegend ? 22 * Math.max(0.8, s) : 0;
       const bottom = 10 * s + legendH;
       const gapF = o.years_no_gap ? 0.25 : 1.25;
       const labelSpace = 50 * s, mt = !o.hide_labels ? 22 * s : 6 * s;
-      const avail = this.w - 4, perW = 53 * 1.25 - 0.25;
+      const avail = this.w - 4, perW = maxWks * 1.25 - 0.25;
       const own = !!o.own_height;  // pinned: its own height, the fixed cell size
       const fit = function(width){
-        if (own) return self0.yearsFixedFit(width);
+        if (own) return self0.yearsFixedFit(width, maxWks);
         const cellW = width - 4 > labelSpace ? (width - 4 - labelSpace) / perW : 14 * s;
         const perH = n * (7 * 1.25 - 0.25) + Math.max(0, n - 1) * gapF;
         const cellAll = perH > 0 ? (H - (mt + toggleH + bottom)) / perH : 14 * s;
@@ -493,7 +552,7 @@
         let cell = Math.max(cellAll, cellYear);
         cell = Math.min(cellW, Math.max(6, cell)); cell = Math.max(1, cell);
         const sp = cell * 0.25;
-        return {cell: cell, sp: sp, tw: labelSpace + 53 * (cell + sp) - sp};
+        return {cell: cell, sp: sp, tw: labelSpace + maxWks * (cell + sp) - sp};
       };
       const gridH = function(cell){ return n * (7 * (cell * 1.25) - cell * 0.25) + Math.max(0, n - 1) * gapF * cell; };
       const vpBottom = own ? H : H - bottom;
@@ -520,7 +579,7 @@
         blocks.push({yr: yr, gs: addDays(st, -dow), y0: y}); y += 7 * step - f.sp + gap;
       });
       const gridBottom = blocks.length ? blocks[blocks.length - 1].y0 + 7 * step - f.sp : startY;
-      return {cell: f.cell, sp: f.sp, step: step, startX: startX, startY: startY, label: lab, blocks: blocks, years: years,
+      return {cell: f.cell, sp: f.sp, step: step, startX: startX, startY: startY, label: lab, blocks: blocks, years: years, maxWks: maxWks,
         bottom: Math.min(gridBottom + toggleH, vpBottom), vpBottom: vpBottom, toggleH: toggleH, inLegend: inLegend, gridBottom: gridBottom, scroll: scroll, maxScroll: maxScroll};
     }
     yearTotalLines(yr){
@@ -557,9 +616,10 @@
     cells(){
       const out = [];
       if (this.o.mode === 'years'){
-        const Y = this.yearsLayout();
+        const Y = this.yearsLayout(), self = this;
         Y.blocks.forEach(function(b){
-          for (let wk = 0; wk < 53; wk++) for (let dy = 0; dy < 7; dy++){
+          const wks = self.yearWeeks(b.yr);
+          for (let wk = 0; wk < wks; wk++) for (let dy = 0; dy < 7; dy++){
             const d = addDays(b.gs, wk * 7 + dy);
             if (d.getUTCFullYear() !== b.yr) continue;
             out.push({d: d, s: iso(d), x: Y.startX + wk * Y.step, y: b.y0 + dy * Y.step});
@@ -612,13 +672,14 @@
         return {cells: out, cell: M.cell, M: M, step: M.step, info: inf};
       }
       const G = this.gridGeometry(), info = this.gridInfo(), step = G.cell + G.spacing;
-      for (let wk = 0; wk < 53; wk++) for (let dy = 0; dy < 7; dy++){
+      for (let wk = 0; wk < info.weeks; wk++) for (let dy = 0; dy < 7; dy++){
         const d = addDays(info.start, wk * 7 + dy);
         if (!info.inRange(d)) continue;
-        const P = this.gridPos(G, wk);
-        out.push({d: d, s: iso(d), x: G.startX + P.col * step, y: P.top + dy * step});
+        const P = this.gridPos(G, wk), x = G.startX + P.col * step;
+        if (G.scroll && (x + G.cell <= G.scroll.viewL || x >= G.scroll.viewR)) continue;
+        out.push({d: d, s: iso(d), x: x, y: P.top + dy * step});
       }
-      return {cells: out, cell: G.cell, G: G, step: step, info: info};
+      return {cells: out, cell: G.cell, G: G, step: step, info: info, clipX: G.scroll ? [G.scroll.viewL, G.scroll.viewR] : null};
     }
     // ---- values and colors
     entryCounts(e){
@@ -709,7 +770,7 @@
       const r = this._toggleRect;
       return !!(r && mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h);
     }
-    legendItems(){
+    legendItems(maxPOverride){
       const lv = this.lv, n = lv.n, steps = Math.min(5, n);
       const set = {};
       if (steps > 1) for (let i = 0; i < steps; i++) set[pyRound(i * (n - 1) / (steps - 1))] = 1; else set[0] = 1;
@@ -718,11 +779,11 @@
       const comps = components(this.o.metric);
       const countLike = comps.length === 1 && ['time', 'avg_time', 'retention'].indexOf(comps[0][0]) < 0;
       const items = [[rgbaStr(lv.empty, lv.emptyA), '0']];
-      const self = this;
+      const self = this, mp = maxPOverride != null ? maxPOverride : this.maxP;
       idxs.forEach(function(li){
         let text;
         if (li === 0) text = countLike ? '1' : '>0';
-        else text = self.fmtThreshold(self.maxP * Math.pow(li / n, 1 / curve));
+        else text = self.fmtThreshold(mp * Math.pow(li / n, 1 / curve));
         if (li === idxs[idxs.length - 1]) text += '+';
         items.push([rgbaStr(lv.levels[li], lv.alpha), text]);
       });
@@ -786,6 +847,13 @@
         ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(w - 6, sb.by, 4, sb.bh, 2); else ctx.rect(w - 6, sb.by, 4, sb.bh); ctx.fill(); ctx.restore();
       }
       this.drawLabels(ctx, cs);
+      const hs = cs.G && cs.G.scroll;
+      if (hs && hs.min < 0){
+        const top = cs.G.startY + 7 * cs.step - cs.G.spacing + 4 * o.scale, bw = Math.max(16, hs.room * hs.room / hs.gridW);
+        const bx = hs.viewL + (hs.room - bw) * (this._hx / hs.min);
+        ctx.save(); ctx.fillStyle = U.rgba(this.colors.text, (this._hxMoving ? 110 : 55) / 255);
+        ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, top, bw, 3, 1.5); else ctx.rect(bx, top, bw, 3); ctx.fill(); ctx.restore();
+      }
       if (o.show_legend) this.drawLegend(ctx, cs);
       this.drawHover(ctx, cs, radius);
       ctx.restore();
@@ -823,7 +891,7 @@
       try { this.drawLabels(g, cs); } catch (e) { DD.swallowed('heatmap labels', e); }
       return cv;
     }
-    snapshotMode(){ const v = this.visuals(); return {v: v, labels: this.labelsPicture(v.cs), legendTop: this._legendTop}; }
+    snapshotMode(){ const v = this.visuals(); return {v: v, labels: this.labelsPicture(v.cs), legendTop: this._legendTop, maxP: this.maxP}; }
     // a change of the years view (space between the years, older years folded) moves the
     // cells to their new places and fades the years that come or go, with the animation of a mode switch
     relayoutYears(change){
@@ -856,7 +924,7 @@
     startModeTr(before){
       if (!before || window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){ this.modeTr = null; return; }
       const v = this.visuals();
-      this.modeTr = {a: before.v, b: v, la: before.labels, lb: this.labelsPicture(v.cs), start: null, legendFrom: before.legendTop, k: DD.calm ? DD.calm() : 1};
+      this.modeTr = {a: before.v, b: v, la: before.labels, lb: this.labelsPicture(v.cs), start: null, legendFrom: before.legendTop, maxPFrom: before.maxP, k: DD.calm ? DD.calm() : 1};
       // years view on both sides: the year labels are drawn on each frame, sliding with their rows
       if (this.o.mode === 'years' && before.v.cs && before.v.cs.Y && v.cs.Y){
         const F = {}; before.v.cs.Y.blocks.forEach(function(b){ F[b.yr] = b.y0; }); this.modeTr.yearsFrom = F;
@@ -870,7 +938,7 @@
       ctx.clearRect(0, 0, W, H);
       const css = function(c, a){ return 'rgba(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ',' + (c[3] * a).toFixed(4) + ')'; };
       const mixc = function(a, b, t){ if (!a && !b) return null; const x = a || [b[0], b[1], b[2], 0], y = b || [a[0], a[1], a[2], 0]; return [x[0] + (y[0] - x[0]) * t, x[1] + (y[1] - x[1]) * t, x[2] + (y[2] - x[2]) * t, x[3] + (y[3] - x[3]) * t]; };
-      const rr = function(x, y, sz, r){ ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, sz, sz, Math.max(0, Math.min(r, sz / 2))); else ctx.rect(x, y, sz, sz); ctx.fill(); };
+      const rr = function(g, x, y, sz, r){ g.beginPath(); if (g.roundRect) g.roundRect(x, y, sz, sz, Math.max(0, Math.min(r, sz / 2))); else g.rect(x, y, sz, sz); g.fill(); };
       // each side cut as it shows: a view with a viewport (the years scrolled) cuts its own cells at its bottom, a cell
       // under that cut on one side fades on the other (it was not on screen to move from or to), and the cells that move
       // are cut at a bottom going from the old view's to the new one's with them. One cut for all (the old view's or the
@@ -878,31 +946,43 @@
       // gone at once (365 -> YRS).
       const ca = T.a.clip, cb = T.b.clip, cm = ca == null && cb == null ? null : (ca == null ? H : ca) + ((cb == null ? H : cb) - (ca == null ? H : ca)) * tt;
       const seen = function(c, cut){ return c && (cut == null || c.y < cut) ? c : null; };
-      const gone = [], come = [], move = [];
-      new Set(Object.keys(T.a.m).concat(Object.keys(T.b.m))).forEach(function(k){
-        const o = seen(T.a.m[k], ca), n = seen(T.b.m[k], cb);
-        if (o || n) (o && n ? move : (o ? gone : come)).push([o, n]);
+      // the cells sorted once for the whole move (the years unfolded: thousands of them, sorted again each frame)
+      if (!T.lists){
+        const gone = [], come = [], move = [];
+        new Set(Object.keys(T.a.m).concat(Object.keys(T.b.m))).forEach(function(k){
+          const o = seen(T.a.m[k], ca), n = seen(T.b.m[k], cb);
+          if (o || n) (o && n ? move : (o ? gone : come)).push([o, n]);
+        });
+        T.lists = {gone: gone, come: come, move: move};
+      }
+      const sq = function(g, q){ g.fillStyle = css(q.e, 1); rr(g, q.x, q.y, q.s, q.r); if (q.c){ g.fillStyle = css(q.c, 1); rr(g, q.x, q.y, q.s, q.r); } };
+      // the cells that only fade (out, or in: the older years unfolded) do not move: drawn once in a picture of their
+      // own, faded as a whole each frame (each drawn again every frame made unfolding many years stutter)
+      const layer = function(list, cut){
+        if (!list.length) return null;
+        const cv = document.createElement('canvas'); cv.width = ctx.canvas.width; cv.height = ctx.canvas.height;
+        const g = cv.getContext('2d'); g.setTransform(ctx.getTransform());
+        if (cut != null){ g.beginPath(); g.rect(0, 0, W, cut); g.clip(); }
+        list.forEach(function(p){ sq(g, p[0] || p[1]); });
+        return cv;
+      };
+      if (!T.imgs || T.imgs.w !== ctx.canvas.width || T.imgs.h !== ctx.canvas.height)
+        T.imgs = {w: ctx.canvas.width, h: ctx.canvas.height, gone: layer(T.lists.gone, ca), come: layer(T.lists.come, cb)};
+      const fade = function(img, a){
+        if (!img || a <= 0) return;
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = a; ctx.drawImage(img, 0, 0); ctx.restore();
+      };
+      fade(T.imgs.gone, 1 - tt);
+      fade(T.imgs.come, tt);
+      ctx.save();
+      if (cm != null){ ctx.beginPath(); ctx.rect(0, 0, W, cm); ctx.clip(); }
+      T.lists.move.forEach(function(p){
+        const o = p[0], n = p[1];
+        const x = o.x + (n.x - o.x) * tt, y = o.y + (n.y - o.y) * tt, sz = o.s + (n.s - o.s) * tt, r = o.r + (n.r - o.r) * tt;
+        ctx.fillStyle = css(mixc(o.e, n.e, tt), 1); rr(ctx, x, y, sz, r);
+        const c = mixc(o.c, n.c, tt); if (c){ ctx.fillStyle = css(c, 1); rr(ctx, x, y, sz, r); }
       });
-      const pass = function(cut, list){
-        ctx.save();
-        if (cut != null){ ctx.beginPath(); ctx.rect(0, 0, W, cut); ctx.clip(); }
-        list.forEach(function(p){ cell(p[0], p[1]); });
-        ctx.restore();
-      };
-      const cell = function(o, n){
-        if (o && n){
-          const x = o.x + (n.x - o.x) * tt, y = o.y + (n.y - o.y) * tt, sz = o.s + (n.s - o.s) * tt, r = o.r + (n.r - o.r) * tt;
-          ctx.fillStyle = css(mixc(o.e, n.e, tt), 1); rr(x, y, sz, r);
-          const c = mixc(o.c, n.c, tt); if (c){ ctx.fillStyle = css(c, 1); rr(x, y, sz, r); }
-        } else {
-          const q = o || n, a = o ? 1 - tt : tt;  // a cell only on one side fades out / in where it is
-          ctx.fillStyle = css(q.e, a); rr(q.x, q.y, q.s, q.r);
-          if (q.c){ ctx.fillStyle = css(q.c, a); rr(q.x, q.y, q.s, q.r); }
-        }
-      };
-      pass(ca, gone);
-      pass(cb, come);
-      pass(cm, move);
+      ctx.restore();
       if (T.yearsFrom){ ctx.save(); try { this.drawYearLabels(ctx, T.b.cs, {from: T.yearsFrom, tt: tt}); } catch (e) { DD.swallowed('heatmap year labels', e); } ctx.restore(); }
       else {
         ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -910,7 +990,11 @@
         ctx.globalAlpha = tt; ctx.drawImage(T.lb, 0, 0);
         ctx.restore();
       }
-      if (this.o.show_legend){ ctx.save(); this.drawLegend(ctx, T.b.cs, T.legendFrom, tt); ctx.restore(); }
+      if (this.o.show_legend){
+        const lb = 1 - Math.pow(1 - p, 3);
+        const mpTr = T.maxPFrom != null ? {from: T.maxPFrom, t: lb} : null;
+        ctx.save(); this.drawLegend(ctx, T.b.cs, T.legendFrom, tt, mpTr); ctx.restore();
+      }
       return true;
     }
     // arrows: the old view slides out, the new one in (nav transition, 300 ms OutCubic)
@@ -933,6 +1017,7 @@
       const cs = this._cs; if (!cs) return null;
       const step = cs.step || (cs.L && cs.L.step) || (cs.Y && cs.Y.step) || cs.cell * 1.25;
       if (cs.Y && my > cs.Y.vpBottom) return null;
+      if (cs.clipX && (mx < cs.clipX[0] || mx > cs.clipX[1])) return null;
       for (let i = 0; i < cs.cells.length; i++){
         const c = cs.cells[i];
         if (mx >= c.x && mx < c.x + step && my >= c.y && my < c.y + step) return c;
@@ -941,8 +1026,10 @@
     }
     drawHover(ctx, cs, radius){
       const c = this.hover; if (!c) return;
+      if (cs.clipX && cs.G){ ctx.save(); ctx.beginPath(); ctx.rect(cs.clipX[0] - 2, 0, cs.clipX[1] - cs.clipX[0] + 4, this.h); ctx.clip(); }
       ctx.strokeStyle = U.rgba(this.colors.text_primary || this.colors.text, 1); ctx.lineWidth = 2;
       ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(c.x, c.y, cs.cell, cs.cell, radius); else ctx.rect(c.x, c.y, cs.cell, cs.cell); ctx.stroke();
+      if (cs.clipX && cs.G) ctx.restore();
     }
     tooltipRows(c){
       const e0 = this.data[c.s], e = (e0 && typeof e0 === 'object') ? e0 : {reviews: e0 || 0};
@@ -994,10 +1081,10 @@
       ctx.save(); ctx.beginPath(); ctx.rect(0, 0, this.w, Y.vpBottom + 0); ctx.clip();
       ctx.textAlign = 'left';
       if (!o.hide_labels && Y.blocks.length){
-        const b = Y.blocks[0], seen = {};
+        const b = Y.blocks[0], seen = {}, bwks = this.yearWeeks(b.yr);
         ctx.font = Math.max(6, Math.min(8, Math.trunc(Y.cell * 0.7))) * 4 / 3 + 'px ' + FONT_FAMILY;
         ctx.fillStyle = U.rgba(col, 1); ctx.textBaseline = 'bottom';
-        for (let wk = 0; wk < 53; wk++) for (let dy = 0; dy < 7; dy++){
+        for (let wk = 0; wk < bwks; wk++) for (let dy = 0; dy < 7; dy++){
           const d = addDays(b.gs, wk * 7 + dy);
           if (d.getUTCFullYear() !== b.yr || seen[d.getUTCMonth()]) continue;
           seen[d.getUTCMonth()] = 1;
@@ -1072,8 +1159,8 @@
       }
       const G = cs.G, step = cs.step;
       ctx.font = Math.max(6, Math.min(8, Math.trunc(G.cell * 0.7))) * 4 / 3 + 'px ' + FONT_FAMILY;
-      const seen = {}, lbls = [];
-      for (let wk = 0; wk < 53; wk++) for (let dy = 0; dy < 7; dy++){
+      const seen = {}, lbls = [], wks = cs.info.weeks || 53;
+      for (let wk = 0; wk < wks; wk++) for (let dy = 0; dy < 7; dy++){
         const d = addDays(cs.info.start, wk * 7 + dy);
         if (!cs.info.inRange(d)) continue;
         const P = this.gridPos(G, wk), k = d.getUTCFullYear() * 12 + d.getUTCMonth() + '|' + P.half;  // a split year names its older half's last month again
@@ -1083,13 +1170,15 @@
       }
       // a half's first name (the month going on from the other half) gives way to a month starting right after it
       ctx.textBaseline = 'bottom';
+      if (G.scroll){ ctx.save(); ctx.beginPath(); ctx.rect(G.scroll.viewL, 0, G.scroll.room, this.h); ctx.clip(); }
       lbls.forEach(function(L, i){
         const n = lbls[i + 1];
         if (G.split && L.col === 0 && n && n.half === L.half && n.col < 3) return;
         ctx.fillText(L.t, G.startX + L.col * step, L.top - 1 * o.scale);
       });
+      if (G.scroll) ctx.restore();
       ctx.textBaseline = 'alphabetic';
-      const lx = G.startX - G.label + 2 * o.scale, names = this.dayNames(G.cell);
+      const lx = (G.scroll ? G.scroll.viewL : G.startX) - G.label + 2 * o.scale, names = this.dayNames(G.cell);
       (G.split ? [G.startY, G.startY + G.y2] : [G.startY]).forEach(function(top){
         names.forEach(function(nm, i){ ctx.fillText(nm, Math.trunc(lx), Math.trunc(top + (i * 2 + 1) * step + G.cell * 0.8)); });
       });
@@ -1099,22 +1188,36 @@
       const initials = (cell / this.o.scale) < 11;
       return idx.map(function(i){ const n = DAYS[i]; return initials ? n[0].toUpperCase() : n; });
     }
-    drawLegend(ctx, cs, glideFrom, glideT){
+    drawLegend(ctx, cs, glideFrom, glideT, mpTr){
       const o = this.o, h = this.legendH();
       if (h <= 0) return;
-      const items = this.legendItems();
+      const curMp = mpTr ? mpTr.from + (this.maxP - mpTr.from) * mpTr.t : null;
+      const items = this.legendItems(curMp);
       const sc = Math.max(1, o.scale);
       const fpx = 9 * sc * 4 / 3;
       ctx.font = fpx + 'px ' + FONT_FAMILY;
       const sq = 13 * sc, gap = 5 * sc, between = 11 * sc;
       const tw = function(t){ return ctx.measureText(t).width; };
+      // During a threshold transition, smoothly interpolate each item's slot width from start to end
+      // so the colored squares glide smoothly instead of jumping whenever a counting number drops a digit.
+      let slotW;
+      if (mpTr){
+        const itemsA = this.legendItems(mpTr.from), itemsB = this.legendItems(this.maxP);
+        slotW = items.map(function(it, i){
+          const wa = itemsA[i] ? tw(itemsA[i][1]) : tw(it[1]);
+          const wb = itemsB[i] ? tw(itemsB[i][1]) : tw(it[1]);
+          return wa + (wb - wa) * mpTr.t;
+        });
+      } else {
+        slotW = items.map(function(it){ return tw(it[1]); });
+      }
       let total = 0;
-      items.forEach(function(it){ total += sq + gap + tw(it[1]) + between; });
+      slotW.forEach(function(sw){ total += sq + gap + sw + between; });
       total -= between;
       let right = this.w - 6;
       let top = this.lh() - h;
       if (cs.Y){
-        right = Math.min(right, cs.Y.startX + 53 * cs.Y.step - cs.Y.sp);
+        right = Math.min(right, cs.Y.startX + (cs.Y.maxWks || 53) * cs.Y.step - cs.Y.sp);
         top = Math.min(top, cs.Y.bottom + 10 * o.scale);
       } else if (o.mode === 'continuous'){
         const L = cs.L;
@@ -1123,7 +1226,7 @@
         right = Math.min(right, cs.M.right);
         top = Math.min(top, cs.M.bottom + 10 * o.scale);
       } else if (cs.G){
-        right = Math.min(right, cs.G.startX + cs.G.cols * cs.step - cs.G.spacing);
+        right = Math.min(right, cs.G.scroll ? cs.G.scroll.viewR : cs.G.right);
         top = Math.min(top, cs.G.startY + cs.G.y2 + 7 * cs.step - cs.G.spacing + 10 * o.scale);
       }
       // a mode switch that moves the legend: it glides with the cells
@@ -1149,7 +1252,7 @@
         ctx.fillText(it[1], x, y + sq / 2 + 0.5);
         if (off){ const mid = Math.trunc(y + sq / 2) + 0.5; ctx.strokeStyle = U.rgba(this.colors.text, 1); ctx.beginPath(); ctx.moveTo(Math.trunc(x), mid); ctx.lineTo(Math.trunc(x + tw(it[1])), mid); ctx.stroke(); }
         ctx.globalAlpha = 1;
-        x += tw(it[1]);
+        x += slotW[i];
         if (step >= 0) hits.push({x: x0, y: y - 4, w: x - x0, h: sq + 8, step: step});
         x += between;
       }, this);
@@ -1219,26 +1322,28 @@
     if (show365) modeBtn('365', '365', true);
     if (show365 && showYear) sep(); else if (showCont && !show365 && showYear) sep();
     if (showYear) modeBtn('Y', 'year', false);
-    // month_grid_button: on a narrow card in year / 365, the year in two rows (default) or the months as a grid; the
-    // icon shows what a click does
-    chart._hcNarrow = chart.narrowGrid();
+    // narrow_view_button: on a narrow card in year / 365, its layout (the weeks scrolled, the year in two rows, the
+    // months as a grid, the whole year made small) in a menu; the icon shows the one in use
+    chart._hcNarrow = chart.narrowCard();
     if (chart._hcNarrow){
       const g = document.createElement('button'); g.className = 'dd-hm-btn dd-hm-gap';
-      const grid = !!chart.o.month_grid;
-      g.title = grid ? 'Show the year in two rows' : 'Show the months as a grid';
-      g.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-        (grid ? '<rect width="18" height="7" x="3" y="3" rx="1"/><rect width="18" height="7" x="3" y="14" rx="1"/>'
-              : '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>') + '</svg>';
+      const cur = chart.narrowView();
+      g.title = 'Layout on a narrow card';
+      g.innerHTML = NARROW_ICON(cur);
       g.addEventListener('click', function(){
-        const v = !chart.o.month_grid;
-        let before = null; try { before = chart.snapshotMode(); } catch (e) {}
-        chart.navTr = null; chart.fade = null; chart.hover = null;
-        chart.o.month_grid = v; chart._natKey = null;
-        DD.call('set_heatmap', {name: 'month_grid', value: v}).catch(function(){});
-        const shot = navShot(pills);
-        headControls(el, chart, redraw);
-        try { chart.startModeTr(before); } catch (e) { chart.modeTr = null; }
-        redraw(); navGlide(pills, shot);
+        const r = g.getBoundingClientRect();
+        const items = NARROW_VIEWS.map(function(v){ return [v, NARROW_LABEL[v], chart.narrowView() === v, null, 'radio']; });
+        DD.menu({x: r.left, y: r.bottom + 2, top: r.top}, items, function(v){
+          if (NARROW_VIEWS.indexOf(v) < 0 || chart.narrowView() === v) return;
+          let before = null; try { before = chart.snapshotMode(); } catch (e) {}
+          chart.navTr = null; chart.fade = null; chart.hover = null; chart._hFling = null; chart._hxSet = false;
+          chart.o.narrow_view = v; chart._natKey = null;
+          DD.call('set_heatmap', {name: 'narrow_view', value: v}).catch(function(){});
+          const shot = navShot(pills);
+          headControls(el, chart, redraw);
+          try { chart.startModeTr(before); } catch (e) { chart.modeTr = null; }
+          redraw(); navGlide(pills, shot);
+        });
       });
       pills.appendChild(g);
     }
@@ -1261,9 +1366,19 @@
         pills.appendChild(b);
       }
       arrow('<', -1);
-      if (mode === 'year'){ const l = document.createElement('span'); l.className = 'dd-hm-year'; l.textContent = String(new Date().getUTCFullYear() + chart._yearOff); pills.appendChild(l); }
+      if (mode === 'year'){ const l = document.createElement('span'); l.className = 'dd-hm-year'; l.textContent = String(chart.today().getUTCFullYear() + chart._yearOff); pills.appendChild(l); }
       arrow('>', 1);
     }
+    fitNav(pills);
+  }
+  // a header too narrow for the whole bar (a phone, the layout button added): the separators go, then the spaces
+  // shrink, rather than the right arrow being cut
+  function fitNav(pills){
+    if (!pills || !pills.isConnected) return;
+    pills.classList.remove('dd-hm-tight', 'dd-hm-tighter');
+    if (pills.scrollWidth <= pills.clientWidth + 0.5) return;
+    pills.classList.add('dd-hm-tight');
+    if (pills.scrollWidth > pills.clientWidth + 0.5) pills.classList.add('dd-hm-tighter');
   }
 
   // the nav bar's buttons where they are (before a mode switch rebuilds them), keyed by what they are
@@ -1322,6 +1437,7 @@
       el.innerHTML = '<div class="dd-plot"><canvas></canvas><div class="dd-tip"></div></div>';
       const plot = el.firstChild;
       const chart = new Chart(plot, ctx.data, DD.theme.chart, ctx.options || {});
+      if (ctx.expanded) chart._expanded = true;  // pinned: unfolded on an earlier page (ctx.onExpand)
       chart.anchorTo(ctx.data && ctx.data.anchor);
       const state = {last: true};
       // pinned & deep dive (_align_nav_to_grid): inset the nav bar to the grid's edges (centered grids, e.g. continuous mode)
@@ -1336,6 +1452,7 @@
         const shot = glide ? navShot(pills) : null;
         pills.style.marginRight = v;
         if (shot) navGlide(pills, shot);
+        fitNav(pills);
       };
       // pinned: the card follows the height the heatmap asks for (mode, older years unfolded, other data). Asked
       // for the canvas's width as it is now: chart.w is the width at mount until its ResizeObserver runs, and at
@@ -1354,10 +1471,12 @@
       const tip = plot.querySelector('.dd-tip');
       chart.canvas.addEventListener('mousemove', function(ev){
         if (chart._sbDrag) return;
+        if (chart._hDrag){ chart.canvas.style.cursor = 'grabbing'; return; }
         const r = chart.canvas.getBoundingClientRect(), mx = ev.clientX - r.left, my = ev.clientY - r.top;
         const onLegend = chart.legendStepAt(mx, my) !== null, onToggle = chart.o.mode === 'years' && chart.toggleHit(mx, my);
         const c = onLegend || onToggle ? null : chart.hitTest(mx, my);
-        chart.canvas.style.cursor = onLegend || onToggle ? 'pointer' : 'default';  // a day opens the browser, but the cursor stays an arrow
+        const hs = !onLegend && !onToggle && chart.o.mode !== 'continuous' && chart.gridScroll() && chart._cs && chart._cs.G && chart._cs.G.scroll;
+        chart.canvas.style.cursor = onLegend || onToggle ? 'pointer' : (hs && hs.min < 0 && mx >= hs.viewL ? 'grab' : 'default');  // a day opens the browser, but the cursor stays an arrow
         if (c) chart.showTip(tip, c, mx, my); else { tip.style.display = 'none'; chart._tipKey = null; }
         if ((c && chart.hover && c.s === chart.hover.s) || (!c && !chart.hover)) return;
         chart.hover = c; redraw();
@@ -1378,7 +1497,7 @@
           try { if (before) chart.startModeTr(before); } catch (e) { chart.modeTr = null; }
           redraw(); return;
         }
-        if (chart.o.mode === 'years' && chart.toggleHit(mx, my)){ chart.relayoutYears(function(){ chart._expanded = !chart._expanded; }); redraw(); return; }
+        if (chart.o.mode === 'years' && chart.toggleHit(mx, my)){ chart.relayoutYears(function(){ chart._expanded = !chart._expanded; }); if (ctx.onExpand) ctx.onExpand(!!chart._expanded); redraw(); return; }
         if (chart.o.click_browser === false) return;
         const c = chart.hitTest(mx, my);
         if (c && c.s && mx - c.x <= ((chart._cs && chart._cs.cell) || 0) && my - c.y <= ((chart._cs && chart._cs.cell) || 0)){
@@ -1390,6 +1509,14 @@
       // (a touchpad's small steps move it as they come: each under half a pixel was let go to the page, and the years
       // never moved)
       chart.canvas.addEventListener('wheel', function(ev){
+        if (chart.o.mode !== 'years' && chart.o.mode !== 'continuous' && !ev.ctrlKey && chart.gridScroll()){
+          const d = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : (ev.shiftKey ? ev.deltaY : 0);
+          if (!d) return;
+          const hs = chart._cs && chart._cs.G && chart._cs.G.scroll, old = chart._hx || 0;
+          chart._hx = old - d; if (hs) chart._hx = Math.max(hs.min, Math.min(0, chart._hx));
+          if (chart._hx === old) return;
+          ev.preventDefault(); chart._hFling = null; chart._hxSet = true; redraw(); return;
+        }
         if (chart.o.mode !== 'years' || ev.ctrlKey) return;
         const Y = chart._cs && chart._cs.Y; if (!Y || Y.maxScroll <= 0 || !ev.deltaY) return;
         const px = ev.deltaY * (ev.deltaMode === 1 ? 40 : ev.deltaMode === 2 ? Y.vpBottom : 1);
@@ -1439,6 +1566,14 @@
       };
       chart.canvas.addEventListener('pointerdown', function(ev){
         pan = null;
+        // a year / 365 scrolled on a narrow card: the finger moves the weeks (a flick goes on, slowing down)
+        // (a mouse too: its left button drags them, on a desktop where the wheel scrolls the page)
+        const mouse = ev.pointerType === 'mouse' && ev.button === 0;
+        if ((ev.pointerType === 'touch' || mouse) && ev.isPrimary && chart.o.mode !== 'continuous' && chart.gridScroll()){
+          chart._hFling = null;
+          pan = {id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false, h: true, mouse: mouse, base: chart._hx || 0, s: []};
+          return;
+        }
         if (ev.pointerType !== 'touch' || !ev.isPrimary || chart.o.mode !== 'continuous') return;
         let base = 0;
         if (chart.panTr){ base = chart._panPx || 0; chart.panTr = null; }  // caught while it glides: held where it is
@@ -1448,18 +1583,33 @@
         if (!pan || ev.pointerId !== pan.id) return;
         const dx = ev.clientX - pan.x0, dy = ev.clientY - pan.y0;
         if (!pan.on){
-          if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)){ const b = pan.base; pan = null; if (b) settle(0); return; }
-          if (Math.abs(dx) < 10) return;
+          if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx) && !pan.mouse){ const b = pan.base, wasH = pan.h; pan = null; if (b && !wasH) settle(0); return; }
+          if (Math.abs(dx) < (pan.mouse ? 4 : 10)) return;
           pan.on = true; pan.x0 = ev.clientX;
+          if (pan.mouse){
+            chart._hDrag = true; chart.canvas.style.cursor = 'grabbing';
+            try { chart.canvas.setPointerCapture(ev.pointerId); } catch (e) {}
+          }
           chart.navTr = null; chart.modeTr = null; chart.fade = null; chart.hover = null; tip.style.display = 'none'; chart._tipKey = null;
         }
-        chart._panPx = pan.base + (ev.clientX - pan.x0);
+        if (pan.h){ chart._hx = pan.base + (ev.clientX - pan.x0); chart._hxMoving = true; chart._hxSet = true; }
+        else chart._panPx = pan.base + (ev.clientX - pan.x0);
         pan.s.push([performance.now(), ev.clientX]); if (pan.s.length > 5) pan.s.shift();
         state.last = true; DD.frame.kick();
       }, {passive: true});
       const panEnd = function(ev){
         if (!pan || ev.pointerId !== pan.id) return;
         const p = pan; pan = null;
+        if (p.h){
+          if (!p.on) return;
+          // a mouse let go after a drag: not a click on the day under it
+          if (p.mouse){ chart._hDrag = false; chart._sbClickAt = Date.now(); chart.canvas.style.cursor = 'grab'; }
+          const a = p.s[0], b = p.s[p.s.length - 1], dt = b && a ? b[0] - a[0] : 0;
+          const v = dt > 0 && performance.now() - b[0] < 80 ? (b[1] - a[1]) / dt : 0;
+          chart._hFling = Math.abs(v) > 0.05 && DD.anim && DD.anim.on ? {v: Math.max(-4, Math.min(4, v)), t: null} : null;
+          if (!chart._hFling) chart._hxMoving = false;
+          state.last = true; DD.frame.kick(); return;
+        }
         if (!p.on){ if (p.base) settle(0); return; }
         const a = p.s[0], b = p.s[p.s.length - 1], dt = b && a ? b[0] - a[0] : 0;
         settle(dt > 0 && performance.now() - b[0] < 80 ? (b[1] - a[1]) / dt : 0);
@@ -1469,6 +1619,14 @@
       chart.canvas.addEventListener('mouseleave', function(){ tip.style.display = 'none'; chart._tipKey = null; if (chart.hover){ chart.hover = null; redraw(); } });
       // a change of data: the old picture fades into the new one (320 ms)
       function frame(now){
+        if (chart._hFling){
+          const F = chart._hFling, dt = F.t === null ? 16 : Math.min(48, now - F.t); F.t = now;
+          const before = chart._hx || 0;
+          chart._hx = before + F.v * dt; F.v *= Math.exp(-dt / 325);
+          chart.draw();  // (gridGeometry holds it to the ends)
+          if (Math.abs(F.v) > 0.02 && chart._hx !== before){ state.last = true; return true; }
+          chart._hFling = null; chart._hxMoving = false; chart.draw(); state.last = false; return false;
+        }
         if (chart.panTr){
           const T = chart.panTr; if (T.start === null) T.start = now;
           const p = Math.min(1, (now - T.start) / T.dur), e = 1 - Math.pow(1 - p, 3);
@@ -1483,20 +1641,40 @@
         if (f){
           if (f.start === null) f.start = now;
           const t = Math.min(1, (now - f.start) / (320 * (f.k || 1)));
-          chart.draw();
+          const cv = chart.canvas;
+          // the new picture: drawn once and kept (f.tmp), not at each frame (~400 cells: 7 ms a frame, up to 33, in a
+          // deck change where ~15 charts move at once); again only when it changes meanwhile (its scale easing, a cell
+          // hovered, another size)
+          const fresh = !f.tmp || f.tmp.width !== cv.width || f.tmp.height !== cv.height || chart._easing || f.hov !== chart.hover || t >= 1;
+          if (fresh) chart.draw();
           if (t < 1){
             // a cross-fade as a sum (old x (1 - e) + new x e on a clear canvas): a cell the same in both keeps its
             // color and opacity the whole time (drawn one over the other, the half-transparent empty cells dimmed and
             // came back); the legend stays the new one
-            const cv = chart.canvas, c = chart.ctx, a = (1 + Math.cos(Math.PI * t)) / 2;  // InOutSine (_data_transition_anim)
-            if (!f.tmp || f.tmp.width !== cv.width || f.tmp.height !== cv.height){ f.tmp = document.createElement('canvas'); f.tmp.width = cv.width; f.tmp.height = cv.height; }
-            const tc = f.tmp.getContext('2d'); tc.setTransform(1, 0, 0, 1, 0, 0); tc.clearRect(0, 0, cv.width, cv.height); tc.drawImage(cv, 0, 0);
+            const c = chart.ctx, a = (1 + Math.cos(Math.PI * t)) / 2;  // InOutSine (_data_transition_anim)
+            if (fresh){
+              if (!f.tmp || f.tmp.width !== cv.width || f.tmp.height !== cv.height){ f.tmp = document.createElement('canvas'); f.tmp.width = cv.width; f.tmp.height = cv.height; }
+              const tc = f.tmp.getContext('2d'); tc.setTransform(1, 0, 0, 1, 0, 0); tc.clearRect(0, 0, cv.width, cv.height); tc.drawImage(cv, 0, 0);
+              f.hov = chart.hover;
+              f.newLegendRect = chart._legendRect ? Object.assign({}, chart._legendRect) : null;
+            }
             c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height);
             c.globalAlpha = a; c.drawImage(f.img, 0, 0);
             c.globalCompositeOperation = 'lighter'; c.globalAlpha = 1 - a; c.drawImage(f.tmp, 0, 0);
             c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
-            const L = chart._legendRect, d = cv.width / (chart.w || 1);
-            if (L && chart.o.show_legend){ c.beginPath(); c.rect(L.x * d, L.y * d, L.w * d, L.h * d); c.clip(); c.clearRect(0, 0, cv.width, cv.height); c.drawImage(f.tmp, 0, 0); }
+            const L0 = f.oldLegendRect, L1 = f.newLegendRect || chart._legendRect;
+            if ((L0 || L1) && chart.o.show_legend && chart._cs){
+              const sc = DD.canvasScale(cv, chart.w, chart.h);
+              const x0 = Math.min(L0 ? L0.x : L1.x, L1 ? L1.x : L0.x) - 4;
+              const y0 = Math.min(L0 ? L0.y : L1.y, L1 ? L1.y : L0.y) - 2;
+              const x1 = Math.max(L0 ? L0.x + L0.w : L1.x + L1.w, L1 ? L1.x + L1.w : L0.x + L0.w) + 4;
+              const y1 = Math.max(L0 ? L0.y + L0.h : L1.y + L1.h, L1 ? L1.y + L1.h : L0.y + L0.h) + 2;
+              c.clearRect(Math.floor(x0 * sc[0]), Math.floor(y0 * sc[1]), Math.ceil((x1 - x0) * sc[0]), Math.ceil((y1 - y0) * sc[1]));
+              c.setTransform(sc[0], 0, 0, sc[1], 0, 0);
+              const lb = 1 - Math.pow(1 - t, 3);
+              const mpTr = f.oldMaxP != null ? {from: f.oldMaxP, t: lb} : null;
+              chart.drawLegend(c, chart._cs, null, null, mpTr);
+            }
             c.restore();
             state.last = true; return true;
           }
@@ -1516,7 +1694,8 @@
         // a card made narrow or wide again (a phone turned, a window resized): its controls (the month grid button)
         // and the height it asks for follow at once (asked only on the next redraw, the card kept the old height
         // and cut the grid for a moment)
-        if (chart.narrowGrid() !== !!chart._hcNarrow) headControls(ctx.head, chart, redraw);
+        if (chart.narrowCard() !== !!chart._hcNarrow) headControls(ctx.head, chart, redraw);
+        else if (ctx.head) fitNav(ctx.head.querySelector('.dd-pills'));
         notify();
         // drawn now, before the page is painted: a resized canvas is blank until it is drawn (the card growing
         // with the years view, a space between the years taken out, showed the heatmap empty for a frame)
@@ -1531,7 +1710,7 @@
       return {
         natural: function(w){ return chart.naturalHeight(w); },
         // a narrow card's layout (two rows, the month grid, fewer months, the years): the Deep Dive row takes its natural height
-        narrow: function(w){ return chart.narrowGrid(w) || chart.yearsNarrow(w) || (chart.o.mode === 'continuous' && chart.contR(w) < 4); },
+        narrow: function(w){ return chart.narrowWidth(w) || chart.yearsNarrow(w) || (chart.o.mode === 'continuous' && chart.contR(w) < 4); },
         // the height glide of a switch, driven by the pinned card
         heightAnim: function(lh, vh){ chart._layoutH = Math.max(1, lh); chart._visH = vh; chart._legendRides = !!chart.modeTr; retarget(); alignNav(true); state.last = true; DD.frame.kick(); },
         heightStep: function(vh){ if (chart._layoutH == null) return; chart._visH = vh; state.last = true; DD.frame.kick(); },
@@ -1539,6 +1718,7 @@
         update: function(data){
           let img = null;
           const anim = ctx.animate !== false && !DD._noAnim && chart.canvas.width > 2;
+          const oldMaxP = chart.maxP, oldLegendRect = chart._legendRect ? Object.assign({}, chart._legendRect) : null;
           if (anim){ img = document.createElement('canvas'); img.width = chart.canvas.width; img.height = chart.canvas.height; img.getContext('2d').drawImage(chart.canvas, 0, 0); }
           let shot = null; if (anim && chart.o.mode !== 'continuous' && chart.o.mode !== 'years'){ try { shot = chart.snapshotMode(); } catch (e) {} }
           const dir = chart.anchorTo(data && data.anchor);
@@ -1561,7 +1741,7 @@
             // out of what is on screen: it slides like the arrows, the new days already there (begin_navigation_transition)
             chart.modeTr = null; chart.fade = null; chart.hover = null; headControls(ctx.head, chart, redraw);
             if (img) chart.startNavTr(img, dir);
-          } else if (img) chart.fade = {img: img, start: null, k: DD.calm ? DD.calm() : 1};  // 320 ms (slowed down, the deck change dragged)
+          } else if (img) chart.fade = {img: img, start: null, oldMaxP: oldMaxP, oldLegendRect: oldLegendRect, k: DD.calm ? DD.calm() : 1};  // 320 ms (slowed down, the deck change dragged)
           if (DD.dev) DD.trace('ANIMTRACE heatmap update: ' + (chart.modeTr ? 'mode transition' : chart.navTr ? 'slide' : chart.fade ? 'fade' : 'NO ANIMATION (noAnim=' + !!DD._noAnim + ' canvas ' + chart.canvas.width + ')'));
           state.last = true; DD.frame.kick(); notify(); },
         setOptions: function(o){ Object.assign(chart.o, o); headControls(ctx.head, chart, redraw); redraw(); notify(); },

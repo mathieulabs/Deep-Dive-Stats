@@ -125,23 +125,29 @@ def bar_counts(sets, days, row_of):
 
 
 def _bar_counts(sets, days, row_of, rng, slot):
+    from ....utils import excluded_days_clause
+
+    excl = excluded_days_clause()
+    join = "LEFT JOIN cards ON revlog.cid = cards.id" if "cards." in (excl or "") else ""
     rows = [[[0, 0] for _s in sets] for _d in days]
     rows_of = {}
     for i, found in enumerate(sets):
         if not found:
             continue
-        ids = ",".join(str(int(c)) for c in found)
-        for b, n, ms in mw.col.db.all(f"""
-                SELECT id / {slot}, count(), sum(time) FROM revlog
-                WHERE id >= {int(rng[0])} AND id < {int(rng[1])} AND type < 4 AND ease BETWEEN 1 AND 4
-                  AND cid IN ({ids})
-                GROUP BY id / {slot}"""):
-            b = int(b)
-            r = rows_of.get(b, -1)
-            if r == -1:
-                r = rows_of[b] = row_of(b * slot)
-            if r is None or r >= len(rows):
-                continue
-            rows[r][i][0] += int(n or 0)
-            rows[r][i][1] += int(ms or 0)
+        cids = [str(int(c)) for c in found]
+        for start in range(0, len(cids), 500):
+            ids = ",".join(cids[start:start + 500])
+            for b, n, ms in mw.col.db.all(f"""
+                    SELECT revlog.id / {slot}, count(), sum(revlog.time) FROM revlog {join}
+                    WHERE revlog.id >= {int(rng[0])} AND revlog.id < {int(rng[1])} AND revlog.type < 4 AND revlog.ease BETWEEN 1 AND 4
+                      {excl} AND revlog.cid IN ({ids})
+                    GROUP BY revlog.id / {slot}"""):
+                b = int(b)
+                r = rows_of.get(b, -1)
+                if r == -1:
+                    r = rows_of[b] = row_of(b * slot)
+                if r is None or r >= len(rows):
+                    continue
+                rows[r][i][0] += int(n or 0)
+                rows[r][i][1] += int(ms or 0)
     return rows

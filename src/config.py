@@ -7,6 +7,7 @@ import json
 import os
 import pickle
 import re
+import threading
 import time
 import weakref
 from typing import Any
@@ -24,6 +25,12 @@ _PEEK_RECHECK_S = 0.5
 _PATH_CACHE: dict = {}
 # Config managers that are kept alive (open windows). See reload_live_managers().
 _LIVE_MANAGERS: weakref.WeakSet = weakref.WeakSet()
+_LIVE_LOCK = threading.Lock()
+
+
+def _live_managers() -> list:
+    with _LIVE_LOCK:
+        return list(_LIVE_MANAGERS)
 
 _PINNED_OFF_FLAG_NAME = "pinned_disabled.flag"
 
@@ -57,10 +64,11 @@ _DEV_BUILD = []
 
 def is_dev_build() -> bool:
     """True when running from a source checkout (it has dev_tools/); the packaged add-on does not.
-    Checked on disk once a session."""
+    Checked on disk once a session. DD_AS_USER=1: the checkout runs as a user's install (no traces, no coverage, no
+    startup sampling, the pages cached, no "(dev)" label), to see the add-on as users get it."""
     if not _DEV_BUILD:
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        _DEV_BUILD.append(os.path.isdir(os.path.join(root, "dev_tools")))
+        _DEV_BUILD.append(os.path.isdir(os.path.join(root, "dev_tools")) and not os.environ.get("DD_AS_USER"))
     return _DEV_BUILD[0]
 
 
@@ -84,7 +92,7 @@ def reload_live_managers() -> None:
     the values they already loaded.
     """
     clear_config_caches()
-    for manager in list(_LIVE_MANAGERS):
+    for manager in _live_managers():
         try:
             manager._config_path = manager._build_config_path()
             fresh = manager._read_config()
@@ -173,7 +181,9 @@ def _write_file_atomic(path: str, payload: str) -> None:
     (see const.addon_dir)."""
     if addon_removed():
         return
-    tmp_path = f"{path}.{os.getpid()}.tmp"
+    import threading
+
+    tmp_path = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as handle:
         handle.write(payload)
     last_error = None
@@ -216,23 +226,38 @@ class ConfigManager:
         self._addon, self._config_path = paths
 
         self.config = self._read_config()
-        _LIVE_MANAGERS.add(self)
+        with _LIVE_LOCK:
+            _LIVE_MANAGERS.add(self)
 
     def write_config(self):
         """Save the current values."""
         self._save_config(self.config)
 
-    def set_value(self, key: str, val):
+    def set_value(self, key: str, val, notify: bool = True):
         """Save one value."""
-        self.write_config_vals({key: val})
+        self.write_config_vals({key: val}, notify=notify)
 
-    def write_config_vals(self, updates: dict):
+    def write_config_vals(self, updates: dict, notify: bool = True):
         """Apply several updates on top of the file's latest content, then save."""
         config = self._load_live_config()
         for key, val in updates.items():
             config[key] = val
             self.config[key] = val
-        self._save_config(config)
+        self._save_config(config, notify=notify)
+        # the other open managers (Deep Dive, Settings) take these values too: their next full save
+        # (write_config, a theme change...) would otherwise put their older copy back on disk
+        with _LIVE_LOCK:
+            managers = list(_LIVE_MANAGERS)
+        for manager in managers:
+            if manager is self or getattr(manager, "_config_path", None) != self._config_path:
+                continue
+            try:
+                for key, val in updates.items():
+                    manager.config[key] = copy.deepcopy(val)
+            except Exception:
+                from .details.logic.logger import log_swallowed
+
+                log_swallowed()
 
     def _build_config_path(self) -> str:
         addon_dir = os.path.join(self.mw.addonManager.addonsFolder(), self._addon)
@@ -265,7 +290,7 @@ class ConfigManager:
             _FILE_CONFIG_CACHE.pop(path, None)
         return data
 
-    def _save_config(self, config: dict[str, Any]) -> None:
+    def _save_config(self, config: dict[str, Any], notify: bool = True) -> None:
         normalized = self._normalize_config(dict(config))
         if addon_removed():
             return
@@ -278,13 +303,14 @@ class ConfigManager:
         _NORMALIZED_CONFIG_CACHE.pop(self._config_path, None)
         _PEEK_CACHE.pop(self._config_path, None)
         self._sync_pins_to_live_managers(normalized)
-        for listener in list(SAVE_LISTENERS):
-            try:
-                listener(normalized)
-            except Exception:
-                from .details.logic.logger import log_swallowed
+        if notify:
+            for listener in list(SAVE_LISTENERS):
+                try:
+                    listener(normalized)
+                except Exception:
+                    from .details.logic.logger import log_swallowed
 
-                log_swallowed()
+                    log_swallowed()
 
     def _sync_pins_to_live_managers(self, saved: dict[str, Any]) -> None:
         # Other open managers (Deep Dive, settings dialogs) hold their own copy of the config.
@@ -296,7 +322,7 @@ class ConfigManager:
             value = saved.get(key)
             if value is None:
                 continue
-            for manager in list(_LIVE_MANAGERS):
+            for manager in _live_managers():
                 if manager is self or getattr(manager, "_config_path", None) != self._config_path:
                     continue
                 try:
@@ -307,7 +333,7 @@ class ConfigManager:
                     log_swallowed()
         for key in (Config.DEEP_DIVE_EXTRA_CHARTS, Config.DEEP_DIVE_HIDDEN_CHARTS, Config.DEEP_DIVE_CHART_ORDER,
                     Config.DEEP_DIVE_TEXT_WIDGETS, Config.DEEP_DIVE_WIDGET_SETTINGS, Config.SHARED_FILTER_MODES):
-            for manager in list(_LIVE_MANAGERS):
+            for manager in _live_managers():
                 if manager is self or getattr(manager, "_config_path", None) != self._config_path:
                     continue
                 try:
@@ -518,7 +544,7 @@ def copy_profile_settings(mw, source_path, target: "ConfigManager") -> bool:
     normalized = target._normalize_config(new)
     target._save_config(normalized)
     # every live copy of this profile's settings takes them (one writing its old copy back later undid the copy)
-    for manager in list(_LIVE_MANAGERS) + [target]:
+    for manager in _live_managers() + [target]:
         if getattr(manager, "_config_path", None) == target._config_path:
             try:
                 manager.config.clear()
@@ -620,7 +646,7 @@ def apply_imported_settings(target: "ConfigManager", data: dict, shareable: bool
             new[merge_key] = merged
     normalized = target._normalize_config(new)
     target._save_config(normalized)
-    for manager in list(_LIVE_MANAGERS) + [target]:
+    for manager in _live_managers() + [target]:
         if getattr(manager, "_config_path", None) == target._config_path:
             try:
                 manager.config.clear()

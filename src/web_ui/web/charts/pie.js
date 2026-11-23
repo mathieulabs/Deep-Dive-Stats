@@ -9,6 +9,7 @@
   const LABELS = {new: 'New', learn: 'Learning', relearn: 'Relearning', young: 'Young', mature: 'Mature',
     suspended: 'Suspended', buried: 'Buried', deleted: 'Deleted'};
   const PIE = 130, RING_W = 22, SLICE_GAP = 20;
+  const LEGEND_MIN_PX = 10;  // the legend beside the donut: its text's least size on screen (device pixels)
 
   const dayText = function(iso){ const p = String(iso).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]).toLocaleDateString(); };
   function smooth(t){ t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
@@ -27,22 +28,47 @@
       const f = DD.fitCanvas(this.canvas, this.ctx), w = f.w, h = f.h, dpr = f.dpr;
       this.w = w; this.h = h; this.dpr = dpr;
     }
-    // the legend beside the donut (the horizontal layout of draw): its rows and the widest name and count, at a
-    // readable size (10 px on screen), fit the room right of the donut and the card's height
-    _legendFits(ctx, w, h, rows, counts){
-      const scale = Math.min(h / 142, w / 252, 3), tx = Math.max(6, w * 0.28 - (PIE / 2) * scale);
-      const px = 10;
-      const room = (w - 3) - (tx + PIE * scale + 4) - Math.max(9, 12 * scale);
-      const self = this, keys = rows.filter(function(k){ return (counts[k] || 0) > 0; });
+    // the legend beside the donut (the horizontal layout of draw): the size its text is drawn at there, with every
+    // row this chart can show and a wide number (88,888), is readable on screen (LEGEND_MIN_PX device pixels). From
+    // the card's size only, not the deck's numbers: a deck with shorter numbers (3 digits) put the legend beside the
+    // donut at 7 px while the deck list, at the same size, showed the donut alone, and a deck change jumped between them
+    _legendPx(ctx, w, h, rows){
+      const scale = Math.min(h / 142, w / 252, 3), tx = Math.max(6, w * 0.28 - (PIE / 2) * scale), ty = (h - 150 * scale) / 2;
+      const xStart = tx + PIE * scale + Math.max(6, 8 * scale), right = tx + 252 * scale - Math.max(4, 4 * scale);
+      const widthScale = Math.max(0.75, Math.min(1.5, Math.max(1, right - xStart) / 130));
+      let fontPx = Math.max(9, Math.min(18, Math.round(12 * Math.min(scale, widthScale))));
+      let rowH = Math.max(fontPx + 4, Math.round(16 * scale));
+      const n = Math.max(1, rows.length), room = h - (ty + Math.max(8, 10 * scale)) - 4;
+      if ((n + 1) * rowH + 4 > room){
+        rowH = Math.max(10, Math.trunc((room - 4) / (n + 1)));
+        fontPx = Math.max(7, Math.min(fontPx, rowH - 3));
+      }
+      const self = this, pf = this.payload.fmt;
+      let nums = [U.formatNum(88888)];
+      if (pf){ nums = []; rows.forEach(function(k){ nums.push(pf(Number((self.payload.counts || {})[k] || 0))); }); }
+      const fit = function(px){
+        ctx.font = 'bold ' + px + 'px ' + FONT_FAMILY;
+        const lw = Math.max.apply(null, rows.map(function(k){ return ctx.measureText(self.label(k)).width; }).concat([ctx.measureText('Total').width]));
+        ctx.font = px + 'px ' + FONT_FAMILY;
+        let cw = Math.max.apply(null, nums.map(function(t){ return ctx.measureText(t).width; }).concat([ctx.measureText('0').width]));
+        if (self.payload.legend_pct) cw += ctx.measureText('  100%').width;  // (its % column, when on)
+        return tx + PIE * scale + 4 + Math.max(9, 12 * scale) + lw + 12 + cw + 2 <= w - 10;
+      };
       ctx.save();
-      ctx.font = 'bold ' + px + 'px ' + FONT_FAMILY;
-      const lw = Math.max.apply(null, (keys.length ? keys : rows).map(function(k){ return ctx.measureText(self.label(k)).width; }).concat([ctx.measureText('Total').width]));
-      ctx.font = px + 'px ' + FONT_FAMILY;
-      let tot = 0; rows.forEach(function(k){ tot += Number(counts[k] || 0); });
-      let cw = Math.max(ctx.measureText(U.formatNum(Math.round(tot))).width, ctx.measureText('0').width);
-      if (this.payload.legend_pct && tot > 0) cw += ctx.measureText('  100%').width;  // (its % column, when on)
+      while (fontPx > 6 && !fit(fontPx)) fontPx -= 1;
       ctx.restore();
-      return lw + 8 + cw + 2 <= room && ((keys.length || 1) + 1) * (px + 3) + 8 <= h;
+      return fontPx;
+    }
+    // PIETRACE (debug.log): each change of the legend's layout, with what decided it
+    _traceLayout(w, h, mode, showLegend, inline, horizontal, counts){
+      const sig = [Math.round(w), Math.round(h), mode, showLegend, inline, horizontal].join('|');
+      if (sig === this._layoutSig || !DD.dev || !DD.log) return;  // (a source checkout only)
+      const was = this._layoutSig; this._layoutSig = sig;
+      const tot = function(c){ let t = 0; if (c) ORDER.forEach(function(k){ t += Number(c[k] || 0); }); return t; };
+      DD.log('PIETRACE ' + (this.kind || 'pie') + ' layout ' + (inline ? (horizontal ? 'legend beside' : 'legend under') : 'donut alone') +
+        ' size=' + Math.round(w) + 'x' + Math.round(h) + ' dpr=' + (this.dpr || 1) + (DD.layoutDpr && DD.layoutDpr(this.dpr) !== this.dpr ? ' layout_dpr=' + DD.layoutDpr(this.dpr) : '') + ' mode=' + mode + ' show_legend=' + showLegend +
+        ' legend_px=' + this._legendPx(this.ctx, w, h, this.order()) + ' total=' + tot(counts) + ' target=' + tot(this.payload.counts) +
+        (this.morph ? ' (glide)' : '') + ' was=' + (was || 'first draw'));
     }
     // a pie of other parts (Today's Retention): the payload names its keys, labels and colours
     order(){ return this.payload.order || ORDER; }
@@ -59,9 +85,15 @@
       hid.forEach(function(k){ amt[k] = 1; });
       this.hideAmt = amt;
     }
+    // effective counts for a payload: when Sep. Susp. is off and merged counts are available, fold suspended/buried into their scheduling states
+    effCounts(p){
+      p = p || this.payload;
+      const c = (p && p.counts) || {}, m = (p && p.merged) || c.merged;
+      return (!p || p.order || p.separate || !m) ? c : m;
+    }
     // hides or shows a card type (never the last one shown); returns the types hidden now, or null
     toggleKind(k){
-      const hid = this.hiddenKinds().slice(), i = hid.indexOf(k), counts = this.payload.counts || {};
+      const hid = this.hiddenKinds().slice(), i = hid.indexOf(k), counts = this.effCounts();
       if (i >= 0) hid.splice(i, 1);
       else {
         const left = this.activeKeys().filter(function(a){ return a !== k && hid.indexOf(a) < 0 && Number(counts[a] || 0) > 0; });
@@ -153,7 +185,7 @@
       const r = Math.hypot(dx, dy);
       if (r < PIE / 2 - RING_W - 2 || r > PIE / 2 + 2) return null;
       const cw = (((90 - Math.atan2(-dy, dx) * 180 / Math.PI) % 360) + 360) % 360;
-      const counts = this.payload.counts || {}, active = this.activeKeys();
+      const counts = this.effCounts(), active = this.activeKeys();
       const keys = this.order().filter(function(k){ return active.indexOf(k) >= 0; });
       const self = this;
       let total = 0; keys.forEach(function(k){ total += Math.max(0, Number(counts[k] || 0)) * self.shown(k); });
@@ -172,7 +204,7 @@
       this.syncHide();
       { const s = DD.canvasScale(this.canvas, w, h); ctx.setTransform(s[0], 0, 0, s[1], 0, 0); }
       ctx.clearRect(0, 0, w, h);
-      let counts = (this.view || this.payload).counts || {};
+      let counts = this.view ? (this.view.counts || {}) : this.effCounts();
       const active = this.activeKeys();
       const showLegend = this.payload.show_legend !== false;
       const mode = this.payload.legend_mode || 'auto';
@@ -198,15 +230,19 @@
         const sc = h < nd - 15 ? Math.min(h / 142, w / 252, 3) : vScale(210);
         // readable on screen: the legend's size in device pixels (a zoom makes the card smaller in CSS pixels but
         // its text as big on screen, so the legend does not go behind its icon when zoomed in)
-        compact = sc * Math.max(1, this.dpr || 1) < 0.9;
-        // and beside the donut, its text at a readable size: a narrow card (the main screen's auto layout, ~230 px)
-        // kept the legend there, its text shrunk to 6 px to fit; the donut alone fills it, the list on its icon
-        if (!compact && h < nd - 15) compact = !this._legendFits(ctx, w, h, rows, counts);
+        // (the main screen's ratio once Anki's zoom is applied: a page just built is laid out without it for a frame
+        // or two, and showed the donut alone before its legend came beside it, pinned.js DD.layoutDpr)
+        const ldpr = DD.layoutDpr ? DD.layoutDpr(this.dpr) : this.dpr;
+        compact = sc * Math.max(1, ldpr || 1) < 0.9;
+        // and beside the donut, its text at a readable size on screen (a narrow card, the main screen's auto layout,
+        // ~230 px, kept the legend there at 7 px; the donut alone fills it, the list on its icon)
+        if (!compact && h < nd - 15) compact = this._legendPx(ctx, w, h, rows) * Math.max(1, ldpr || 1) < LEGEND_MIN_PX;
       }
       const inline = showLegend && !compact;
       const gridMode = true;
       const neededH = needed(inline);
       const horizontal = gridMode && h < neededH - 15 && inline;
+      if (this.kind === 'card_counts' || this.kind === 'todays_retention') this._traceLayout(w, h, mode, showLegend, inline, horizontal, counts);
       const logicalW = 210;
       let tx, ty, scale, totalScaledW = 0;
       ctx.save();
@@ -232,11 +268,11 @@
       const hov = this.hoverAmt || {};
       let hpeak = 0; Object.keys(hov).forEach(function(k){ if (hov[k] > hpeak) hpeak = hov[k]; });
       let hkey = null, hbest = 0.5; Object.keys(hov).forEach(function(k){ if (hov[k] > hbest){ hbest = hov[k]; hkey = k; } });
-      const interp = {}; let total = 0, legendTotal = 0;
+      const interp = {}; let total = 0, legendTotal = 0, rawTotal = 0;
       active.forEach(function(k){
         const v = Math.max(0, Number(counts[k] || 0));
         const vis = self.shown(k);  // (a type hidden from the legend: out of the ring and the total)
-        interp[k] = v * st * vis; total += v * st * vis;
+        interp[k] = v * st * vis; total += v * st * vis; rawTotal += v * vis;
       });
       active.forEach(function(k){ legendTotal += interp[k]; });
       const opac = Math.max(0, Math.min(100, this.options.chart_opacity_pct)) / 100 * ga;
@@ -351,7 +387,9 @@
       const tg = pv.target, tgA = pv.tgA != null ? pv.tgA : (pv.show_target === false ? 0 : 1);
       if (tg && tgA > 0.01 && total > 0 && !hkey){
         const ang = -Math.PI / 2 + tg * Math.PI * 2, r0 = rad - RING_W / 2 - 3, r1 = rad + RING_W / 2 + 3;
-        ctx.save(); ctx.globalAlpha *= Math.min(1, t) * tgA;
+        // it comes as the intro's sweep passes its place (by t, the sweep eased: it showed in the first fifth of the
+        // intro, whole, long before the ring got there)
+        ctx.save(); ctx.globalAlpha *= smooth((t - Math.min(tg, 0.96)) / 0.08 + 0.5) * tgA;  // (whole at the end, a target near 100% too)
         ctx.strokeStyle = C.text_primary; ctx.lineWidth = 2; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0); ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1); ctx.stroke();
         ctx.restore();
@@ -384,26 +422,41 @@
       let fontPx = Math.max(9, Math.min(18, Math.round(12 * Math.min(legendScale, widthScale))));
       let rowH = Math.max(fontPx + 4, Math.round((horizontal ? 16 : 18) * legendScale));
       let keys = rows.slice();
+      // how much of each row shows (0 .. 1): all of them, unless the legend is short of room
+      const pres = {}; keys.forEach(function(k){ pres[k] = 1; });
+      let nRows = keys.length;
       if (horizontal){
         const room = h - legendY - 4;
         if ((keys.length + 1) * rowH + 4 > room){
-          const nz = keys.filter(function(k){ return (counts[k] || 0) > 0; });
-          if (nz.length) keys = nz;
-          rowH = Math.max(10, Math.min(rowH, Math.trunc((room - 4) / (keys.length + 1))));
+          // only the types with cards; another deck's change (the morph) brings a row in or takes it out as the
+          // numbers move: its height and its ink go with it, the rows and the Total sliding (a row dropped at once
+          // made the whole legend jump: its rows taller, its text bigger, the Total up)
+          const nzOf = function(c){ const nz = keys.filter(function(k){ return Number((c || {})[k] || 0) > 0; }); return nz.length ? nz : keys; };
+          const M = this.morph, mt = M ? (M.tt != null ? M.tt : 0) : 1;
+          const inTo = nzOf(this.effCounts()), inFrom = M && M.from && M.from.counts && mt < 1 ? nzOf(M.from._view ? M.from.counts : this.effCounts(M.from)) : inTo;
+          nRows = 0;
+          keys = keys.filter(function(k){
+            const a = inFrom.indexOf(k) >= 0, b = inTo.indexOf(k) >= 0;
+            pres[k] = a && b ? 1 : b ? mt : a ? 1 - mt : 0;
+            nRows += pres[k];
+            return pres[k] > 0.001;
+          });
+          const r = (room - 4) / (nRows + 1);
+          rowH = Math.max(10, Math.min(rowH, mt < 1 ? r : Math.trunc(r)));
           fontPx = Math.max(7, Math.min(fontPx, rowH - 3));
         }
       }
       // beside the donut, the legend is centred on it (it sat at the card's top, the space under it empty)
       if (horizontal){
-        const blockH = (keys.length + 1) * rowH + 4, mid = ty + (pieY + PIE / 2) * scale;
+        const blockH = (nRows + 1) * rowH + 4, mid = ty + (pieY + PIE / 2) * scale;
         legendY = Math.max(legendY, Math.min(mid - blockH / 2, h - 4 - blockH));
       }
       const setFont = function(bold){ ctx.font = (bold ? 'bold ' : '') + fontPx + 'px ' + FONT_FAMILY; };
       setFont(false);
-      const pf = self.payload.fmt, pa = legendTotal > 0 ? this.pctNow() : 0;
+      const pf = self.payload.fmt, pa = rawTotal > 0 ? this.pctNow() : 0;
       // the count, and its share of the total in a column of its own right of it (Show Percentages), pa of it shown
       const fmtc = function(v){ return pf ? pf(v) : U.formatNum(Math.round(v)); };
-      const fmtp = function(v){ const p = legendTotal > 0 ? v * 100 / legendTotal : 0; return U.trimNum(p, p < 10 ? 1 : 0) + '%'; };
+      const fmtp = function(v, tot){ const d = tot === undefined ? legendTotal : tot, p = d > 0 ? v * 100 / d : 0; return U.trimNum(p, p < 10 ? 1 : 0) + '%'; };
       const tw = function(s){ return ctx.measureText(s).width; };
       let pctColW = 0;
       const pctShift = function(){ return pa > 0.001 ? pa * (tw('  ') + pctColW) : 0; };
@@ -411,8 +464,8 @@
         setFont(true);
         maxLabelW = Math.max.apply(null, keys.map(function(k){ return tw(self.label(k)); }).concat([tw('Total')]));
         setFont(false);
-        pctColW = pa > 0.001 ? Math.max.apply(null, keys.map(function(k){ return tw(fmtp(counts[k] || 0)); }).concat([tw(fmtp(legendTotal))])) : 0;
-        maxCountW = Math.max.apply(null, keys.map(function(k){ return tw(fmtc(counts[k] || 0)); }).concat([tw(fmtc(legendTotal))])) + pctShift();
+        pctColW = pa > 0.001 ? Math.max.apply(null, keys.map(function(k){ return tw(fmtp(counts[k] || 0, rawTotal)); }).concat([tw(fmtp(rawTotal, rawTotal))])) : 0;
+        maxCountW = Math.max.apply(null, keys.map(function(k){ return tw(fmtc(counts[k] || 0)); }).concat([tw(fmtc(rawTotal))])) + pctShift();
       };
       // (vis: how much of a type hidden from the legend shows; out of the total, its % goes as it is struck through)
       const countAt = function(v, x, y, vis){
@@ -440,9 +493,10 @@
       }
       const labelX = legendXStart + Math.max(9, 12 * legendScale);
       const countRight = legendRight;
-      setFont(false);
-      const shownCountW = Math.max.apply(null, keys.map(function(k){ return tw(fmtc(interp[k] || 0)); }).concat([tw(fmtc(legendTotal))])) + pctShift();
-      const maxLabelAvail = Math.max(20, countRight - Math.max(maxCountW, shownCountW) - 10 - labelX);
+      // Truncate labels against the target column width (maxCountW), not the frame-by-frame
+      // animated values: formatted durations like "58m 29s" briefly exceed "8m 29s" or "1h" during
+      // the intro sweep and would otherwise make the widest label flicker with an ellipsis.
+      const maxLabelAvail = Math.max(20, countRight - maxCountW - 10 - labelX);
       const fitLabel = function(s){
         if (tw(s) <= maxLabelAvail) return s;
         let out = s;
@@ -453,9 +507,10 @@
       ctx.textBaseline = 'middle';
       let y = legendY;
       keys.forEach(function(k){
-        const box = rowH <= 16 ? 7 : 8, vis = self.shown(k);
-        if (self.kindsToggle) self.legendHits.push({k: k, x: legendXStart - 2, y: y, w: countRight - legendXStart + 4, h: rowH});
-        ctx.save(); ctx.globalAlpha *= 0.4 + 0.6 * vis;
+        const box = rowH <= 16 ? 7 : 8, vis = self.shown(k), pr = pres[k], rh = rowH * pr;
+        if (self.kindsToggle && pr > 0.5) self.legendHits.push({k: k, x: legendXStart - 2, y: y, w: countRight - legendXStart + 4, h: rh});
+        ctx.save(); ctx.globalAlpha *= (0.4 + 0.6 * vis) * pr * pr;
+        if (pr < 1) y -= (rowH - rh) / 2;  // (drawn at its own size, centred in what it has left)
         ctx.fillStyle = self.color(k);
         ctx.fillRect(legendXStart, y + (rowH - box) / 2, box, box);
         ctx.fillStyle = text; ctx.textAlign = 'left'; setFont(true);
@@ -465,7 +520,8 @@
         setFont(false); ctx.textAlign = 'right';
         countAt(vis > 0.001 ? (interp[k] || 0) / vis : Number(counts[k] || 0) * st, countRight, y + rowH / 2, vis);
         ctx.restore();
-        y += rowH;
+        if (pr < 1) y += (rowH - rh) / 2;
+        y += rh;
       });
       y += 4;
       ctx.fillStyle = text; ctx.textAlign = 'left'; setFont(true);
@@ -653,6 +709,7 @@
         return {revs: revs};
       };
       const chart = new Chart(plot, ctx.data, DD.theme.chart, ctx.options || {});
+      chart.kind = type;
       // a distribution's pie (discrete.js piePayload): its slices hidden kept in its own setting (hide_save)
       chart.kindsToggle = type === 'card_counts' || (type === 'dist_pie' && !!(ctx.data && ctx.data.hide_save));
       // Card Counts, a distribution's pie: a click on a row of its legend hides that card type / slice, or shows it
@@ -781,7 +838,7 @@
       if (DD.hover) DD.hover.attach(el.querySelector('.dd-plot') || el, chart, {
         index: function(mx, my){ const k = chart.xf && chart.xf.bars ? chart.sliceAt(mx, my) : null; return k ? chart.order().indexOf(k) : -1; },
         rows: function(i){
-          const k = chart.order()[i], counts = chart.payload.counts || {}, n = Number(counts[k] || 0);
+          const k = chart.order()[i], counts = chart.effCounts(), n = Number(counts[k] || 0);
           let tot = 0; chart.activeKeys().forEach(function(a){ tot += Math.max(0, Number(counts[a] || 0)) * chart.shown(a); });
           return [{header: true, text: chart.label(k), color: chart.color(k)},
             {text: DD.tn('{count} card', '{count} cards', n, {count: U.formatNum(n)}), value: (tot > 0 ? U.trimNum(n * 100 / tot, 1) : '0') + '%'}];
@@ -814,10 +871,11 @@
           // 300 ms, every chart's change; InOutCubic alone (a smoothstep over it made the middle fly by)
           const t = Math.min(1, (now - m.start) / (300 * (m.k || 1)));
           if (t >= 1){ chart.morph = null; chart.view = null; } else {
-            const tt = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2, a = (m.from && m.from.counts) || {}, b = chart.payload.counts || {}, c = {};
-            Object.keys(b).concat(Object.keys(a)).forEach(function(k){ const o = a[k] || 0, v = b[k] || 0; c[k] = o + (v - o) * tt; });
+            const tt = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2, a = (m.from && m.from._view ? m.from.counts : chart.effCounts(m.from)) || {}, b = chart.effCounts(chart.payload) || {}, c = {};
+            m.tt = tt;  // (the legend's rows coming or going with it: draw)
+            Object.keys(b).concat(Object.keys(a)).forEach(function(k){ if (k === 'merged') return; const o = a[k] || 0, v = b[k] || 0; c[k] = o + (v - o) * tt; });
             const lerp = function(o, v){ return (o == null || v == null) ? v : o + (v - o) * tt; };
-            chart.view = Object.assign({}, chart.payload, {counts: c, before: lerp(m.from && m.from.before, chart.payload.before),
+            chart.view = Object.assign({}, chart.payload, {_view: true, counts: c, before: lerp(m.from && m.from.before, chart.payload.before),
               target: lerp(m.from && m.from.target, chart.payload.target),
               chA: lerp(m.from ? (m.from.chA != null ? m.from.chA : (m.from.show_change ? 1 : 0)) : null, chart.payload.show_change ? 1 : 0),
               tgA: lerp(m.from ? (m.from.tgA != null ? m.from.tgA : (m.from.show_target === false ? 0 : 1)) : null, chart.payload.show_target === false ? 0 : 1)}); mo = true;
@@ -844,7 +902,7 @@
           // cards in the ring: the kinds it shows only (suspended / buried apart only with Sep. Susp.). A deck whose
           // cards are all suspended has an empty ring: counted as cards, the ring stayed whole to the last frame
           // and vanished at once (its slices are shares of a total going to 0), instead of closing
-          const inRing = function(p){ if (!p || !p.counts) return false; const ks = p.order || ['new', 'learn', 'relearn', 'young', 'mature'].concat(p.separate ? ['suspended', 'buried'] : []); return ks.some(function(k){ return p.counts[k] > 0; }); };
+          const inRing = function(p){ if (!p || !p.counts) return false; const c = chart.effCounts(p), ks = p.order || ['new', 'learn', 'relearn', 'young', 'mature'].concat(p.separate ? ['suspended', 'buried'] : []); return ks.some(function(k){ return c[k] > 0; }); };
           const old = chart.payload, had = inRing(old), has = inRing(data);
           // other slices (a distribution's Pie view on another measure): its intro again, no morph
           if (hint === 'fresh' && ctx.animate && !DD._noAnim && has){
@@ -853,8 +911,8 @@
           }
           // to an empty deck / from one, the ring closes / opens (300 ms); the very first
           // cards keep the intro
-          if (ctx.animate && !DD._noAnim && had && !has){ const shown = (chart.view || old).counts; chart.morph = null; chart.view = null; chart.etr = {from: false, counts: shown, start: null, mul: 1, k: DD.calm ? DD.calm() : 1}; }
-          else if (ctx.animate && !DD._noAnim && !had && has && chart.progress >= 1){ chart.morph = null; chart.view = null; chart.etr = {from: true, counts: data.counts, start: null, mul: 0, k: DD.calm ? DD.calm() : 1}; }
+          if (ctx.animate && !DD._noAnim && had && !has){ const shown = chart.view ? chart.view.counts : chart.effCounts(old); chart.morph = null; chart.view = null; chart.etr = {from: false, counts: shown, start: null, mul: 1, k: DD.calm ? DD.calm() : 1}; }
+          else if (ctx.animate && !DD._noAnim && !had && has && chart.progress >= 1){ chart.morph = null; chart.view = null; chart.etr = {from: true, counts: chart.effCounts(data), start: null, mul: 0, k: DD.calm ? DD.calm() : 1}; }
           else if (ctx.animate && !had){ chart.progress = 0; state.start = null; } else if (ctx.animate && !DD._noAnim){
             chart.etr = null; chart.morph = {from: (chart.morph && chart.view) ? chart.view : old, start: null, k: DD.calm ? DD.calm() : 1}; }
           if (DD.dev) DD.trace('ANIMTRACE ' + type + ' update: ' + (chart.etr ? (chart.etr.from ? 'ring opens (from empty)' : 'ring closes (to empty)') : chart.morph ? 'morph' : chart.progress < 1 ? 'intro' : 'NO ANIMATION') + ' had=' + !!had + ' has=' + !!has + ' noAnim=' + !!DD._noAnim + ' shown=' + (el.offsetParent !== null));

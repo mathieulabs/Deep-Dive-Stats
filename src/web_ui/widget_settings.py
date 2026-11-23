@@ -494,4 +494,8 @@ class WebWidgetSettings(QDialog):
             self.bridge.close()
         except Exception:
             pass
+        try:
+            self.webview.cleanup()
+        except Exception:
+            pass
         super().done(result)

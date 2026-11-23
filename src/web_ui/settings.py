@@ -120,6 +120,9 @@ class WebSettingsDialog(QDialog):
         self.tabs_data = copy.deepcopy(host.get_tabs_config())
         self._initial_tabs = copy.deepcopy(self.tabs_data)
         self._initial_config = copy.deepcopy(conf)
+        from ..config import pinned_widgets_disabled
+
+        self._initial_pinned_off = bool(pinned_widgets_disabled())
         # the Decks part is kept here and put in the config on Save
         self._excluded = list(conf.get(Config.EXCLUDED_DECKS, []) or [])
         self._colors = dict(conf.get(Config.DECK_COLORS, {}) or {})
@@ -1082,6 +1085,12 @@ class WebSettingsDialog(QDialog):
             self.addon_config.write_config()
         except Exception:
             log_swallowed()
+        try:
+            from ..config import set_pinned_widgets_disabled
+
+            set_pinned_widgets_disabled(self._initial_pinned_off)
+        except Exception:
+            log_swallowed()
         self._apply_pinned_theme_runtime(source="settings_cancel_restore")
         self._refresh_live_data_colors(source="settings_cancel_restore", emit_theme_runtime=False)
         self._host_call("update_dashboard_visibility")
@@ -1105,6 +1114,10 @@ class WebSettingsDialog(QDialog):
         set_live_config_override(None)
         try:
             self.bridge.close()
+        except Exception:
+            pass
+        try:
+            self.webview.cleanup()
         except Exception:
             pass
         if self in _OPEN:

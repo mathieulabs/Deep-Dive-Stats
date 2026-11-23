@@ -414,20 +414,30 @@
       let total = 0;
       const byType = {};
       this.keys.forEach((k) => { byType[k] = 0; });
-      chunk.forEach((d) => {
-        if (pct){
-          // "Show as %": each day as shares of its parts (sum 100), a bin the mean of its days
+      if (pct){
+        // "Show as %": each active day as shares of its parts (sum 100), a bin the mean of its active days
+        let act = 0;
+        chunk.forEach((d) => {
           const tk = KEYS.reduce((a, k) => a + (mode === 'time' ? (d[k + '_time_ms'] || 0) : (d[k] || 0)), 0);
-          KEYS.forEach((k) => { byType[k] += tk ? (mode === 'time' ? (d[k + '_time_ms'] || 0) : (d[k] || 0)) * 100 / tk / chunk.length : 0; });
-          total += tk ? 100 / chunk.length : 0;
-        } else if (mode === 'time'){
-          total += hid.length ? KEYS.reduce((a, k) => a + (d[k + '_time_ms'] || 0), 0) / 60000 : (d.time_ms || 0) / 60000;
-          KEYS.forEach((k) => { byType[k] += (d[k + '_time_ms'] || 0) / 60000; });
-        } else {
-          total += hid.length ? KEYS.reduce((a, k) => a + (d[k] || 0), 0) : (d.reviews || 0);
-          KEYS.forEach((k) => { byType[k] += (d[k] || 0); });
+          if (!tk) return;
+          act += 1;
+          KEYS.forEach((k) => { byType[k] += (mode === 'time' ? (d[k + '_time_ms'] || 0) : (d[k] || 0)) * 100 / tk; });
+        });
+        if (act > 0){
+          KEYS.forEach((k) => { byType[k] /= act; });
+          total = 100;
         }
-      });
+      } else {
+        chunk.forEach((d) => {
+          if (mode === 'time'){
+            total += hid.length ? KEYS.reduce((a, k) => a + (d[k + '_time_ms'] || 0), 0) / 60000 : (d.time_ms || 0) / 60000;
+            KEYS.forEach((k) => { byType[k] += (d[k + '_time_ms'] || 0) / 60000; });
+          } else {
+            total += hid.length ? KEYS.reduce((a, k) => a + (d[k] || 0), 0) : (d.reviews || 0);
+            KEYS.forEach((k) => { byType[k] += (d[k] || 0); });
+          }
+        });
+      }
       const unit = this.options.unit;
       if (!pct && unit === 'level'){
         // a state at the end of the day: a bin shows its last day
@@ -1343,15 +1353,22 @@
         const segH = Math.min(1, val / maxVal) * plotH * growT;
         const y = curY - segH;
         const col = this.col(k);
-        if (sk > 0.01){
+        if (kk > 0.01){
           const g = ctx.createLinearGradient(0, base - tot, 0, base);
-          if (isDark){
-            g.addColorStop(0, rgba(scaleV(col, (100 + Math.round(14 * kk)) / 100), opacityFrac));
-            g.addColorStop(1, rgba(scaleV(col, 100 / (100 + Math.round(30 * kk))), Math.max(30 / 255, opacityFrac * (1 - 0.12 * kk))));
-          } else {
-            g.addColorStop(0, rgba(col, opacityFrac));
-            g.addColorStop(1, rgba(col, Math.max(30 / 255, opacityFrac * (1 - 0.38 * kk))));
+          const ck = col + '|' + Math.round(kk * 50) + '|' + Math.round(opacityFrac * 100) + '|' + (isDark ? 1 : 0);
+          const cache = this._gColCache || (this._gColCache = {});
+          let stops = cache[ck];
+          if (!stops){
+            stops = isDark
+              ? [rgba(scaleV(col, (100 + Math.round(14 * kk)) / 100), opacityFrac),
+                 rgba(scaleV(col, 100 / (100 + Math.round(30 * kk))), Math.max(30 / 255, opacityFrac * (1 - 0.12 * kk)))]
+              : [rgba(col, opacityFrac),
+                 rgba(col, Math.max(30 / 255, opacityFrac * (1 - 0.38 * kk)))];
+            if (Object.keys(cache).length > 256) this._gColCache = {};
+            this._gColCache[ck] = stops;
           }
+          g.addColorStop(0, stops[0]);
+          g.addColorStop(1, stops[1]);
           ctx.fillStyle = g;
         } else ctx.fillStyle = rgba(col, opacityFrac);
         const r = Math.min(1, barW / 2, segH);  // 1 px, as Anki's bars
@@ -1420,7 +1437,7 @@
       if (this.options.value_days) return DD.tn('{n} day', '{n} days', Math.round(v), {n: trimNum(v, v < 10 ? 1 : 0)});  // an average stability
       if (this.options.unit === 'rmse' || this.options.value_pct) return trimNum(v, 1) + '%';  // FSRS Loss by Fatigue, Memorised's average
       if (this.options.unit === 'load' || this.options.value_load) return trimNum(v, v < 10 ? 2 : 1);  // reviews a day: small fractions (Introduced Load, Load Trend)
-      if (this.options.time_tip && this.options.metric_mode === 'time') return formatAxis(v, 'time');  // minutes (Ratings' Time view)
+      if (this.options.metric_mode === 'time') return formatAxis(v, 'time');  // minutes (Activity & Ratings Time view)
       return formatNum(v);
     }
 
@@ -1486,7 +1503,7 @@
       if (left < 0) left = 2;
       if (top + th > ch) top = ch - th - 2;
       if (top < 0) top = 2;
-      el.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+      DD.tipAt(el, left, top);  // on whole screen pixels: a fractional place blurred its text
     }
 
     _updateAvgLabelDom(avgValue, avgY, padL){
@@ -1502,13 +1519,14 @@
         el.style.color = rgba(scaleV(this.colors.total_line, this.colors.is_dark ? 1.35 : 1 / 1.25), 1);
         el.style.display = 'block';
         this._avgLabelW = el.offsetWidth || 40;
+        this._avgLabelH = el.offsetHeight || 0;
       } else if (el.style.display === 'none'){
         el.style.display = 'block';
       }
       const tw = this._avgLabelW || 40;
       let left = padL - tw - 5;
       if (left < 0) left = 2;
-      el.style.transform = `translate3d(${left}px, ${avgY}px, 0) translateY(-50%)`;
+      DD.tipAt(el, left, avgY - (this._avgLabelH || 0) / 2);  // centred on the line, on whole screen pixels
     }
 
     _bindEvents(){
@@ -1584,7 +1602,7 @@
         chart._mouseX = null; chart._mouseY = null;
         chart._hideTooltipDom();
       });
-      window.addEventListener('mouseup', () => {
+      const onDragUp = () => {
         if (!chart._dragging) return;
         chart._dragging = false;
         const x0 = chart._dragStartX, x1 = chart._dragCurrentX;
@@ -1593,7 +1611,9 @@
         const i0 = chart._xToBinIndex(Math.min(x0, x1));
         const i1 = chart._xToBinIndex(Math.max(x0, x1));
         chart.zoomToBinRange(i0, i1);
-      });
+      };
+      window.addEventListener('mouseup', onDragUp);
+      chart._unbindInteractions = () => { window.removeEventListener('mouseup', onDragUp); };
 
       canvas.addEventListener('wheel', (e) => {
         if (e.shiftKey && chart.zoomRange){ e.preventDefault(); e.stopPropagation(); chart.panZoom(e.deltaY < 0 ? 1 : -1); return; }
@@ -2456,21 +2476,38 @@
       function headStats0(rows, o){
         if (!statEl) return;
         if (ctx.statText){ statEl.textContent = ctx.statText(rows, o); return; }
+        const list = rows || [];
+        // Sub-day (10-min) rows end in HH:MM (e.g. "Nov 22, 14:00" or "2026-11-22 14:00"), 144 bins per logical day.
+        const subDay = list.some(function(d){ return d && d.date && /\d\d:\d\d$/.test(d.date); });
+        const countDays = function(valOf){
+          let tot = 0, act = 0, n = 0;
+          if (subDay){
+            const byDay = {};
+            list.forEach(function(d, i){ const k = Math.floor(i / 144), v = valOf(d); tot += v; byDay[k] = (byDay[k] || 0) + v; });
+            const ks = Object.keys(byDay); n = ks.length;
+            ks.forEach(function(k){ if (byDay[k] > 0) act += 1; });
+          } else {
+            list.forEach(function(d){ const v = valOf(d); tot += v; if (v > 0) act += 1; n += 1; });
+          }
+          return {tot: tot, per: o.avg_on_active_days ? (act || 1) : (n || 1)};
+        };
         if (isAdded){
-          let tot = 0, act = 0;
-          (rows || []).forEach(function(d){ const v = d.reviews || 0; tot += v; if (v > 0) act += 1; });
-          const per = o.avg_on_active_days ? (act || 1) : ((rows || []).length || 1);
-          statEl.textContent = DD.t('Total: {count} added', {count: formatNum(tot)}) + '  \u00b7  ' + DD.t('Average: {count}/day', {count: trimNum(tot / per, 1)});
+          const s = countDays(function(d){ return d.reviews || 0; });
+          statEl.textContent = DD.t('Total: {count} added', {count: formatNum(s.tot)}) + '  \u00b7  ' + DD.t('Average: {count}/day', {count: trimNum(s.tot / s.per, 1)});
           return;
         }
-        let tot = 0, act = 0, n = 0;
-        (rows || []).forEach(function(d){ const v = o.metric_mode === 'time' ? (d.time_ms || 0) / 60000 : (d.reviews || 0); tot += v; if (v > 0){ act += 1; } n += 1; });
-        const per = o.avg_on_active_days ? (act || 1) : (n || 1);
-        const avg = tot / per;
+        const hid = o.hidden_review_types || [];
+        const baseKeys = o.keys || ['learn', 'relearn', 'young', 'mature', 'filtered'];
+        const actKeys = hid.length ? baseKeys.filter(function(k){ return hid.indexOf(k) < 0; }) : null;
+        const s = countDays(function(d){
+          if (o.metric_mode === 'time') return actKeys ? actKeys.reduce(function(a, k){ return a + (d[k + '_time_ms'] || 0); }, 0) / 60000 : (d.time_ms || 0) / 60000;
+          return actKeys ? actKeys.reduce(function(a, k){ return a + (d[k] || 0); }, 0) : (d.reviews || 0);
+        });
+        const avg = s.tot / s.per;
         const fmtT = function(m){ return m < 60 ? DD.t('{value} min', {value: trimNum(m, 1)}) : DD.t('{value} h', {value: trimNum(m / 60, 1)}); };
         statEl.textContent = o.metric_mode === 'time'
-          ? DD.t('Total: {value}', {value: fmtT(tot)}) + '  \u00b7  ' + DD.t('Avg: {value}', {value: DD.t('{value}/day', {value: fmtT(avg)})})
-          : DD.tn('Total: {count} review', 'Total: {count} reviews', tot, {count: formatNum(tot)}) + '  \u00b7  ' + DD.t('Avg: {value}', {value: DD.t('{value}/day', {value: trimNum(avg, 1)})});
+          ? DD.t('Total: {value}', {value: fmtT(s.tot)}) + '  \u00b7  ' + DD.t('Avg: {value}', {value: DD.t('{value}/day', {value: fmtT(avg)})})
+          : DD.tn('Total: {count} review', 'Total: {count} reviews', s.tot, {count: formatNum(s.tot)}) + '  \u00b7  ' + DD.t('Avg: {value}', {value: DD.t('{value}/day', {value: trimNum(avg, 1)})});
       }
       let curOpts = Object.assign({}, OPTIONS, ctx.options || {});
       const mapRows = ctx.mapRows || function(r){ return r; };
@@ -2549,10 +2586,19 @@
         },
         seriesChoices: function(){ return derived && derived.options && derived.options.keys ? derived.options.keys.map(function(k){ return [k, (derived.options.labels || {})[k] || k]; }) : []; },
         setOptions: function(o){
-          if (ctx.derive && o && o.hidden_series !== undefined && ctx.data){
-            Object.assign(curOpts, o); derived = ctx.derive(ctx.data, curOpts); curRows = derived.rows; Object.assign(curOpts, derived.options);
-            headStats(curRows, curOpts); chart.updateData(curRows, derived.options);
-          } else chart.setOptions(o);
+          const prevHid = JSON.stringify((curOpts && curOpts.hidden_series) || []);
+          Object.assign(curOpts, o || {});
+          const hidChanged = !!(o && o.hidden_series !== undefined && JSON.stringify(o.hidden_series || []) !== prevHid);
+          if (ctx.derive && hidChanged && ctx.data){
+            const zr = chart.zoomRange ? chart.zoomRange.slice() : null;
+            derived = ctx.derive(ctx.data, curOpts); curRows = derived.rows; Object.assign(curOpts, derived.options);
+            if (zr && curRows.length === chart.daily.length) chart.swapData(curRows, zr, true, derived.options);
+            else chart.updateData(curRows, derived.options);
+            headStats(chart._visibleDaily ? chart._visibleDaily() : curRows, curOpts);
+          } else {
+            chart.setOptions(o);
+            if (o && (o.hidden_review_types !== undefined || o.metric_mode !== undefined || o.avg_on_active_days !== undefined)) headStats(chart._visibleDaily ? chart._visibleDaily() : curRows, curOpts);
+          }
           // Reviews / Time, breakdown, hidden types: the dots follow (read again)
           if (inst.dots && inst.dots.visible()){
             const m = chart.options || {};
@@ -2562,7 +2608,7 @@
           state.last = true; DD.frame.kick();
         },
         setTheme: function(){ chart.colors = DD.theme.chart; state.last = true; DD.frame.kick(); },
-        destroy: function(){ DD.frame.remove(frame); resizer.disconnect(); window.removeEventListener('mouseup', wake); el.innerHTML = ''; if (head){ if (statEl) statEl.textContent = ''; if (pillsEl) pillsEl.innerHTML = ''; } },
+        destroy: function(){ DD.frame.remove(frame); resizer.disconnect(); window.removeEventListener('mouseup', wake); if (chart._unbindInteractions) chart._unbindInteractions(); if (inst.dots && inst.dots.destroy) inst.dots.destroy(); el.innerHTML = ''; if (head){ if (statEl) statEl.textContent = ''; if (pillsEl) pillsEl.innerHTML = ''; } },
       };
       // zoom link with the other charts (app.js DD.zoomSync) and the bar under the plot
       inst.zoom = {

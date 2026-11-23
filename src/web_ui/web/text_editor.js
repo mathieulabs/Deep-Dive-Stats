@@ -119,16 +119,11 @@
   function esc(s){ return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
   // ---- what Python gives: the variables, spans, decks, units and the help ----
-  let dataP = null;
   function data(){
-    if (!dataP){
-      dataP = DD.call('te_data', {}).then(function(d){ return d || {}; }).catch(function(e){
-        dataP = null;
-        DD.log('text editor: no data ' + e);
-        return {};
-      });
-    }
-    return dataP;
+    return DD.call('te_data', {}).then(function(d){ return d || {}; }).catch(function(e){
+      DD.log('text editor: no data ' + e);
+      return {};
+    });
   }
   let helpOpen = true;  // the help unfolded or not, as it was last left (for the page)
   try { helpOpen = localStorage.getItem('ddte-help') !== '0'; } catch (e) {}
@@ -142,7 +137,8 @@
   function normalize(t){
     let s = String(t || '');
     if (!s) return '';
-    s = unescapeAll(s).trim();
+    // Only unescape legacy double-escaped HTML templates (no real '<' tags yet), preserving literal '&lt;'/'&gt;'.
+    s = (s.indexOf('<') < 0 && s.indexOf('&lt;') >= 0 && s.indexOf('&gt;') >= 0 ? unescapeAll(s) : s).trim();
     if (s.charAt(0) !== '<' && s.indexOf('</p>') >= 0){
       const i = s.indexOf('</p>');
       let suffix = s.slice(i + 4);
@@ -559,7 +555,7 @@
         const i = inner.indexOf('|'), before = inner.slice(0, i), prefix = inner.slice(i + 1);
         if (!/^[A-Za-z0-9_]+(?::[^\n\r\t{}@|]*)?(?:@[^\n\r\t{}|]*)?$/.test(before) || /[\n\r\t{}|@]/.test(prefix)) return null;
         const start = open + 2 + before.length;
-        return Object.assign(base, {mode: 'unit', prefix: prefix, anchor: start, end: to(start, ['}'])});
+        return Object.assign(base, {mode: 'unit', prefix: prefix, anchor: start, end: to(start, ['~', '}'])});
       }
       if (inner.indexOf(DECK) >= 0){
         const i = inner.indexOf(DECK), before = inner.slice(0, i), prefix = inner.slice(i + 1);
@@ -568,16 +564,16 @@
           if (!/^[A-Za-z0-9_]+$/.test(before.slice(0, j)) || /[\n\r\t{}@]/.test(before.slice(j + 1))) return null;
         } else if (!/^[A-Za-z0-9_]+$/.test(before)) return null;
         const start = open + 2 + before.length;
-        return Object.assign(base, {mode: 'deck', prefix: prefix, anchor: start, end: to(start, ['}'])});
+        return Object.assign(base, {mode: 'deck', prefix: prefix, anchor: start, end: to(start, ['|', '~', '}'])});
       }
       if (inner.indexOf(':') >= 0){
         const i = inner.indexOf(':'), v = inner.slice(0, i), prefix = inner.slice(i + 1);
         if (!/^[A-Za-z0-9_]+$/.test(v) || /[\n\r\t{}@]/.test(prefix)) return null;
         const start = open + 2 + v.length;
-        return Object.assign(base, {mode: 'span', prefix: prefix, anchor: start, end: to(start, [DECK, '}'])});
+        return Object.assign(base, {mode: 'span', prefix: prefix, anchor: start, end: to(start, [DECK, '|', '~', '}'])});
       }
       if (!/^[A-Za-z0-9_]*$/.test(inner)) return null;
-      return Object.assign(base, {mode: 'variable', prefix: inner, anchor: open + 1, end: to(open + 1, [':', '}'])});
+      return Object.assign(base, {mode: 'variable', prefix: inner, anchor: open + 1, end: to(open + 1, [':', DECK, '|', '~', '}'])});
     }
     function charAfter(){ const c = caret(); return c ? c.text.charAt(c.pos) : ''; }
     function placeholder(){
@@ -718,8 +714,9 @@
       insert(e[0]);
       if (c.mode !== 'variable'){
         const after = caret();
-        if (after && after.text.charAt(after.pos) === '}') setCaret(after.block, after.pos + 1);
-        else insert('}');
+        const nxt = after ? after.text.charAt(after.pos) : '';
+        if (nxt === '}') setCaret(after.block, after.pos + 1);
+        else if (nxt !== DECK && nxt !== '|' && nxt !== '~') insert('}');
       }
       hidePop();
       changed();
@@ -998,8 +995,9 @@
       if (px > 0) size.value = String(Math.round(px * 0.75 * 2) / 2);
     }
     set(opts.template || '');
+    let ro = null;
     if (!size.value && window.ResizeObserver){  // (a host put in the page after: once it is laid out)
-      const ro = new ResizeObserver(function(){ if (!root.isConnected) return; idleSize(); if (size.value) ro.disconnect(); });
+      ro = new ResizeObserver(function(){ if (!root.isConnected) return; idleSize(); if (size.value){ ro.disconnect(); ro = null; } });
       ro.observe(root);
     }
     showHelp(helpOpen);
@@ -1024,7 +1022,7 @@
         else { const r = document.createRange(), s = sel(); r.selectNodeContents(area); r.collapse(false); s.removeAllRanges(); s.addRange(r); }
       },
       busy: function(){ return !!pop.parentNode || !!document.querySelector('.ddte-menu'); },
-      destroy: function(){ hidePop(); document.removeEventListener('selectionchange', onSel); window.removeEventListener('resize', place); root.remove(); },
+      destroy: function(){ clearTimeout(changeT); if (ro){ ro.disconnect(); ro = null; } hidePop(); document.removeEventListener('selectionchange', onSel); window.removeEventListener('resize', place); root.remove(); },
     };
   };
 

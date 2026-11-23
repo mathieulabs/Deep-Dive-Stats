@@ -112,117 +112,153 @@
     binStep(){ const n = this.zoom ? this.zoom[1] - this.zoom[0] : this.total(); return this.options.binning ? binSize(n, (DD.settings && DD.settings.bin_scale) || 100) : 1; }
     setPayload(p){ this.payload = p; this.zoom = null; this.morph = null; this.cam = null; this.real = this.disp = display(this.srcData(), this.options); }
     refresh(){ this.morph = null; this.real = this.disp = display(this.srcData(), this.options); }
-    // value transition between two display models (300 ms, smootherstep): both resampled to the new length
-    // both sides sampled to the new length, the gaps of each filled by a straight
+    // value transition between two display models (300 ms, InOutCubic): both resampled on the union grid U0
+    // (precomputed once in this.morph._prep), the gaps of each filled by a straight
     // line between its neighbours, with a mask of the real points; values glide, segments fade with the masks
     blended(t){
-      const a = this.morph.from, b = this.real, o = this.options, tt = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2, out = {};
-      const fill = function(vals, n){
-        const mask = [], known = [];
-        for (let i = 0; i < n; i++){ const v = vals[i]; const k = v != null; mask.push(k ? 1 : 0); if (k) known.push([i, +v]); }
-        const f = new Array(n).fill(0);
-        if (!known.length) return [f, mask];
-        for (let i = 0; i <= known[0][0]; i++) f[i] = known[0][1];
-        for (let j = 0; j < known.length - 1; j++){
-          const [ai, av] = known[j], [bi, bv] = known[j + 1], sp = bi - ai;
-          f[ai] = av; for (let k = 1; k < sp; k++) f[ai + k] = av + (bv - av) * k / sp; f[bi] = bv;
-        }
-        const last = known[known.length - 1]; for (let i = last[0]; i < n; i++) f[i] = last[1];
-        return [f, mask];
-      };
-      const lenOf = function(src){ for (const k of KEYS){ if (src && src[k] && src[k].length) return src[k].length; } return 0; };
-      const lenA = lenOf(a), lenB = lenOf(b);
-      const xfade = lenA > 0 && lenB > 0 && lenA !== lenB;
-      if (xfade){
-        KEYS.forEach(function(k){ out[k] = b[k] || []; });
-      } else KEYS.forEach(function(k){
-        const nb = b[k] || [], na = a[k] || [], n = nb.length;
-        if (!n){ out[k] = []; return; }
-        const sample = function(arr){
-          if (!arr.length) return new Array(n).fill(null);
-          if (arr.length === n) return arr.map(function(it){ return it[1]; });
-          if (n === 1) return [arr[arr.length - 1][1]];
-          if (arr.length === 1){ const r = new Array(n).fill(null); r[0] = arr[0][1]; return r; }
-          const last = arr.length - 1, r = [];
-          let slopes = null;
-          if (o.rounded){
-            slopes = new Array(arr.length).fill(0);
-            let s0 = -1;
-            for (let j = 0; j <= arr.length; j++){
-              const ok = j < arr.length && arr[j][1] != null;
-              if (ok && s0 < 0) s0 = j;
-              if (!ok && s0 >= 0){
-                if (j - s0 >= 3){
-                  const pts = []; for (let p = s0; p < j; p++) pts.push([p, +arr[p][1]]);
-                  const m = tangents(pts); for (let p = 0; p < m.length; p++) slopes[s0 + p] = m[p];
-                } else if (j - s0 === 2){
-                  const sl = +arr[s0 + 1][1] - +arr[s0][1]; slopes[s0] = slopes[s0 + 1] = sl;
+      const M = this.morph, a = M.from, b = this.real, o = this.options, tt = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2, out = {};
+      const prepKey = (o.rounded ? 1 : 0) | (o.avg_on_active_days ? 2 : 0);
+      let P = M._prep;
+      if (!P || P.key !== prepKey){
+        const fill = function(vals, n){
+          const mask = [], known = [];
+          for (let i = 0; i < n; i++){ const v = vals[i]; const k = v != null; mask.push(k ? 1 : 0); if (k) known.push([i, +v]); }
+          const f = new Array(n).fill(0);
+          if (!known.length) return [f, mask];
+          for (let i = 0; i <= known[0][0]; i++) f[i] = known[0][1];
+          for (let j = 0; j < known.length - 1; j++){
+            const [ai, av] = known[j], [bi, bv] = known[j + 1], sp = bi - ai;
+            f[ai] = av; for (let k = 1; k < sp; k++) f[ai + k] = av + (bv - av) * k / sp; f[bi] = bv;
+          }
+          const last = known[known.length - 1]; for (let i = last[0]; i < n; i++) f[i] = last[1];
+          return [f, mask];
+        };
+        const lenOf = function(src){ for (const k of KEYS){ if (src && src[k] && src[k].length) return src[k].length; } return 0; };
+        const lenA = lenOf(a), lenB = lenOf(b);
+        let U0;
+        if (lenA > 1 && lenB > 1 && lenA !== lenB){
+          const fr = [];
+          for (let j = 0; j < lenA; j++) fr.push(j / (lenA - 1));
+          for (let j = 0; j < lenB; j++) fr.push(j / (lenB - 1));
+          fr.sort(function(x, y){ return x - y; });
+          U0 = fr.filter(function(v, i){ return i === 0 || v - fr[i - 1] > 1e-9; });
+        } else { const N0 = Math.max(lenA, lenB); U0 = []; for (let i = 0; i < N0; i++) U0.push(N0 > 1 ? i / (N0 - 1) : 0); }
+        const nearestU = function(U, uj){
+          let lo = 0, hi = U.length - 1;
+          while (lo < hi){ const mid = (lo + hi) >> 1; if (U[mid] < uj) lo = mid + 1; else hi = mid; }
+          return lo > 0 && Math.abs(U[lo - 1] - uj) < Math.abs(U[lo] - uj) ? lo - 1 : lo;
+        };
+        const series = {}, avgs = {};
+        const ao = o.avg_on_active_days, hideK = M && M.hiding;
+        KEYS.forEach(function(k){
+          const nb = b[k] || [], na = a[k] || [], n = nb.length ? U0.length : 0, U = U0;
+          if (!n){ series[k] = null; return; }
+          const sample = function(arr){
+            if (!arr.length) return new Array(n).fill(null);
+            if (n === 1) return [arr[arr.length - 1][1]];
+            if (arr.length === 1){ const r = new Array(n).fill(null); r[0] = arr[0][1]; return r; }
+            const last = arr.length - 1, r = [], dv = r.d = [];
+            let slopes = null;
+            if (o.rounded){
+              slopes = new Array(arr.length).fill(0);
+              let s0 = -1;
+              for (let j = 0; j <= arr.length; j++){
+                const ok = j < arr.length && arr[j][1] != null;
+                if (ok && s0 < 0) s0 = j;
+                if (!ok && s0 >= 0){
+                  if (j - s0 >= 3){
+                    const pts = []; for (let p = s0; p < j; p++) pts.push([p, +arr[p][1]]);
+                    const m = tangents(pts); for (let p = 0; p < m.length; p++) slopes[s0 + p] = m[p];
+                  } else if (j - s0 === 2){
+                    const sl = +arr[s0 + 1][1] - +arr[s0][1]; slopes[s0] = slopes[s0 + 1] = sl;
+                  }
+                  s0 = -1;
                 }
-                s0 = -1;
               }
             }
-          }
-          for (let i = 0; i < n; i++){
-            const pos = i * last / (n - 1), i0 = Math.floor(pos), i1 = Math.min(last, i0 + 1), fr = pos - i0;
-            const v0 = arr[i0][1], v1 = arr[i1][1];
-            if (v0 != null && v1 != null){
-              if (slopes && i1 > i0){
-                const f2 = fr * fr, f3 = f2 * fr;
-                r.push((2*f3 - 3*f2 + 1) * v0 + (f3 - 2*f2 + fr) * slopes[i0] + (-2*f3 + 3*f2) * v1 + (f3 - f2) * slopes[i1]);
-              } else r.push(v0 + (v1 - v0) * fr);
-            } else r.push(null);
-          }
-          // preserve exact run start/end points AND isolated single-day points so curve ends never shrink/pop at t=0 or t=1
-          for (let j = 0; j < arr.length; j++){
-            if (arr[j][1] == null) continue;
-            const prevOk = j > 0 && arr[j - 1][1] != null, nextOk = j < last && arr[j + 1][1] != null;
-            if (!prevOk || !nextOk){
-              const idx = Math.round(j * (n - 1) / Math.max(1, last));
-              if (idx >= 0 && idx < n && r[idx] == null) r[idx] = +arr[j][1];
+            for (let i = 0; i < n; i++){
+              const pos = U[i] * last, i0 = Math.min(last, Math.floor(pos + 1e-9)), i1 = Math.min(last, i0 + 1), fr = Math.max(0, pos - i0);
+              const v0 = arr[i0][1], v1 = arr[i1][1];
+              if (fr < 1e-9){ r.push(v0 == null ? null : +v0); dv.push(v0 != null && slopes ? slopes[i0] * last : null); continue; }
+              if (v0 != null && v1 != null){
+                if (slopes && i1 > i0){
+                  const f2 = fr * fr, f3 = f2 * fr;
+                  r.push((2*f3 - 3*f2 + 1) * v0 + (f3 - 2*f2 + fr) * slopes[i0] + (-2*f3 + 3*f2) * v1 + (f3 - f2) * slopes[i1]);
+                  dv.push(((6*f2 - 6*fr) * v0 + (3*f2 - 4*fr + 1) * slopes[i0] + (-6*f2 + 6*fr) * v1 + (3*f2 - 2*fr) * slopes[i1]) * last);
+                } else { r.push(v0 + (v1 - v0) * fr); dv.push((v1 - v0) * last); }
+              } else { r.push(null); dv.push(null); }
             }
-          }
-          return r;
-        };
-        const sampleCnt = function(arr){
-          if (!arr.length) return new Array(n).fill(0);
-          const get = function(it){ return (it && it.length >= 3 && it[2]) ? Number(it[2][1] || 0) : 0; };
-          if (arr.length === n) return arr.map(get);
-          if (n === 1) return [get(arr[arr.length - 1])];
-          if (arr.length === 1){ const r = new Array(n).fill(0); r[0] = get(arr[0]); return r; }
-          const last = arr.length - 1, r = [];
+            for (let j = 0; j < arr.length; j++){
+              if (arr[j][1] == null) continue;
+              const prevOk = j > 0 && arr[j - 1][1] != null, nextOk = j < last && arr[j + 1][1] != null;
+              if (!prevOk || !nextOk){
+                const idx = nearestU(U, j / Math.max(1, last));
+                if (r[idx] == null) r[idx] = +arr[j][1];
+              }
+            }
+            return r;
+          };
+          const sampleCnt = function(arr){
+            if (!arr.length) return new Array(n).fill(0);
+            const get = function(it){ return (it && it.length >= 3 && it[2]) ? Number(it[2][1] || 0) : 0; };
+            if (arr.length === n) return arr.map(get);
+            if (n === 1) return [get(arr[arr.length - 1])];
+            if (arr.length === 1){ const r = new Array(n).fill(0); r[0] = get(arr[0]); return r; }
+            const last = arr.length - 1, r = [];
+            for (let i = 0; i < n; i++){
+              const pos = U[i] * last, i0 = Math.min(last, Math.floor(pos + 1e-9)), i1 = Math.min(last, i0 + 1), fr = Math.max(0, Math.min(1, pos - i0));
+              r.push(get(arr[i0]) * (1 - fr) + get(arr[i1]) * fr);
+            }
+            return r;
+          };
+          const hiding = hideK === k;
+          const sa = sample(na), sb = hiding ? null : sample(nb);
+          const [of, om] = fill(sa, n), [nf, nm] = hiding ? [of, new Array(n).fill(0)] : fill(sb, n);
+          const hadOld = om.some(Boolean);
+          const slopesOf = function(sm, f){
+            const d0 = (sm && sm.d) || [];
+            return f.map(function(v, i){
+              if (d0[i] != null) return d0[i];
+              const p0 = Math.max(0, i - 1), p1 = Math.min(n - 1, i + 1);
+              return p1 > p0 && U[p1] > U[p0] ? (f[p1] - f[p0]) / (U[p1] - U[p0]) : 0;
+            });
+          };
+          const so = o.rounded ? slopesOf(sa, of) : null, sn = o.rounded ? (hiding ? so : slopesOf(sb, nf)) : null;
+          const oCnt = sampleCnt(na), nCnt = sampleCnt(nb);
+          const lbls = new Array(n), cands = new Array(n);
           for (let i = 0; i < n; i++){
-            const pos = i * last / (n - 1), i0 = Math.floor(pos), i1 = Math.min(last, i0 + 1), fr = pos - i0;
-            r.push(get(arr[i0]) * (1 - fr) + get(arr[i1]) * fr);
+            lbls[i] = nb[Math.min(nb.length - 1, Math.round(U[i] * (nb.length - 1)))][0];
+            cands[i] = i < n - 1 && ((om[i] && om[i + 1]) || (nm[i] && nm[i + 1]));
           }
-          return r;
-        };
-        const hiding = this.morph && this.morph.hiding === k;
-        const [of, om] = fill(sample(na), n), [nf, nm] = hiding ? [of, new Array(n).fill(0)] : fill(sample(nb), n);
-        // a newly shown series (no old points at all) fades in cleanly at its real height instead of flying up from 0%
-        const hadOld = om.some(Boolean);
-        const oCnt = sampleCnt(na), nCnt = sampleCnt(nb);
-        const rows = [];
+          series[k] = {n: n, U: U, of: of, om: om, nf: nf, nm: nm, hadOld: hadOld, so: so, sn: sn, oCnt: oCnt, nCnt: nCnt, lbls: lbls, cands: cands};
+        });
+        KEYS.forEach(function(k){
+          const oa0 = avgRows(a[k], ao), na0 = (hideK === k) ? null : avgRows(b[k], ao);
+          if (oa0 === null && na0 === null) return;
+          avgs[k] = {oa: oa0 === null ? na0 : oa0, na: na0 === null ? oa0 : na0, oa0: oa0 !== null ? 1 : 0, na0: na0 !== null ? 1 : 0};
+        });
+        P = M._prep = {key: prepKey, series: series, avgs: avgs};
+      }
+      KEYS.forEach(function(k){
+        const S = P.series[k];
+        if (!S){ out[k] = []; return; }
+        const n = S.n, U = S.U, of = S.of, om = S.om, nf = S.nf, nm = S.nm, hadOld = S.hadOld, so = S.so, sn = S.sn, oCnt = S.oCnt, nCnt = S.nCnt, lbls = S.lbls, cands = S.cands;
+        const rows = new Array(n);
         for (let i = 0; i < n; i++){
-          const rb = nb[Math.min(nb.length - 1, Math.round(i * (nb.length - 1) / Math.max(1, n - 1)))];
           const v = hadOld ? (of[i] + (nf[i] - of[i]) * tt) : nf[i], pres = om[i] * (1 - tt) + nm[i] * tt;
-          const cand = i < n - 1 && ((om[i] && om[i + 1]) || (nm[i] && nm[i + 1]));
-          const oc = oCnt[i] || 0, nc = nCnt[i] || 0;
-          const cMix = oc + (nc - oc) * tt;
-          rows.push([rb[0], (om[i] || nm[i]) ? v : null, (oc || nc) ? [0, cMix] : null, pres, !!cand, v, om[i], nm[i]]);
+          const oc = oCnt[i] || 0, nc = nCnt[i] || 0, cMix = oc + (nc - oc) * tt;
+          const sl = so ? (hadOld ? so[i] + (sn[i] - so[i]) * tt : sn[i]) : null;
+          rows[i] = [lbls[i], (om[i] || nm[i]) ? v : null, (oc || nc) ? [0, cMix] : null, pres, !!cands[i], v, om[i], nm[i], U[i], sl];
         }
         out[k] = rows;
-      }, this);
-      // the average lines glide from the old average to the new one and fade in/out smoothly when a series appears/vanishes
-      const ao = this.options.avg_on_active_days, hideK = this.morph && this.morph.hiding;
-      out._avg = {}; out._avgA = {};
-      KEYS.forEach(function(k){
-        const oa0 = avgRows(a[k], ao), na0 = (hideK === k) ? null : avgRows(b[k], ao);
-        if (oa0 === null && na0 === null) return;
-        const oa = oa0 === null ? na0 : oa0, na2 = na0 === null ? oa0 : na0;
-        out._avg[k] = oa + (na2 - oa) * tt;
-        out._avgA[k] = (oa0 !== null ? 1 : 0) * (1 - tt) + (na0 !== null ? 1 : 0) * tt;
       });
-      out._morph = true; out._xfade = xfade; out._tt = tt; out._t = t;
+      out._avg = {}; out._avgA = {};
+      Object.keys(P.avgs).forEach(function(k){
+        const A = P.avgs[k];
+        out._avg[k] = A.oa + (A.na - A.oa) * tt;
+        out._avgA[k] = A.oa0 * (1 - tt) + A.na0 * tt;
+      });
+      out._morph = true; out._tt = tt; out._t = t;
       return out;
     }
     // Zoom animation of the line charts: the picture before and the picture after are
@@ -478,7 +514,7 @@
         KEYS.forEach(function(k){
           const isHiding = MO && MO.hiding === k;
           if (!o.visible[k] && !isHiding) return;
-          const avg = (d._avg && d._avg[k] !== undefined) ? d._avg[k] : avgRows(d[k], o.avg_on_active_days);
+          const avg = (d._avg && d._avg[k] !== undefined) ? d._avg[k] : avgRows(this.srcData()[k], o.avg_on_active_days);
           if (avg === null) return;
           const aa = (d._avgA && d._avgA[k] !== undefined) ? d._avgA[k] : 1;
           if (aa <= 0.01) return;
@@ -616,19 +652,14 @@
           iso.forEach(function(p){ ctx.beginPath(); ctx.arc(p[0], p[1], 1.5, 0, Math.PI * 2); ctx.fill(); });
         }, this);
       };
-      if (d._xfade && MO){
-        // different bin counts (e.g. Total: 33 -> 26 bins): cross-fade exact old & new curves on the gliding Y-axis
-        // so t=0 is pixel-identical to the old chart and t=1 is pixel-identical to the new chart (zero start/end jump)
-        drawStillSeries(MO.from, 1 - mt0);
-        drawStillSeries(this.real, mt0);
-      } else if (!d._morph){
+      if (!d._morph){
         drawStillSeries(d, 1);
       } else KEYS.forEach(function(k){
         if ((!o.visible[k] && !(MO && MO.hiding === k)) || !d[k] || !d[k].length) return;
         const col = this.seriesColor(k);
         if (d._morph){
           // during a data transition each segment is drawn with the presence of its ends
-          const it = d[k], P = it.map(function(r, i){ return [ml + i * xStep, Math.max(mt, Math.min(mt + plotH, mt + plotH - (r[5] - minV) / valRange * plotH))]; });  // kept in the plot: a point from below the axis (an empty side, a rate under its minimum) came up from under the chart
+          const it = d[k], P = it.map(function(r, i){ return [r[8] != null ? ml + r[8] * plotW : ml + i * xStep, Math.max(mt, Math.min(mt + plotH, mt + plotH - (r[5] - minV) / valRange * plotH))]; });  // kept in the plot: a point from below the axis (an empty side, a rate under its minimum) came up from under the chart
           ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
           // rounded look kept while morphing: each segment is the piece of the smooth curve through all the points
           // (the morph draws the round curves, sampled finely enough, not straight segments)
@@ -646,7 +677,10 @@
             return out;
           };
           const tt0 = d._tt != null ? d._tt : 1;
-          const ms = o.rounded ? (function(){ const a = runMs(6), b = runMs(7); return a.map(function(v, i){ return v + (b[i] - v) * tt0; }); })() : null;  // as smoothPath when still
+          // the slopes of the still curves carried by the points (a piece of a cubic drawn from its ends' values and
+          // slopes is that cubic: the first and last frames are the still curves, with any number of points)
+          const ms = !o.rounded ? null : (it.length && it[0][9] != null) ? it.map(function(r){ return -r[9] * plotH / valRange / plotW; })
+            : (function(){ const a = runMs(6), b = runMs(7); return a.map(function(v, i){ return v + (b[i] - v) * tt0; }); })();  // as smoothPath when still
           const seg = function(i){
             if (!ms){ ctx.lineTo(P[i + 1][0], P[i + 1][1]); return; }
             const h3 = (P[i + 1][0] - P[i][0]) / 3;
@@ -778,7 +812,7 @@
       KEYS.forEach(function(k){
         if (!o.visible[k]) return;
         const v = avgRows(chart.srcData()[k], o.avg_on_active_days);
-        if (v !== null && v > 0) parts.push(DD.t('{name} Avg: {value}%', {name: DD.t(LABELS[k]), value: fmtCompact(v)}));
+        if (v !== null && v >= 0) parts.push(DD.t('{name} Avg: {value}%', {name: DD.t(LABELS[k]), value: fmtCompact(v)}));
       });
       st.textContent = parts.join('  ·  ');
     }
@@ -916,13 +950,13 @@
         if (!g || x < g.ml || x > g.ml + g.plotW) return;
         drag = {x0: x}; chart.sel = [x, x]; tip.style.display = 'none'; chart._tipIdx = null; chart.hoverIdx = -1;
       });
-      window.addEventListener('mousemove', function(e){
+      const onMove = function(e){
         if (!drag) return;
         const r = chart.canvas.getBoundingClientRect(), g = chart._g;
         chart.sel = [drag.x0, Math.max(g.ml, Math.min(g.ml + g.plotW, e.clientX - r.left))];
         state.last = true; DD.frame.kick();
-      });
-      window.addEventListener('mouseup', function(){
+      };
+      const onUp = function(){
         if (!drag) return;
         const sel = chart.sel; drag = null; chart.sel = null; state.last = true; DD.frame.kick();
         if (!sel || Math.abs(sel[1] - sel[0]) < 6) return;
@@ -930,7 +964,9 @@
         const a = absAt(lo), step = chart.binStep();
         const b = Math.min(chart.total(), absAt(hi) + step);
         if (b - a >= 2){ zoomTo(a, b); emit(); }
-      });
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
       chart.canvas.addEventListener('wheel', function(e){
         const n = chart.total(); if (!n) return;
         if (e.shiftKey && chart.zoom){
@@ -1070,7 +1106,7 @@
           head(ctx.head, data, chart); state.last = true; DD.frame.kick(); if (inst.zoom.bar) inst.zoom.bar(); },
         setOptions: function(o){ Object.assign(chart.options, o); chart.refresh(); head(ctx.head, chart.payload, chart); state.last = true; DD.frame.kick(); },
         setTheme: function(){ chart.colors = DD.theme.chart; head(ctx.head, chart.payload, chart); state.last = true; DD.frame.kick(); },
-        destroy: function(){ DD.frame.remove(frame); resizer.disconnect(); el.innerHTML = ''; if (ctx.head){ const st = ctx.head.querySelector('.dd-stat'); if (st) st.textContent = ''; const p = ctx.head.querySelector('.dd-pills'); if (p) p.innerHTML = ''; } },
+        destroy: function(){ DD.frame.remove(frame); resizer.disconnect(); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); el.innerHTML = ''; if (ctx.head){ const st = ctx.head.querySelector('.dd-stat'); if (st) st.textContent = ''; const p = ctx.head.querySelector('.dd-pills'); if (p) p.innerHTML = ''; } },
       };
       inst.zoom = {
         count: function(){ return chart.total(); },

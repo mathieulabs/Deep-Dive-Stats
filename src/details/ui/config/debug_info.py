@@ -194,3 +194,38 @@ def copy_debug_info(parent=None):
     except Exception:
         log_swallowed()
         tooltip(tr("Could not build the debug info."), parent=parent)
+
+
+_LOG_FILES = ("debug.log", "debug.log.1", "debug.previous.log")
+
+
+def save_logs(parent=None):
+    """The whole log in one file to send (Troubleshooting > Save Logs): a zip of debug.log, its rotated copy, the
+    last session's end (after a crash) and the debug info, saved where the user picks (the Desktop by default),
+    then shown in its folder."""
+    import zipfile
+
+    from aqt.qt import QDesktopServices, QFileDialog, QStandardPaths, QUrl
+    from aqt.utils import tooltip
+
+    try:
+        DeepDiveLogger.flush()
+        log_dir = DeepDiveLogger._get_log_dir()
+        start = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DesktopLocation) or os.path.expanduser("~")
+        name = f"DeepDive_logs_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.zip"
+        path, _f = QFileDialog.getSaveFileName(parent, tr("Save Logs"), os.path.join(start, name), "Zip (*.zip)")
+        if not path:
+            return
+        if not path.lower().endswith(".zip"):
+            path += ".zip"
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for n in _LOG_FILES:
+                p = os.path.join(log_dir, n)
+                if os.path.isfile(p):
+                    zf.write(p, n)
+            zf.writestr("debug_info.txt", build_debug_info())
+        tooltip(tr("Logs saved: send this file with your report."), parent=parent)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
+    except Exception:
+        log_swallowed()
+        tooltip(tr("Could not save the logs."), parent=parent)
