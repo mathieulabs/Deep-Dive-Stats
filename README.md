@@ -106,6 +106,9 @@ Many of the extra charts are based on
 [Search Stats Extended](https://github.com/Luc-Mcgrady/Anki-Search-Stats-Extended)
 by Luc McGrady.
 
+Some of the heatmap's color palettes come from the
+[Review Heatmap](https://github.com/glutanimate/review-heatmap) add-on by Glutanimate.
+
 Icons from [Lucide](https://lucide.dev) (ISC License).
 
 ## License
