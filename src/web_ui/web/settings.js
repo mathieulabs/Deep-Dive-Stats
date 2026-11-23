@@ -59,6 +59,8 @@
   function call(cmd, args, part, opts){
     return DD.call(cmd, args || {}).then(function(res){
       if (part) S[part] = res;
+      // a theme change moves the glow's automatic color too: the colors' answer carries the background's state
+      if (part === 'colors' && res && res.backdrop) S.backdrop = res.backdrop;
       if (!(opts && opts.quiet)) render();
       return res;
     }).catch(fail);

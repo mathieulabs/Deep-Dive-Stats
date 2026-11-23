@@ -81,10 +81,8 @@ Paths and the profile name are redacted, so you can attach the relevant lines.
 
 ## Translations
 
-Some translations may be wrong. To fix one, no GitHub knowledge is needed: open a new issue, choose
-**Translation fix**, and fill in the language, the current text and the correction.
-
-You can also send a pull request: texts live in `src/i18n/<language>.json`.
+Some translations may be wrong. To fix one, open a **Translation fix** issue or send a pull
+request (`src/i18n/<language>.json`).
 
 ## Build
 

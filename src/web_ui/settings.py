@@ -161,7 +161,26 @@ class WebSettingsDialog(QDialog):
         self._bin_timer.setInterval(150)
         self._bin_timer.timeout.connect(self._apply_binning_scale)
         self._load()
+        self._watch_anki_theme()
         _OPEN.append(self)
+
+    def _watch_anki_theme(self):
+        """Anki switched light / dark while Settings is open: the page takes its new look, and the Colors tab
+        (Anki's own theme, the glow's automatic color, the light / dark notes) is shown from it again."""
+        from aqt import gui_hooks
+
+        self._anki_theme_tm = QTimer(self)
+        self._anki_theme_tm.setSingleShot(True)
+        self._anki_theme_tm.setInterval(60)  # after the add-on's own windows have taken the change
+
+        def changed():
+            self.refresh_styles()
+            self._push_state()
+
+        self._anki_theme_tm.timeout.connect(changed)
+        self._anki_theme_cb = lambda *_a: self._anki_theme_tm.start()
+        if hasattr(gui_hooks, "theme_did_change"):
+            gui_hooks.theme_did_change.append(self._anki_theme_cb)
 
     # ---- page ----
     def _load(self):
@@ -356,7 +375,9 @@ class WebSettingsDialog(QDialog):
         elif pmode == "linked" and details["mode"] == ThemePalettes.MODE_DARK and not night:
             mismatch = tr("This theme is dark while Anki is light: the pinned widgets on Anki's main screen will be dark too.")
         return {"presets": presets, "details": details, "pinned": pinned, "pinned_mode": pmode, "mismatch": mismatch,
-                "data": {"details": self._data_rows(False), "pinned": self._data_rows(True)}}
+                "data": {"details": self._data_rows(False), "pinned": self._data_rows(True)},
+                # the window background's glow follows the theme's accent: sent again with every theme change
+                "backdrop": self._backdrop_state()}
 
     @staticmethod
     def _adapt_warn(preset, mode, base, night):
@@ -1112,6 +1133,12 @@ class WebSettingsDialog(QDialog):
         from ..config import set_live_config_override
 
         set_live_config_override(None)
+        try:
+            from aqt import gui_hooks
+
+            gui_hooks.theme_did_change.remove(self._anki_theme_cb)
+        except Exception:
+            pass
         try:
             self.bridge.close()
         except Exception:
