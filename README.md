@@ -15,11 +15,31 @@ Detailed statistics for Anki, in a separate window or pinned under your deck lis
 
 ### Pinned to the main screen
 
-![Charts pinned under the deck list](docs/screenshots/main-screen2.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/pinned/main-screen-dark.png">
+  <img alt="Charts pinned under the deck list" src="docs/screenshots/pinned/main-screen-light.png">
+</picture>
 
 ### Separate stats window
 
-![Deep Dive stats window](docs/screenshots/full-view4.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/deep-dive/window-dark.png">
+  <img alt="Deep Dive stats window" src="docs/screenshots/deep-dive/window-light.png">
+</picture>
+
+### Themes
+
+![Deep Dive in its four themes](docs/screenshots/deep-dive/themes-diagonal.png)
+
+### Over a background image
+
+![Pinned widgets over background images](docs/screenshots/pinned/backgrounds-diagonal.png)
+
+### With Onigiri and Synapse
+
+![Deep Dive Stats with Onigiri](docs/screenshots/other-addons/onigiri.png)
+
+![Deep Dive Stats with Synapse](docs/screenshots/other-addons/synapse.png)
 
 ## Features
 
